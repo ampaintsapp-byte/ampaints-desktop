@@ -414,47 +414,63 @@ export default function BillPrint() {
         </Card>
       </div>
 
-      {/* PRINT ONLY: Thermal Receipt - UPDATED WITH PRODUCT NAME AND LARGER FONT FOR TOTALS */}
-      <div className="hidden print:block font-mono text-xs leading-tight">
-        <div className="w-[80mm] mx-auto bg-white" style={{padding: '8px 12px 12px 12px'}}>
-          <div className="text-center">
-            <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black'}}>{receiptSettings.businessName}</h1>
-            <p style={{color: 'black', fontWeight: 'bold'}}>{receiptSettings.address}</p>
+      {/* PRINT ONLY: Thermal Receipt - HIGH QUALITY PRINT */}
+      <div className="hidden print:block font-mono">
+        <div className="w-[80mm] mx-auto bg-white" style={{padding: '10px 14px 14px 14px'}}>
+          {/* Header - Bold and Large */}
+          <div className="text-center" style={{marginBottom: '12px'}}>
+            <h1 style={{fontSize: '20px', fontWeight: '900', color: '#000', letterSpacing: '0.5px', marginBottom: '6px', lineHeight: '1.3'}}>
+              {receiptSettings.businessName}
+            </h1>
+            <p style={{fontSize: '13px', fontWeight: '700', color: '#000', lineHeight: '1.4'}}>
+              {receiptSettings.address}
+            </p>
           </div>
 
-          <div className="my-3 border-t border-dotted border-black pt-2" style={{color: 'black'}}>
-            <p className="mt-2" style={{fontWeight: 'bold'}}>Invoice: {sale.id.slice(0, 8).toUpperCase()}</p>
-            <p style={{fontWeight: 'bold'}}>{formatDate(sale.createdAt)} {new Date(sale.createdAt).toLocaleTimeString()}</p>
-            <p style={{fontWeight: 'bold'}}>Customer: {sale.customerName}</p>
-            <p style={{fontWeight: 'bold'}}>Phone: {sale.customerPhone}</p>
+          {/* Customer Info */}
+          <div style={{borderTop: '2px dotted #000', paddingTop: '10px', marginTop: '10px', marginBottom: '10px'}}>
+            <p style={{fontSize: '13px', fontWeight: '700', color: '#000', marginTop: '8px', lineHeight: '1.5'}}>
+              Invoice: {sale.id.slice(0, 8).toUpperCase()}
+            </p>
+            <p style={{fontSize: '13px', fontWeight: '700', color: '#000', lineHeight: '1.5'}}>
+              {formatDate(sale.createdAt)} {new Date(sale.createdAt).toLocaleTimeString()}
+            </p>
+            <p style={{fontSize: '13px', fontWeight: '700', color: '#000', lineHeight: '1.5'}}>
+              Customer: {sale.customerName}
+            </p>
+            <p style={{fontSize: '13px', fontWeight: '700', color: '#000', lineHeight: '1.5'}}>
+              Phone: {sale.customerPhone}
+            </p>
           </div>
 
-          <table className="w-full border-collapse text-sm" style={{color: 'black', fontWeight: 'bold'}}>
+          {/* Items Table - Enhanced */}
+          <table className="w-full border-collapse" style={{fontSize: '13px', fontWeight: '700', color: '#000', marginTop: '10px'}}>
             <thead>
-              <tr className="border-b border-black">
-                <th className="text-left py-1 pr-1">Item</th>
-                <th className="text-right py-1 px-2" style={{minWidth: '32px'}}>Qty</th>
-                <th className="text-right py-1 px-2" style={{minWidth: '45px'}}>Price</th>
-                <th className="text-right py-1 pl-2" style={{minWidth: '50px'}}>Amount</th>
+              <tr style={{borderBottom: '2px solid #000'}}>
+                <th className="text-left" style={{paddingTop: '6px', paddingBottom: '6px', paddingRight: '4px', fontWeight: '900'}}>Item</th>
+                <th className="text-right" style={{paddingTop: '6px', paddingBottom: '6px', paddingLeft: '6px', paddingRight: '6px', minWidth: '36px', fontWeight: '900'}}>Qty</th>
+                <th className="text-right" style={{paddingTop: '6px', paddingBottom: '6px', paddingLeft: '6px', paddingRight: '6px', minWidth: '50px', fontWeight: '900'}}>Price</th>
+                <th className="text-right" style={{paddingTop: '6px', paddingBottom: '6px', paddingLeft: '6px', minWidth: '55px', fontWeight: '900'}}>Amount</th>
               </tr>
             </thead>
             <tbody>
               {sale.saleItems.map((item) => (
-                <tr key={item.id} className="border-b border-gray-200 last:border-none">
-                  <td className="py-1 pr-1 align-top">
-                    <div className="font-medium text-gray-900" style={{color: 'black', fontWeight: 'bold'}}>
-                      {/* UPDATED: Show product name before color name */}
+                <tr key={item.id} style={{borderBottom: '1px solid #ddd'}}>
+                  <td style={{paddingTop: '8px', paddingBottom: '8px', paddingRight: '4px', verticalAlign: 'top'}}>
+                    <div style={{fontSize: '13px', fontWeight: '800', color: '#000', lineHeight: '1.4'}}>
                       {item.color.variant.product.productName} - {item.color.colorName}
                     </div>
-                    <div className="text-gray-500 text-xs" style={{color: 'black', fontWeight: 'bold'}}>
+                    <div style={{fontSize: '11px', fontWeight: '700', color: '#333', marginTop: '2px', lineHeight: '1.3'}}>
                       {item.color.colorCode} • {item.color.variant.packingSize}
                     </div>
                   </td>
-                  <td className="text-right py-1 px-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '32px'}}>{item.quantity}</td>
-                  <td className="text-right py-1 px-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '45px'}}>
+                  <td className="text-right" style={{paddingTop: '8px', paddingBottom: '8px', paddingLeft: '6px', paddingRight: '6px', verticalAlign: 'top', fontWeight: '700', minWidth: '36px'}}>
+                    {item.quantity}
+                  </td>
+                  <td className="text-right" style={{paddingTop: '8px', paddingBottom: '8px', paddingLeft: '6px', paddingRight: '6px', verticalAlign: 'top', fontWeight: '700', minWidth: '50px'}}>
                     {Math.round(parseFloat(item.rate))}
                   </td>
-                  <td className="text-right font-semibold py-1 pl-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '50px'}}>
+                  <td className="text-right" style={{paddingTop: '8px', paddingBottom: '8px', paddingLeft: '6px', verticalAlign: 'top', fontWeight: '800', minWidth: '55px'}}>
                     {Math.round(parseFloat(item.subtotal))}
                   </td>
                 </tr>
@@ -463,11 +479,11 @@ export default function BillPrint() {
 
             {/* Footer totals */}
             <tfoot>
-              <tr className="border-t border-black font-semibold">
-                <td className="py-2 text-left" style={{color: 'black', fontWeight: 'bold'}}>
+              <tr style={{borderTop: '2px solid #000'}}>
+                <td className="text-left" style={{paddingTop: '8px', paddingBottom: '8px', fontWeight: '700'}}>
                   {sale.saleItems.length} Item{sale.saleItems.length > 1 ? "s" : ""}
                 </td>
-                <td className="text-right py-2" style={{color: 'black', fontWeight: 'bold'}}>
+                <td className="text-right" style={{paddingTop: '8px', paddingBottom: '8px', fontWeight: '800'}}>
                   {sale.saleItems.reduce((sum, i) => sum + i.quantity, 0)}
                 </td>
                 <td></td>
@@ -476,35 +492,35 @@ export default function BillPrint() {
             </tfoot>
           </table>
 
-          {/* UPDATED: Larger font size for totals */}
-          <div style={{color: 'black', fontWeight: 'bold'}}>
-            <div className="flex flex-col items-end text-right space-y-2 mt-3">
-              <div className="flex justify-between w-48" style={{fontSize: '13px', fontWeight: 'bold'}}>
-                <span className="font-bold w-24 text-right">Total:</span>
-                <span className="w-24 text-right" style={{fontSize: '13px', fontWeight: 'bold'}}>{Math.round(parseFloat(sale.totalAmount))}</span>
+          {/* Totals Section - Larger and Bolder */}
+          <div style={{marginTop: '12px'}}>
+            <div className="flex flex-col items-end text-right" style={{gap: '8px'}}>
+              <div className="flex justify-between" style={{width: '100%', fontSize: '15px', fontWeight: '800', color: '#000'}}>
+                <span>Total:</span>
+                <span>{Math.round(parseFloat(sale.totalAmount))}</span>
               </div>
-              <div className="flex justify-between w-48" style={{fontSize: '13px', fontWeight: 'bold'}}>
-                <span className="w-24 text-right">Paid:</span>
-                <span className="w-24 text-right" style={{fontSize: '13px', fontWeight: 'bold'}}>{Math.round(parseFloat(sale.amountPaid))}</span>
+              <div className="flex justify-between" style={{width: '100%', fontSize: '15px', fontWeight: '800', color: '#000'}}>
+                <span>Paid:</span>
+                <span>{Math.round(parseFloat(sale.amountPaid))}</span>
               </div>
               {outstanding > 0 && (
-                <div className="flex justify-between w-48 font-bold" style={{fontSize: '13px', fontWeight: 'bold'}}>
-                  <span className="w-24 text-right">Balance:</span>
-                  <span className="w-24 text-right" style={{fontSize: '13px', fontWeight: 'bold'}}>{Math.round(outstanding)}</span>
+                <div className="flex justify-between" style={{width: '100%', fontSize: '16px', fontWeight: '900', color: '#000', paddingTop: '4px', borderTop: '1px solid #000'}}>
+                  <span>Balance:</span>
+                  <span>{Math.round(outstanding)}</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* UPDATED FOOTER - Increased font size and bold ICI-DULUX */}
-          <div className="text-center mt-4 border-t border-black pt-2" style={{color: 'black'}}>
-            <p className="text-[11px] mt-1 font-bold uppercase" style={{fontSize: '11px', fontWeight: 'bold'}}>
+          {/* Footer - Bold and Clear */}
+          <div className="text-center" style={{marginTop: '16px', borderTop: '2px solid #000', paddingTop: '10px'}}>
+            <p className="uppercase" style={{fontSize: '12px', fontWeight: '800', marginTop: '4px', color: '#000', letterSpacing: '0.3px'}}>
               {receiptSettings.dealerText}
             </p>
-            <p className="text-[12px] font-bold" style={{fontSize: '12px', fontWeight: 'bold'}}>
+            <p style={{fontSize: '13px', fontWeight: '900', marginTop: '4px', color: '#000', letterSpacing: '0.2px', lineHeight: '1.4'}}>
               {receiptSettings.dealerBrands}
             </p>
-            <p className="text-[12px] mt-3 font-bold" style={{fontSize: '12px', fontWeight: 'bold', marginTop: '8px'}}>
+            <p style={{fontSize: '13px', fontWeight: '700', marginTop: '12px', color: '#000', letterSpacing: '0.3px'}}>
               {receiptSettings.thankYou}
             </p>
           </div>
@@ -568,40 +584,6 @@ export default function BillPrint() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Print CSS - UPDATED FOR BETTER QUALITY */}
-      <style jsx>{`
-        @media print {
-          @page { 
-            size: 82mm auto;
-            margin: 0; /* 🔥 No top/bottom/left/right margin */
-          }
-          body { 
-            margin: 0;
-            padding: 0; /* 🔥 No top padding either */
-            font-family: 'Consolas', 'Lucida Console', 'Courier New', monospace;
-            transform: scale(0.8);
-            transform-origin: top left;
-            width: 125%;
-            font-size: 11px;
-            font-weight: bold;
-            color: black !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          .no-print, dialog, button { 
-            display: none !important; 
-          }
-          * {
-            color: black !important;
-            font-weight: bold;
-          }
-          table {
-            font-weight: bold;
-          }
-        }
-      `}</style>
-
     </>
   );
 }
