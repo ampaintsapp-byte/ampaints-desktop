@@ -67,6 +67,10 @@ type FilterType = {
     max: string;
   };
   daysOverdue: string;
+  dueDate: {
+    from: string;
+    to: string;
+  };
   sortBy: "oldest" | "newest" | "highest" | "lowest" | "name";
 };
 
@@ -79,6 +83,25 @@ export default function UnpaidBills() {
   const [selectedColor, setSelectedColor] = useState<ColorWithVariantAndProduct | null>(null);
   const [quantity, setQuantity] = useState("1");
   const [filterOpen, setFilterOpen] = useState(false);
+  
+  // Manual balance state
+  const [manualBalanceDialogOpen, setManualBalanceDialogOpen] = useState(false);
+  const [manualBalanceForm, setManualBalanceForm] = useState({
+    customerName: "",
+    customerPhone: "",
+    totalAmount: "",
+    dueDate: "",
+    notes: ""
+  });
+  
+  // Due date edit state
+  const [dueDateDialogOpen, setDueDateDialogOpen] = useState(false);
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [dueDateForm, setDueDateForm] = useState({
+    dueDate: "",
+    notes: ""
+  });
+  
   const { toast } = useToast();
 
   const [filters, setFilters] = useState<FilterType>({
@@ -88,6 +111,10 @@ export default function UnpaidBills() {
       max: ""
     },
     daysOverdue: "",
+    dueDate: {
+      from: "",
+      to: ""
+    },
     sortBy: "oldest"
   });
 
@@ -164,6 +191,50 @@ export default function UnpaidBills() {
     },
     onError: () => {
       toast({ title: "Failed to remove product", variant: "destructive" });
+    },
+  });
+
+  const createManualBalanceMutation = useMutation({
+    mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
+      return await apiRequest("POST", "/api/sales/manual-balance", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      toast({ title: "Pending balance added successfully" });
+      setManualBalanceDialogOpen(false);
+      setManualBalanceForm({
+        customerName: "",
+        customerPhone: "",
+        totalAmount: "",
+        dueDate: "",
+        notes: ""
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to add pending balance", variant: "destructive" });
+    },
+  });
+
+  const updateDueDateMutation = useMutation({
+    mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
+      return await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
+        dueDate: data.dueDate || null,
+        notes: data.notes
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      if (selectedSaleId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
+      }
+      toast({ title: "Due date updated successfully" });
+      setDueDateDialogOpen(false);
+      setEditingSaleId(null);
+      setDueDateForm({ dueDate: "", notes: "" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update due date", variant: "destructive" });
     },
   });
 
@@ -420,15 +491,36 @@ export default function UnpaidBills() {
     return filtered;
   }, [consolidatedCustomers, filters]);
 
-  const hasActiveFilters = filters.search || filters.amountRange.min || filters.amountRange.max || filters.daysOverdue;
+  const hasActiveFilters = filters.search || filters.amountRange.min || filters.amountRange.max || filters.daysOverdue || filters.dueDate.from || filters.dueDate.to;
 
   const clearFilters = () => {
     setFilters({
       search: "",
       amountRange: { min: "", max: "" },
       daysOverdue: "",
+      dueDate: { from: "", to: "" },
       sortBy: "oldest"
     });
+  };
+
+  const generateCSVReport = () => {
+    const headers = ['Customer Name', 'Phone', 'Total Amount', 'Paid', 'Outstanding', 'Days Overdue', 'Bills Count'];
+    const rows = filteredAndSortedCustomers.map((customer: ConsolidatedCustomer) => [
+      customer.customerName,
+      customer.customerPhone,
+      Math.round(customer.totalAmount),
+      Math.round(customer.totalPaid),
+      Math.round(customer.totalOutstanding),
+      customer.daysOverdue,
+      customer.bills.length
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row: (string | number)[]) => row.join(','))
+    ].join('\n');
+    
+    return csvContent;
   };
 
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
@@ -445,6 +537,37 @@ export default function UnpaidBills() {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Add Pending Balance Button */}
+          <Button 
+            variant="default" 
+            onClick={() => setManualBalanceDialogOpen(true)}
+            className="flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Add Pending Balance
+          </Button>
+
+          {/* Export Button */}
+          <Button 
+            variant="outline" 
+            onClick={() => {
+              // Export functionality
+              const csvContent = generateCSVReport();
+              const blob = new Blob([csvContent], { type: 'text/csv' });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `unpaid-bills-${new Date().toISOString().split('T')[0]}.csv`;
+              a.click();
+              window.URL.revokeObjectURL(url);
+              toast({ title: "Report exported successfully" });
+            }}
+            className="flex items-center gap-2"
+          >
+            <Printer className="h-4 w-4" />
+            Export
+          </Button>
+
           {/* Search Input */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1004,6 +1127,152 @@ export default function UnpaidBills() {
                 data-testid="button-confirm-add-product"
               >
                 {addItemMutation.isPending ? "Adding..." : "Add Product"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Balance Dialog */}
+      <Dialog open={manualBalanceDialogOpen} onOpenChange={setManualBalanceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Pending Balance</DialogTitle>
+            <DialogDescription>
+              Add a pending balance for a customer without creating a sale from POS
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="customerName">Customer Name</Label>
+              <Input
+                id="customerName"
+                placeholder="Enter customer name"
+                value={manualBalanceForm.customerName}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customerPhone">Customer Phone</Label>
+              <Input
+                id="customerPhone"
+                placeholder="Enter phone number"
+                value={manualBalanceForm.customerPhone}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="totalAmount">Amount</Label>
+              <Input
+                id="totalAmount"
+                type="number"
+                placeholder="Enter amount"
+                value={manualBalanceForm.totalAmount}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, totalAmount: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dueDate">Due Date (Optional)</Label>
+              <Input
+                id="dueDate"
+                type="date"
+                value={manualBalanceForm.dueDate}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, dueDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Input
+                id="notes"
+                placeholder="Add notes about this balance"
+                value={manualBalanceForm.notes}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setManualBalanceDialogOpen(false);
+                  setManualBalanceForm({
+                    customerName: "",
+                    customerPhone: "",
+                    totalAmount: "",
+                    dueDate: "",
+                    notes: ""
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!manualBalanceForm.customerName || !manualBalanceForm.customerPhone || !manualBalanceForm.totalAmount) {
+                    toast({ title: "Please fill all required fields", variant: "destructive" });
+                    return;
+                  }
+                  createManualBalanceMutation.mutate(manualBalanceForm);
+                }}
+                disabled={createManualBalanceMutation.isPending}
+              >
+                {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Due Date Edit Dialog */}
+      <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Due Date</DialogTitle>
+            <DialogDescription>
+              Set or update the payment due date for this bill
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="editDueDate">Due Date</Label>
+              <Input
+                id="editDueDate"
+                type="date"
+                value={dueDateForm.dueDate}
+                onChange={(e) => setDueDateForm(prev => ({ ...prev, dueDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editNotes">Notes (Optional)</Label>
+              <Input
+                id="editNotes"
+                placeholder="Add notes about the due date"
+                value={dueDateForm.notes}
+                onChange={(e) => setDueDateForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDueDateDialogOpen(false);
+                  setEditingSaleId(null);
+                  setDueDateForm({ dueDate: "", notes: "" });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!editingSaleId) return;
+                  updateDueDateMutation.mutate({
+                    saleId: editingSaleId,
+                    dueDate: dueDateForm.dueDate || undefined,
+                    notes: dueDateForm.notes || undefined
+                  });
+                }}
+                disabled={updateDueDateMutation.isPending}
+              >
+                {updateDueDateMutation.isPending ? "Updating..." : "Update Due Date"}
               </Button>
             </div>
           </div>
