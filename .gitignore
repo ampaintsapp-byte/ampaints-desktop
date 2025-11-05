@@ -9,8 +9,10 @@ lerna-debug.log*
 # Build outputs
 dist/
 dist-electron/
-build/
 *.local
+
+# Note: build/ folder contains application assets (icon.ico)
+# and should be included in version control for desktop builds
 
 # Environment variables
 .env
