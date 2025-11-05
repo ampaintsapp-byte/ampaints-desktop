@@ -143,6 +143,21 @@ export default function StockManagement() {
   const [stockInSearchQuery, setStockInSearchQuery] = useState("");
   const [selectedColorForStockIn, setSelectedColorForStockIn] = useState<ColorWithVariantAndProduct | null>(null);
 
+  /* Advanced filters state */
+  const [productCompanyFilter, setProductCompanyFilter] = useState("");
+  const [variantCompanyFilter, setVariantCompanyFilter] = useState("");
+  const [variantProductFilter, setVariantProductFilter] = useState("");
+  const [variantSizeFilter, setVariantSizeFilter] = useState("");
+  const [colorCompanyFilter, setColorCompanyFilter] = useState("");
+  const [colorProductFilter, setColorProductFilter] = useState("");
+  const [colorSizeFilter, setColorSizeFilter] = useState("");
+  const [colorStockStatusFilter, setColorStockStatusFilter] = useState("");
+
+  /* Multi-select state */
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [selectedVariants, setSelectedVariants] = useState<Set<string>>(new Set());
+  const [selectedColors, setSelectedColors] = useState<Set<string>>(new Set());
+
   /* -------------------------
      Queries
      ------------------------- */
@@ -160,7 +175,7 @@ export default function StockManagement() {
 
   /* Useful derived lists */
   const companies = useMemo(() => {
-    const unique = [...new Set(products.map(p => p.company))];
+    const unique = Array.from(new Set(products.map(p => p.company)));
     return unique.sort();
   }, [products]);
 
@@ -210,6 +225,33 @@ export default function StockManagement() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickColors.length]);
+
+  /* -------------------------
+     Populate edit forms when editing
+     ------------------------- */
+  useEffect(() => {
+    if (editingProduct) {
+      productForm.setValue("company", editingProduct.company);
+      productForm.setValue("productName", editingProduct.productName);
+    }
+  }, [editingProduct, productForm]);
+
+  useEffect(() => {
+    if (editingVariant) {
+      variantForm.setValue("productId", editingVariant.productId);
+      variantForm.setValue("packingSize", editingVariant.packingSize);
+      variantForm.setValue("rate", editingVariant.rate);
+    }
+  }, [editingVariant, variantForm]);
+
+  useEffect(() => {
+    if (editingColor) {
+      colorForm.setValue("variantId", editingColor.variantId);
+      colorForm.setValue("colorName", editingColor.colorName);
+      colorForm.setValue("colorCode", editingColor.colorCode);
+      colorForm.setValue("stockQuantity", String(editingColor.stockQuantity));
+    }
+  }, [editingColor, colorForm]);
 
   /* -------------------------
      Mutations
@@ -263,6 +305,22 @@ export default function StockManagement() {
     },
   });
 
+  const bulkDeleteProductsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map(id => apiRequest("DELETE", `/api/products/${id}`)));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      setSelectedProducts(new Set());
+      toast({ title: "Products deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete products", variant: "destructive" });
+    },
+  });
+
   const createVariantSingleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof variantFormSchema>) => {
       const res = await apiRequest("POST", "/api/variants", { ...data, rate: parseFloat(data.rate) });
@@ -309,6 +367,21 @@ export default function StockManagement() {
     },
     onError: () => {
       toast({ title: "Failed to delete variant", variant: "destructive" });
+    },
+  });
+
+  const bulkDeleteVariantsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map(id => apiRequest("DELETE", `/api/variants/${id}`)));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      setSelectedVariants(new Set());
+      toast({ title: "Variants deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete variants", variant: "destructive" });
     },
   });
 
@@ -364,6 +437,21 @@ export default function StockManagement() {
     },
   });
 
+  const bulkDeleteColorsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map(id => apiRequest("DELETE", `/api/colors/${id}`)));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      setSelectedColors(new Set());
+      toast({ title: "Colors deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete colors", variant: "destructive" });
+    },
+  });
+
   /* Quick Add bulk mutations (used by wizard) */
   const createProductMutation = useMutation({
     mutationFn: async (data: { company: string; productName: string }) => {
@@ -413,12 +501,46 @@ export default function StockManagement() {
     return <Badge variant="default">In Stock</Badge>;
   };
 
+  /* -------------------------
+     Advanced filtering
+     ------------------------- */
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+      if (productCompanyFilter && p.company !== productCompanyFilter) return false;
+      return true;
+    });
+  }, [products, productCompanyFilter]);
+
+  const filteredVariants = useMemo(() => {
+    return variantsData.filter(v => {
+      if (variantCompanyFilter && v.product.company !== variantCompanyFilter) return false;
+      if (variantProductFilter && v.product.productName !== variantProductFilter) return false;
+      if (variantSizeFilter && v.packingSize !== variantSizeFilter) return false;
+      return true;
+    });
+  }, [variantsData, variantCompanyFilter, variantProductFilter, variantSizeFilter]);
+
   const filteredColors = useMemo(() => {
+    let filtered = colorsData;
+
+    // Apply advanced filters first
+    filtered = filtered.filter(c => {
+      if (colorCompanyFilter && c.variant.product.company !== colorCompanyFilter) return false;
+      if (colorProductFilter && c.variant.product.productName !== colorProductFilter) return false;
+      if (colorSizeFilter && c.variant.packingSize !== colorSizeFilter) return false;
+      if (colorStockStatusFilter) {
+        if (colorStockStatusFilter === "out" && c.stockQuantity !== 0) return false;
+        if (colorStockStatusFilter === "low" && (c.stockQuantity === 0 || c.stockQuantity >= 10)) return false;
+        if (colorStockStatusFilter === "in" && c.stockQuantity < 10) return false;
+      }
+      return true;
+    });
+
     const query = colorSearchQuery.trim().toUpperCase();
     const queryLower = query.toLowerCase();
-    if (!query) return colorsData;
+    if (!query) return filtered;
 
-    return colorsData
+    return filtered
       .map((color) => {
         let score = 0;
         const colorCode = color.colorCode.trim().toUpperCase();
@@ -446,7 +568,7 @@ export default function StockManagement() {
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
       .map(({ color }) => color);
-  }, [colorsData, colorSearchQuery]);
+  }, [colorsData, colorSearchQuery, colorCompanyFilter, colorProductFilter, colorSizeFilter, colorStockStatusFilter]);
 
   const filteredColorsForStockIn = useMemo(() => {
     const query = stockInSearchQuery.trim().toUpperCase();
@@ -902,60 +1024,127 @@ export default function StockManagement() {
               ) : products.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No products found. Add your first product to get started.</div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Product Name</TableHead>
-                      <TableHead>Variants</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {products.map(product => {
-                      const productVariants = variantsData.filter(v => v.productId === product.id);
-                      return (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-medium">{product.company}</TableCell>
-                          <TableCell>{product.productName}</TableCell>
-                          <TableCell><Badge variant="outline">{productVariants.length} variants</Badge></TableCell>
-                          <TableCell className="text-muted-foreground">{new Date(product.createdAt).toLocaleDateString()}</TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => setViewingProduct(product)}>
-                                  <Eye className="h-4 w-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setEditingProduct(product)}>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  className="text-destructive"
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you want to delete "${product.productName}"? This will also delete all associated variants and colors.`)) {
-                                      deleteProductMutation.mutate(product.id);
-                                    }
-                                  }}
-                                >
-                                  <Trash className="h-4 w-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="space-y-4">
+                  {/* Filters */}
+                  <div className="flex gap-2 items-end flex-wrap">
+                    <div className="flex-1 min-w-[200px]">
+                      <Label className="text-xs">Filter by Company</Label>
+                      <Select value={productCompanyFilter} onValueChange={setProductCompanyFilter}>
+                        <SelectTrigger><SelectValue placeholder="All Companies" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Companies</SelectItem>
+                          {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {productCompanyFilter && (
+                      <Button variant="outline" size="sm" onClick={() => setProductCompanyFilter("")}>Clear Filters</Button>
+                    )}
+                  </div>
+
+                  {/* Bulk Actions */}
+                  {selectedProducts.size > 0 && (
+                    <div className="flex gap-2 items-center p-3 bg-muted rounded-lg">
+                      <span className="text-sm font-medium">{selectedProducts.size} selected</span>
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={() => {
+                          if (confirm(`Delete ${selectedProducts.size} selected product(s)? This will also delete all associated variants and colors.`)) {
+                            bulkDeleteProductsMutation.mutate(Array.from(selectedProducts));
+                          }
+                        }}
+                      >
+                        <Trash className="h-4 w-4 mr-1" /> Delete Selected
+                      </Button>
+                    </div>
+                  )}
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[50px]">
+                          <input
+                            type="checkbox"
+                            checked={filteredProducts.length > 0 && selectedProducts.size === filteredProducts.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedProducts(new Set(filteredProducts.map(p => p.id)));
+                              } else {
+                                setSelectedProducts(new Set());
+                              }
+                            }}
+                            className="h-4 w-4"
+                          />
+                        </TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead>Product Name</TableHead>
+                        <TableHead>Variants</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead className="w-[100px]">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredProducts.map(product => {
+                        const productVariants = variantsData.filter(v => v.productId === product.id);
+                        return (
+                          <TableRow key={product.id}>
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={selectedProducts.has(product.id)}
+                                onChange={(e) => {
+                                  const newSet = new Set(selectedProducts);
+                                  if (e.target.checked) {
+                                    newSet.add(product.id);
+                                  } else {
+                                    newSet.delete(product.id);
+                                  }
+                                  setSelectedProducts(newSet);
+                                }}
+                                className="h-4 w-4"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{product.company}</TableCell>
+                            <TableCell>{product.productName}</TableCell>
+                            <TableCell><Badge variant="outline">{productVariants.length} variants</Badge></TableCell>
+                            <TableCell className="text-muted-foreground">{new Date(product.createdAt).toLocaleDateString()}</TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => setViewingProduct(product)}>
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    View Details
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setEditingProduct(product)}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    className="text-destructive"
+                                    onClick={() => {
+                                      if (confirm(`Are you sure you want to delete "${product.productName}"? This will also delete all associated variants and colors.`)) {
+                                        deleteProductMutation.mutate(product.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1021,62 +1210,153 @@ export default function StockManagement() {
               ) : variantsData.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No variants found. Add a product first, then create variants.</div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Packing Size</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead>Colors</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {variantsData.map(variant => {
-                      const variantColors = colorsData.filter(c => c.variantId === variant.id);
-                      return (
-                        <TableRow key={variant.id}>
-                          <TableCell className="font-medium">{variant.product.company}</TableCell>
-                          <TableCell>{variant.product.productName}</TableCell>
-                          <TableCell>{variant.packingSize}</TableCell>
-                          <TableCell>Rs. {Math.round(parseFloat(variant.rate))}</TableCell>
-                          <TableCell><Badge variant="outline">{variantColors.length} colors</Badge></TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => setViewingVariant(variant)}>
-                                  <Eye className="h-4 w-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setEditingVariant(variant)}>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  className="text-destructive"
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you want to delete "${variant.packingSize}" variant? This will also delete all associated colors.`)) {
-                                      deleteVariantMutation.mutate(variant.id);
-                                    }
-                                  }}
-                                >
-                                  <Trash className="h-4 w-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="space-y-4">
+                  {/* Filters */}
+                  <div className="flex gap-2 items-end flex-wrap">
+                    <div className="flex-1 min-w-[150px]">
+                      <Label className="text-xs">Company</Label>
+                      <Select value={variantCompanyFilter} onValueChange={setVariantCompanyFilter}>
+                        <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Companies</SelectItem>
+                          {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 min-w-[150px]">
+                      <Label className="text-xs">Product</Label>
+                      <Select value={variantProductFilter} onValueChange={setVariantProductFilter}>
+                        <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Products</SelectItem>
+                          {Array.from(new Set(variantsData.map(v => v.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 min-w-[150px]">
+                      <Label className="text-xs">Packing Size</Label>
+                      <Select value={variantSizeFilter} onValueChange={setVariantSizeFilter}>
+                        <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Sizes</SelectItem>
+                          {Array.from(new Set(variantsData.map(v => v.packingSize))).sort().map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {(variantCompanyFilter || variantProductFilter || variantSizeFilter) && (
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setVariantCompanyFilter("");
+                        setVariantProductFilter("");
+                        setVariantSizeFilter("");
+                      }}>Clear Filters</Button>
+                    )}
+                  </div>
+
+                  {/* Bulk Actions */}
+                  {selectedVariants.size > 0 && (
+                    <div className="flex gap-2 items-center p-3 bg-muted rounded-lg">
+                      <span className="text-sm font-medium">{selectedVariants.size} selected</span>
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={() => {
+                          if (confirm(`Delete ${selectedVariants.size} selected variant(s)? This will also delete all associated colors.`)) {
+                            bulkDeleteVariantsMutation.mutate(Array.from(selectedVariants));
+                          }
+                        }}
+                      >
+                        <Trash className="h-4 w-4 mr-1" /> Delete Selected
+                      </Button>
+                    </div>
+                  )}
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[50px]">
+                          <input
+                            type="checkbox"
+                            checked={filteredVariants.length > 0 && selectedVariants.size === filteredVariants.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedVariants(new Set(filteredVariants.map(v => v.id)));
+                              } else {
+                                setSelectedVariants(new Set());
+                              }
+                            }}
+                            className="h-4 w-4"
+                          />
+                        </TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead>Packing Size</TableHead>
+                        <TableHead>Rate</TableHead>
+                        <TableHead>Colors</TableHead>
+                        <TableHead className="w-[100px]">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredVariants.map(variant => {
+                        const variantColors = colorsData.filter(c => c.variantId === variant.id);
+                        return (
+                          <TableRow key={variant.id}>
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={selectedVariants.has(variant.id)}
+                                onChange={(e) => {
+                                  const newSet = new Set(selectedVariants);
+                                  if (e.target.checked) {
+                                    newSet.add(variant.id);
+                                  } else {
+                                    newSet.delete(variant.id);
+                                  }
+                                  setSelectedVariants(newSet);
+                                }}
+                                className="h-4 w-4"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{variant.product.company}</TableCell>
+                            <TableCell>{variant.product.productName}</TableCell>
+                            <TableCell>{variant.packingSize}</TableCell>
+                            <TableCell>Rs. {Math.round(parseFloat(variant.rate))}</TableCell>
+                            <TableCell><Badge variant="outline">{variantColors.length} colors</Badge></TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => setViewingVariant(variant)}>
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    View Details
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setEditingVariant(variant)}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    className="text-destructive"
+                                    onClick={() => {
+                                      if (confirm(`Are you sure you want to delete "${variant.packingSize}" variant? This will also delete all associated colors.`)) {
+                                        deleteVariantMutation.mutate(variant.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1142,13 +1422,6 @@ export default function StockManagement() {
             </CardHeader>
 
             <CardContent className="space-y-4">
-              {!colorsLoading && colorsData.length > 0 && (
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Search by color code, name, product, company..." value={colorSearchQuery} onChange={e => setColorSearchQuery(e.target.value)} className="pl-9" />
-                </div>
-              )}
-
               {colorsLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-10 w-full" />
@@ -1156,68 +1429,182 @@ export default function StockManagement() {
                 </div>
               ) : colorsData.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">No colors found. Add a variant first, then add colors with inventory.</div>
-              ) : filteredColors.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">No colors found matching "{colorSearchQuery}"</div>
               ) : (
-                <div className="space-y-2">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Company</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Size</TableHead>
-                        <TableHead>Color Name</TableHead>
-                        <TableHead>Color Code</TableHead>
-                        <TableHead>Stock</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="w-[100px]">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredColors.map(color => (
-                        <TableRow key={color.id}>
-                          <TableCell className="font-medium">{color.variant.product.company}</TableCell>
-                          <TableCell>{color.variant.product.productName}</TableCell>
-                          <TableCell>{color.variant.packingSize}</TableCell>
-                          <TableCell>{color.colorName}</TableCell>
-                          <TableCell><Badge variant="outline">{color.colorCode}</Badge></TableCell>
-                          <TableCell>{color.stockQuantity}</TableCell>
-                          <TableCell>{getStockBadge(color.stockQuantity)}</TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => setViewingColor(color)}>
-                                  <Eye className="h-4 w-4 mr-2" />
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setEditingColor(color)}>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  className="text-destructive"
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you want to delete "${color.colorName}" (${color.colorCode})?`)) {
-                                      deleteColorMutation.mutate(color.id);
+                <div className="space-y-4">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input placeholder="Search by color code, name, product, company..." value={colorSearchQuery} onChange={e => setColorSearchQuery(e.target.value)} className="pl-9" />
+                  </div>
+
+                  {/* Advanced Filters */}
+                  <div className="flex gap-2 items-end flex-wrap">
+                    <div className="flex-1 min-w-[140px]">
+                      <Label className="text-xs">Company</Label>
+                      <Select value={colorCompanyFilter} onValueChange={setColorCompanyFilter}>
+                        <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Companies</SelectItem>
+                          {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 min-w-[140px]">
+                      <Label className="text-xs">Product</Label>
+                      <Select value={colorProductFilter} onValueChange={setColorProductFilter}>
+                        <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Products</SelectItem>
+                          {Array.from(new Set(colorsData.map(c => c.variant.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 min-w-[120px]">
+                      <Label className="text-xs">Size</Label>
+                      <Select value={colorSizeFilter} onValueChange={setColorSizeFilter}>
+                        <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Sizes</SelectItem>
+                          {Array.from(new Set(colorsData.map(c => c.variant.packingSize))).sort().map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 min-w-[120px]">
+                      <Label className="text-xs">Stock Status</Label>
+                      <Select value={colorStockStatusFilter} onValueChange={setColorStockStatusFilter}>
+                        <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Status</SelectItem>
+                          <SelectItem value="out">Out of Stock</SelectItem>
+                          <SelectItem value="low">Low Stock</SelectItem>
+                          <SelectItem value="in">In Stock</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {(colorCompanyFilter || colorProductFilter || colorSizeFilter || colorStockStatusFilter) && (
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setColorCompanyFilter("");
+                        setColorProductFilter("");
+                        setColorSizeFilter("");
+                        setColorStockStatusFilter("");
+                      }}>Clear Filters</Button>
+                    )}
+                  </div>
+
+                  {/* Bulk Actions */}
+                  {selectedColors.size > 0 && (
+                    <div className="flex gap-2 items-center p-3 bg-muted rounded-lg">
+                      <span className="text-sm font-medium">{selectedColors.size} selected</span>
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={() => {
+                          if (confirm(`Delete ${selectedColors.size} selected color(s)?`)) {
+                            bulkDeleteColorsMutation.mutate(Array.from(selectedColors));
+                          }
+                        }}
+                      >
+                        <Trash className="h-4 w-4 mr-1" /> Delete Selected
+                      </Button>
+                    </div>
+                  )}
+
+                  {filteredColors.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">No colors found matching your filters</div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[50px]">
+                              <input
+                                type="checkbox"
+                                checked={filteredColors.length > 0 && selectedColors.size === filteredColors.length}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedColors(new Set(filteredColors.map(c => c.id)));
+                                  } else {
+                                    setSelectedColors(new Set());
+                                  }
+                                }}
+                                className="h-4 w-4"
+                              />
+                            </TableHead>
+                            <TableHead>Company</TableHead>
+                            <TableHead>Product</TableHead>
+                            <TableHead>Size</TableHead>
+                            <TableHead>Color Name</TableHead>
+                            <TableHead>Color Code</TableHead>
+                            <TableHead>Stock</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="w-[100px]">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredColors.map(color => (
+                            <TableRow key={color.id}>
+                              <TableCell>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedColors.has(color.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedColors);
+                                    if (e.target.checked) {
+                                      newSet.add(color.id);
+                                    } else {
+                                      newSet.delete(color.id);
                                     }
+                                    setSelectedColors(newSet);
                                   }}
-                                >
-                                  <Trash className="h-4 w-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  {colorSearchQuery && <p className="text-xs text-muted-foreground text-center">Showing {filteredColors.length} of {colorsData.length} colors</p>}
+                                  className="h-4 w-4"
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">{color.variant.product.company}</TableCell>
+                              <TableCell>{color.variant.product.productName}</TableCell>
+                              <TableCell>{color.variant.packingSize}</TableCell>
+                              <TableCell>{color.colorName}</TableCell>
+                              <TableCell><Badge variant="outline">{color.colorCode}</Badge></TableCell>
+                              <TableCell>{color.stockQuantity}</TableCell>
+                              <TableCell>{getStockBadge(color.stockQuantity)}</TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => setViewingColor(color)}>
+                                      <Eye className="h-4 w-4 mr-2" />
+                                      View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => setEditingColor(color)}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      className="text-destructive"
+                                      onClick={() => {
+                                        if (confirm(`Are you sure you want to delete "${color.colorName}" (${color.colorCode})?`)) {
+                                          deleteColorMutation.mutate(color.id);
+                                        }
+                                      }}
+                                    >
+                                      <Trash className="h-4 w-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      {(colorSearchQuery || colorCompanyFilter || colorProductFilter || colorSizeFilter || colorStockStatusFilter) && (
+                        <p className="text-xs text-muted-foreground text-center">Showing {filteredColors.length} of {colorsData.length} colors</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
