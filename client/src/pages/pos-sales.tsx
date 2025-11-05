@@ -626,15 +626,15 @@ export default function POSSales() {
                   <Button
                     className="w-full h-12 bg-gray-900 hover:bg-gray-800 text-white font-semibold shadow-lg transition-all duration-200"
                     onClick={() => handleCompleteSale(true)}
-                    disabled={createSaleMutation.isLoading || cart.length === 0}
+                    disabled={createSaleMutation.isPending || cart.length === 0}
                   >
-                    {createSaleMutation.isLoading ? "Processing..." : "Complete Sale (Ctrl+P)"}
+                    {createSaleMutation.isPending ? "Processing..." : "Complete Sale (Ctrl+P)"}
                   </Button>
                   <Button
                     variant="outline"
                     className="w-full h-12 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 font-semibold transition-all duration-200"
                     onClick={() => handleCompleteSale(false)}
-                    disabled={createSaleMutation.isLoading || cart.length === 0}
+                    disabled={createSaleMutation.isPending || cart.length === 0}
                   >
                     Create Bill (Ctrl+B)
                   </Button>
