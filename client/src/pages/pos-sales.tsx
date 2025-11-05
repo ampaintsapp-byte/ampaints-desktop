@@ -714,25 +714,25 @@ export default function POSSales() {
                           </div>
                         </div>
 
-                        {/* One Line: Packing Size, Color Code, Color Name */}
+                        {/* One Line: Color Code, Color Name, Packing Size */}
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm uppercase">
                             {color.colorCode}
                           </Badge>
-                          <div className="text-sm font-semibold text-gray-900 uppercase">
-                            {color.variant.packingSize}
-                          </div>
                           <div className="text-sm text-gray-700 font-medium uppercase truncate flex-1">
                             {color.colorName}
                           </div>
+                          <div className="text-sm font-semibold text-gray-900 uppercase">
+                            {color.variant.packingSize}
+                          </div>
                         </div>
 
-                        {/* Price & Stock Row */}
+                        {/* Stock (Left) & Price (Right) Row */}
                         <div className="flex items-center justify-between pt-2 border-t">
+                          <StockQuantity stock={color.stockQuantity} />
                           <div className="text-xl font-bold text-blue-600">
                             Rs. {Math.round(parseFloat(color.variant.rate))}
                           </div>
-                          <StockQuantity stock={color.stockQuantity} />
                         </div>
 
                         {/* Bottom: Add to Cart Button */}
