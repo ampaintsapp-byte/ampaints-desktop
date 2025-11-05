@@ -25,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import ThermalReceipt from "@/components/thermal-receipt";
 
 export default function BillPrint() {
   const [, params] = useRoute("/bill/:id");
@@ -414,102 +415,8 @@ export default function BillPrint() {
         </Card>
       </div>
 
-      {/* PRINT ONLY: Thermal Receipt - UPDATED WITH PRODUCT NAME AND LARGER FONT FOR TOTALS */}
-      <div className="hidden print:block font-mono text-xs leading-tight">
-        <div className="w-[80mm] mx-auto bg-white" style={{padding: '8px 12px 12px 12px'}}>
-          <div className="text-center">
-            <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black'}}>{receiptSettings.businessName}</h1>
-            <p style={{color: 'black', fontWeight: 'bold'}}>{receiptSettings.address}</p>
-          </div>
-
-          <div className="my-3 border-t border-dotted border-black pt-2" style={{color: 'black'}}>
-            <p className="mt-2" style={{fontWeight: 'bold'}}>Invoice: {sale.id.slice(0, 8).toUpperCase()}</p>
-            <p style={{fontWeight: 'bold'}}>{formatDate(sale.createdAt)} {new Date(sale.createdAt).toLocaleTimeString()}</p>
-            <p style={{fontWeight: 'bold'}}>Customer: {sale.customerName}</p>
-            <p style={{fontWeight: 'bold'}}>Phone: {sale.customerPhone}</p>
-          </div>
-
-          <table className="w-full border-collapse text-sm" style={{color: 'black', fontWeight: 'bold'}}>
-            <thead>
-              <tr className="border-b border-black">
-                <th className="text-left py-1 pr-1">Item</th>
-                <th className="text-right py-1 px-2" style={{minWidth: '32px'}}>Qty</th>
-                <th className="text-right py-1 px-2" style={{minWidth: '45px'}}>Price</th>
-                <th className="text-right py-1 pl-2" style={{minWidth: '50px'}}>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sale.saleItems.map((item) => (
-                <tr key={item.id} className="border-b border-gray-200 last:border-none">
-                  <td className="py-1 pr-1 align-top">
-                    <div className="font-medium text-gray-900" style={{color: 'black', fontWeight: 'bold'}}>
-                      {/* UPDATED: Show product name before color name */}
-                      {item.color.variant.product.productName} - {item.color.colorName}
-                    </div>
-                    <div className="text-gray-500 text-xs" style={{color: 'black', fontWeight: 'bold'}}>
-                      {item.color.colorCode} • {item.color.variant.packingSize}
-                    </div>
-                  </td>
-                  <td className="text-right py-1 px-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '32px'}}>{item.quantity}</td>
-                  <td className="text-right py-1 px-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '45px'}}>
-                    {Math.round(parseFloat(item.rate))}
-                  </td>
-                  <td className="text-right font-semibold py-1 pl-2 align-top" style={{color: 'black', fontWeight: 'bold', minWidth: '50px'}}>
-                    {Math.round(parseFloat(item.subtotal))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-
-            {/* Footer totals */}
-            <tfoot>
-              <tr className="border-t border-black font-semibold">
-                <td className="py-2 text-left" style={{color: 'black', fontWeight: 'bold'}}>
-                  {sale.saleItems.length} Item{sale.saleItems.length > 1 ? "s" : ""}
-                </td>
-                <td className="text-right py-2" style={{color: 'black', fontWeight: 'bold'}}>
-                  {sale.saleItems.reduce((sum, i) => sum + i.quantity, 0)}
-                </td>
-                <td></td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-
-          {/* UPDATED: Larger font size for totals */}
-          <div style={{color: 'black', fontWeight: 'bold'}}>
-            <div className="flex flex-col items-end text-right space-y-2 mt-3">
-              <div className="flex justify-between w-48" style={{fontSize: '13px', fontWeight: 'bold'}}>
-                <span className="font-bold w-24 text-right">Total:</span>
-                <span className="w-24 text-right" style={{fontSize: '13px', fontWeight: 'bold'}}>{Math.round(parseFloat(sale.totalAmount))}</span>
-              </div>
-              <div className="flex justify-between w-48" style={{fontSize: '13px', fontWeight: 'bold'}}>
-                <span className="w-24 text-right">Paid:</span>
-                <span className="w-24 text-right" style={{fontSize: '13px', fontWeight: 'bold'}}>{Math.round(parseFloat(sale.amountPaid))}</span>
-              </div>
-              {outstanding > 0 && (
-                <div className="flex justify-between w-48 font-bold" style={{fontSize: '13px', fontWeight: 'bold'}}>
-                  <span className="w-24 text-right">Balance:</span>
-                  <span className="w-24 text-right" style={{fontSize: '13px', fontWeight: 'bold'}}>{Math.round(outstanding)}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* UPDATED FOOTER - Increased font size and bold ICI-DULUX */}
-          <div className="text-center mt-4 border-t border-black pt-2" style={{color: 'black'}}>
-            <p className="text-[11px] mt-1 font-bold uppercase" style={{fontSize: '11px', fontWeight: 'bold'}}>
-              {receiptSettings.dealerText}
-            </p>
-            <p className="text-[12px] font-bold" style={{fontSize: '12px', fontWeight: 'bold'}}>
-              {receiptSettings.dealerBrands}
-            </p>
-            <p className="text-[12px] mt-3 font-bold" style={{fontSize: '12px', fontWeight: 'bold', marginTop: '8px'}}>
-              {receiptSettings.thankYou}
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* PRINT ONLY: Thermal Receipt */}
+      <ThermalReceipt sale={sale} receiptSettings={receiptSettings} />
 
       {/* Delete Bill Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -570,7 +477,7 @@ export default function BillPrint() {
       </Dialog>
 
       {/* Print CSS - UPDATED FOR BETTER QUALITY */}
-      <style jsx>{`
+      <style>{`
         @media print {
           @page { 
             size: 82mm auto;

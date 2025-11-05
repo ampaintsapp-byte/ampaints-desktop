@@ -101,6 +101,7 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
 ├── client/                 # Frontend React application
 │   ├── src/
 │   │   ├── components/    # React components (UI & custom)
+│   │   │   └── thermal-receipt.tsx  # Thermal receipt print component
 │   │   ├── pages/         # Page components (Dashboard, POS, Sales, etc.)
 │   │   ├── hooks/         # Custom React hooks
 │   │   └── lib/           # Utilities and query client
