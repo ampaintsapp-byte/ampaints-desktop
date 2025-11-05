@@ -26,6 +26,12 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
   - Added bulk delete operations with "Select All" capability and confirmation dialogs
   - Fixed edit forms to properly populate with existing data using useEffect hooks
   - All filters work in combination and use memoized filtering for optimal performance
+- **Unpaid Bills Enhancements (Backend Complete):**
+  - Added `dueDate`, `isManualBalance`, and `notes` fields to sales schema
+  - Created API endpoint for adding manual pending balances without sale items
+  - Created API endpoint for updating due dates on unpaid bills
+  - Database migration applied successfully for new fields
+  - Backend ready for UI implementation (in progress)
 
 ## Project Architecture
 
@@ -70,7 +76,10 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
 - **products**: Company and product names
 - **variants**: Packing sizes and rates for each product
 - **colors**: Color codes and stock quantities for each variant
-- **sales**: Transaction records with payment status
+- **sales**: Transaction records with payment status, due dates, and manual balance tracking
+  - `dueDate`: Payment due date (nullable)
+  - `isManualBalance`: Boolean flag for manually added balances (not from POS)
+  - `notes`: Optional notes for manual balances or due dates
 - **sale_items**: Individual items in each sale
 
 ## Development
