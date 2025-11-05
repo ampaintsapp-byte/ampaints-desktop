@@ -21,12 +21,12 @@ export default function ThermalReceipt({ sale, receiptSettings }: ThermalReceipt
 
   return (
     <div className="hidden print:block font-mono text-xs leading-tight">
-      <div className="w-[80mm] mx-auto bg-white" style={{padding: '8px 12px 12px 12px'}}>
+      <div className="w-[80mm] mx-auto bg-white" style={{padding: '0 12px 12px 12px'}}>
         <div className="text-center">
-          <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black'}}>
+          <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black', marginTop: '0', paddingTop: '0'}}>
             {receiptSettings.businessName}
           </h1>
-          <p style={{color: 'black', fontWeight: 'bold'}}>{receiptSettings.address}</p>
+          <p style={{color: 'black', fontWeight: 'bold', marginTop: '2px'}}>{receiptSettings.address}</p>
         </div>
 
         <div className="my-3 border-t border-dotted border-black pt-2" style={{color: 'black'}}>

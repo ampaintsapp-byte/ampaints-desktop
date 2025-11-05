@@ -476,35 +476,44 @@ export default function BillPrint() {
         </DialogContent>
       </Dialog>
 
-      {/* Print CSS - UPDATED FOR BETTER QUALITY */}
+      {/* Print CSS - HIGH QUALITY THERMAL PRINT */}
       <style>{`
         @media print {
           @page { 
-            size: 82mm auto;
-            margin: 0; /* 🔥 No top/bottom/left/right margin */
+            size: 80mm auto;
+            margin: 0;
           }
           body { 
             margin: 0;
-            padding: 0; /* 🔥 No top padding either */
-            font-family: 'Consolas', 'Lucida Console', 'Courier New', monospace;
-            transform: scale(0.8);
-            transform-origin: top left;
-            width: 125%;
+            padding: 0;
+            font-family: 'Courier New', 'Consolas', monospace;
             font-size: 11px;
             font-weight: bold;
-            color: black !important;
+            color: #000 !important;
+            background: white;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+          }
+          html {
+            margin: 0;
+            padding: 0;
           }
           .no-print, dialog, button { 
             display: none !important; 
           }
           * {
-            color: black !important;
+            color: #000 !important;
             font-weight: bold;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
           table {
             font-weight: bold;
+            border-collapse: collapse;
+          }
+          h1, p, td, th, span, div {
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
           }
         }
       `}</style>
