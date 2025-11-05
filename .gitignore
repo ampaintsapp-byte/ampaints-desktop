@@ -48,3 +48,6 @@ Thumbs.db
 # Electron
 out/
 release/
+
+# Temporary assets (user uploads, generated images)
+attached_assets/

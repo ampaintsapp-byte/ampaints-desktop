@@ -20,7 +20,22 @@ Replit interface se apna project ZIP download karen.
 ### 2. Extract ZIP
 Download ke baad ZIP file ko extract karen.
 
-### 3. Verify Files (Important!)
+### 3. Verify Files (CRITICAL - Use Verification Script!)
+
+#### Option A: Automatic Verification (Recommended)
+```bash
+# Linux/Mac/Git Bash users:
+bash verify-download.sh
+```
+
+Script automatically check karega:
+- ✅ Critical folders present hain
+- ✅ Icon file correct size mein hai
+- ✅ Configuration files exist karti hain
+- ✅ Source files ki correct count hai
+- ⚠️ Unwanted files (node_modules, dist) ki warning dega
+
+#### Option B: Manual Verification
 Extract karne ke baad yeh verify karen ki yeh files/folders present hain:
 
 ```
