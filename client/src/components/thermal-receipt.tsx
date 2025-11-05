@@ -28,13 +28,13 @@ export default function ThermalReceipt({ sale, receiptSettings }: ThermalReceipt
   const padding = receiptSettings.padding || '0 12px 12px 12px';
 
   return (
-    <div className="hidden print:block font-mono leading-tight" style={{fontSize}}>
-      <div className="w-[80mm] mx-auto bg-white" style={{padding}}>
-        <div className="text-center">
-          <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black', marginTop: '0', paddingTop: '0'}}>
+    <div className="hidden print:block font-mono leading-tight" style={{fontSize, border: 'none', outline: 'none'}}>
+      <div className="w-[80mm] mx-auto bg-white" style={{padding, border: 'none', outline: 'none'}}>
+        <div className="text-center" style={{border: 'none', outline: 'none'}}>
+          <h1 className="font-bold text-lg" style={{fontSize: '18px', fontWeight: 'bold', color: 'black', marginTop: '0', paddingTop: '0', border: 'none', outline: 'none', borderTop: 'none'}}>
             {receiptSettings.businessName}
           </h1>
-          <p style={{color: 'black', fontWeight: 'bold', marginTop: '2px'}}>{receiptSettings.address}</p>
+          <p style={{color: 'black', fontWeight: 'bold', marginTop: '2px', border: 'none', outline: 'none'}}>{receiptSettings.address}</p>
         </div>
 
         <div className="my-3 border-t border-dotted border-black pt-2" style={{color: 'black'}}>
