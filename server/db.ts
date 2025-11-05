@@ -3,6 +3,7 @@ import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@shared/schema";
 import path from "path";
 import fs from "fs";
+import { migrateDatabase } from "./migrations";
 
 // This will be set by Electron main process via environment variable
 // Default to current working directory for development
@@ -59,6 +60,10 @@ function initializeDatabase() {
     // Create tables if they don't exist
     console.log('[Database] Creating tables and indexes');
     createTables();
+    
+    // Run migrations to ensure schema compatibility (important for imported databases)
+    console.log('[Database] Running schema migrations');
+    migrateDatabase(sqlite);
     
     console.log('[Database] ✅ Database initialized successfully');
   } catch (error) {
