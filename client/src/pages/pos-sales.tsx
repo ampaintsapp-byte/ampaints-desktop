@@ -695,101 +695,52 @@ export default function POSSales() {
                 <p className="text-gray-500">Try adjusting your search terms</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
-                    className="group relative overflow-hidden border-0 bg-gradient-to-br from-white via-white to-gray-50 shadow-md hover:shadow-2xl transition-all duration-300 cursor-pointer transform hover:-translate-y-1 rounded-xl"
+                    className="border border-gray-200 bg-white hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer"
                     onClick={() => openConfirmFor(color)}
                   >
-                    {/* Premium Gradient Top Bar */}
-                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600"></div>
-                    
-                    {/* Stock Status Corner Badge */}
-                    <div className="absolute top-4 right-4 z-10">
-                      {color.stockQuantity === 0 ? (
-                        <Badge className="bg-red-500/90 text-white text-xs font-semibold px-3 py-1 shadow-lg backdrop-blur-sm">
-                          OUT
-                        </Badge>
-                      ) : color.stockQuantity < 5 ? (
-                        <Badge className="bg-orange-500/90 text-white text-xs font-semibold px-3 py-1 shadow-lg backdrop-blur-sm">
-                          LOW
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-green-500/90 text-white text-xs font-semibold px-3 py-1 shadow-lg backdrop-blur-sm">
-                          STOCK
-                        </Badge>
-                      )}
-                    </div>
-
-                    <CardContent className="p-5 pt-6">
-                      <div className="flex flex-col gap-4">
-                        {/* Company Name - Premium Typography */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <div className="h-2 w-2 rounded-full bg-gradient-to-r from-blue-600 to-purple-600"></div>
-                            <h3 className="text-sm font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 uppercase tracking-wide">
-                              {color.variant.product.company}
-                            </h3>
+                    <CardContent className="p-4">
+                      <div className="flex flex-col gap-3">
+                        {/* Top: Company & Product */}
+                        <div>
+                          <div className="text-base font-semibold text-gray-900 truncate uppercase">
+                            {color.variant.product.company}
                           </div>
-                          <p className="text-base font-semibold text-gray-800 uppercase tracking-tight leading-tight pl-4">
+                          <div className="text-sm text-gray-600 truncate uppercase">
                             {color.variant.product.productName}
-                          </p>
-                        </div>
-
-                        {/* Color Code & Name Section - Modern Design */}
-                        <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-3.5 border border-blue-100/50 shadow-sm">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge className="bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold px-3 py-1.5 text-xs uppercase shadow-lg">
-                              {color.colorCode}
-                            </Badge>
-                            <span className="text-xs text-gray-500 font-medium">CODE</span>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">
-                              {color.colorName}
-                            </p>
-                            <div className="flex items-center gap-2">
-                              <Package2 className="h-3.5 w-3.5 text-purple-600" />
-                              <span className="text-xs font-semibold text-gray-700 uppercase">
-                                {color.variant.packingSize}
-                              </span>
-                            </div>
                           </div>
                         </div>
 
-                        {/* Price & Stock Information - Premium Layout */}
-                        <div className="flex items-center justify-between pt-3 border-t-2 border-gray-100">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">Stock Available</span>
-                            <div className="flex items-center gap-1.5">
-                              <div className={`h-2 w-2 rounded-full ${
-                                color.stockQuantity === 0 ? 'bg-red-500' : 
-                                color.stockQuantity < 5 ? 'bg-orange-500' : 
-                                'bg-green-500'
-                              } shadow-lg`}></div>
-                              <span className="text-lg font-bold text-gray-900">
-                                {color.stockQuantity}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">Price</span>
-                            <div className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
-                              ₹{Math.round(parseFloat(color.variant.rate))}
-                            </div>
+                        {/* One Line: Color Code Badge, Color Name, Packing Size - Left Aligned */}
+                        <div className="flex items-center gap-2 py-2">
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-semibold px-3 py-1 text-sm uppercase">
+                            {color.colorCode}
+                          </Badge>
+                          <div className="text-sm font-semibold text-gray-900 uppercase">
+                            {color.colorName} - {color.variant.packingSize}
                           </div>
                         </div>
 
-                        {/* Premium Add to Cart Button with Gradient */}
+                        {/* Stock (Left) & Price (Right) Row */}
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <StockQuantity stock={color.stockQuantity} />
+                          <div className="text-xl font-bold text-blue-600">
+                            Rs. {Math.round(parseFloat(color.variant.rate))}
+                          </div>
+                        </div>
+
+                        {/* Bottom: Add to Cart Button */}
                         <Button
-                          className="w-full h-11 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 text-white text-sm font-bold uppercase tracking-wide shadow-lg hover:shadow-xl transition-all duration-300 rounded-lg group-hover:scale-[1.02]"
+                          className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium uppercase"
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(color);
                           }}
                         >
-                          <ShoppingCart className="h-4 w-4 mr-2" />
+                          <Plus className="h-4 w-4 mr-1" />
                           Add to Cart
                         </Button>
                       </div>
