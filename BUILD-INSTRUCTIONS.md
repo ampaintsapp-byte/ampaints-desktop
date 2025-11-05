@@ -16,13 +16,26 @@ Before building the desktop .exe application, ensure you have:
 npm install
 ```
 
-### 2. Add Application Icon (IMPORTANT!)
+### 2. Add Application Icon (⚠️ CRITICAL - REQUIRED!)
+
+**YOU MUST ADD THIS ICON FILE BEFORE BUILDING THE .EXE**
 
 Create or obtain an application icon and place it in the `build` folder:
 - **File name**: `icon.ico`
 - **Location**: `build/icon.ico`
-- **Format**: Windows ICO format
-- **Recommended size**: 256x256 pixels
+- **Format**: Windows ICO format (256x256 pixels)
+- **Status**: ⚠️ **MISSING** - Add this file before running `npm run package:win`
+
+Without this icon file, the build will FAIL with error:
+```
+Error: ENOENT: no such file or directory, open 'build/icon.ico'
+```
+
+**How to create icon.ico:**
+1. Use an online converter (e.g., convertio.co, icoconvert.com)
+2. Upload a PNG/JPG logo (256x256 recommended)
+3. Download as `.ico` format
+4. Place in `build/icon.ico`
 
 ### 3. Build Frontend (Vite)
 
