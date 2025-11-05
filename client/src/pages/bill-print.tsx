@@ -495,8 +495,6 @@ export default function BillPrint() {
           @page { 
             size: 80mm auto;
             margin: 0;
-            padding: 0;
-            border: none;
           }
           html, body { 
             margin: 0 !important;
@@ -513,7 +511,6 @@ export default function BillPrint() {
             overflow-x: hidden;
             border: none !important;
             outline: none !important;
-            box-shadow: none !important;
           }
           .no-print, dialog, button { 
             display: none !important; 
@@ -524,16 +521,6 @@ export default function BillPrint() {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
             box-sizing: border-box;
-            border-top: none !important;
-            outline: none !important;
-            box-shadow: none !important;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            border: none !important;
-            border-top: none !important;
-            margin-top: 0 !important;
-            padding-top: 0 !important;
-            outline: none !important;
           }
           table {
             font-weight: bold;
