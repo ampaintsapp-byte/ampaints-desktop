@@ -95,6 +95,9 @@ function createTables() {
       total_amount TEXT NOT NULL,
       amount_paid TEXT NOT NULL DEFAULT '0',
       payment_status TEXT NOT NULL DEFAULT 'unpaid',
+      due_date INTEGER,
+      is_manual_balance INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
       created_at INTEGER NOT NULL
     );
   `);
