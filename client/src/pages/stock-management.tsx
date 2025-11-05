@@ -144,14 +144,14 @@ export default function StockManagement() {
   const [selectedColorForStockIn, setSelectedColorForStockIn] = useState<ColorWithVariantAndProduct | null>(null);
 
   /* Advanced filters state */
-  const [productCompanyFilter, setProductCompanyFilter] = useState("");
-  const [variantCompanyFilter, setVariantCompanyFilter] = useState("");
-  const [variantProductFilter, setVariantProductFilter] = useState("");
-  const [variantSizeFilter, setVariantSizeFilter] = useState("");
-  const [colorCompanyFilter, setColorCompanyFilter] = useState("");
-  const [colorProductFilter, setColorProductFilter] = useState("");
-  const [colorSizeFilter, setColorSizeFilter] = useState("");
-  const [colorStockStatusFilter, setColorStockStatusFilter] = useState("");
+  const [productCompanyFilter, setProductCompanyFilter] = useState("all");
+  const [variantCompanyFilter, setVariantCompanyFilter] = useState("all");
+  const [variantProductFilter, setVariantProductFilter] = useState("all");
+  const [variantSizeFilter, setVariantSizeFilter] = useState("all");
+  const [colorCompanyFilter, setColorCompanyFilter] = useState("all");
+  const [colorProductFilter, setColorProductFilter] = useState("all");
+  const [colorSizeFilter, setColorSizeFilter] = useState("all");
+  const [colorStockStatusFilter, setColorStockStatusFilter] = useState("all");
 
   /* Multi-select state */
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -506,16 +506,16 @@ export default function StockManagement() {
      ------------------------- */
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
-      if (productCompanyFilter && p.company !== productCompanyFilter) return false;
+      if (productCompanyFilter !== "all" && p.company !== productCompanyFilter) return false;
       return true;
     });
   }, [products, productCompanyFilter]);
 
   const filteredVariants = useMemo(() => {
     return variantsData.filter(v => {
-      if (variantCompanyFilter && v.product.company !== variantCompanyFilter) return false;
-      if (variantProductFilter && v.product.productName !== variantProductFilter) return false;
-      if (variantSizeFilter && v.packingSize !== variantSizeFilter) return false;
+      if (variantCompanyFilter !== "all" && v.product.company !== variantCompanyFilter) return false;
+      if (variantProductFilter !== "all" && v.product.productName !== variantProductFilter) return false;
+      if (variantSizeFilter !== "all" && v.packingSize !== variantSizeFilter) return false;
       return true;
     });
   }, [variantsData, variantCompanyFilter, variantProductFilter, variantSizeFilter]);
@@ -525,10 +525,10 @@ export default function StockManagement() {
 
     // Apply advanced filters first
     filtered = filtered.filter(c => {
-      if (colorCompanyFilter && c.variant.product.company !== colorCompanyFilter) return false;
-      if (colorProductFilter && c.variant.product.productName !== colorProductFilter) return false;
-      if (colorSizeFilter && c.variant.packingSize !== colorSizeFilter) return false;
-      if (colorStockStatusFilter) {
+      if (colorCompanyFilter !== "all" && c.variant.product.company !== colorCompanyFilter) return false;
+      if (colorProductFilter !== "all" && c.variant.product.productName !== colorProductFilter) return false;
+      if (colorSizeFilter !== "all" && c.variant.packingSize !== colorSizeFilter) return false;
+      if (colorStockStatusFilter !== "all") {
         if (colorStockStatusFilter === "out" && c.stockQuantity !== 0) return false;
         if (colorStockStatusFilter === "low" && (c.stockQuantity === 0 || c.stockQuantity >= 10)) return false;
         if (colorStockStatusFilter === "in" && c.stockQuantity < 10) return false;
@@ -1032,13 +1032,13 @@ export default function StockManagement() {
                       <Select value={productCompanyFilter} onValueChange={setProductCompanyFilter}>
                         <SelectTrigger><SelectValue placeholder="All Companies" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Companies</SelectItem>
+                          <SelectItem value="all">All Companies</SelectItem>
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
-                    {productCompanyFilter && (
-                      <Button variant="outline" size="sm" onClick={() => setProductCompanyFilter("")}>Clear Filters</Button>
+                    {productCompanyFilter !== "all" && (
+                      <Button variant="outline" size="sm" onClick={() => setProductCompanyFilter("all")}>Clear Filters</Button>
                     )}
                   </div>
 
@@ -1218,7 +1218,7 @@ export default function StockManagement() {
                       <Select value={variantCompanyFilter} onValueChange={setVariantCompanyFilter}>
                         <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Companies</SelectItem>
+                          <SelectItem value="all">All Companies</SelectItem>
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
@@ -1228,7 +1228,7 @@ export default function StockManagement() {
                       <Select value={variantProductFilter} onValueChange={setVariantProductFilter}>
                         <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Products</SelectItem>
+                          <SelectItem value="all">All Products</SelectItem>
                           {Array.from(new Set(variantsData.map(v => v.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                         </SelectContent>
                       </Select>
@@ -1238,16 +1238,16 @@ export default function StockManagement() {
                       <Select value={variantSizeFilter} onValueChange={setVariantSizeFilter}>
                         <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Sizes</SelectItem>
+                          <SelectItem value="all">All Sizes</SelectItem>
                           {Array.from(new Set(variantsData.map(v => v.packingSize))).sort().map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
-                    {(variantCompanyFilter || variantProductFilter || variantSizeFilter) && (
+                    {(variantCompanyFilter !== "all" || variantProductFilter !== "all" || variantSizeFilter !== "all") && (
                       <Button variant="outline" size="sm" onClick={() => {
-                        setVariantCompanyFilter("");
-                        setVariantProductFilter("");
-                        setVariantSizeFilter("");
+                        setVariantCompanyFilter("all");
+                        setVariantProductFilter("all");
+                        setVariantSizeFilter("all");
                       }}>Clear Filters</Button>
                     )}
                   </div>
@@ -1444,7 +1444,7 @@ export default function StockManagement() {
                       <Select value={colorCompanyFilter} onValueChange={setColorCompanyFilter}>
                         <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Companies</SelectItem>
+                          <SelectItem value="all">All Companies</SelectItem>
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
@@ -1454,7 +1454,7 @@ export default function StockManagement() {
                       <Select value={colorProductFilter} onValueChange={setColorProductFilter}>
                         <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Products</SelectItem>
+                          <SelectItem value="all">All Products</SelectItem>
                           {Array.from(new Set(colorsData.map(c => c.variant.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                         </SelectContent>
                       </Select>
@@ -1464,7 +1464,7 @@ export default function StockManagement() {
                       <Select value={colorSizeFilter} onValueChange={setColorSizeFilter}>
                         <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Sizes</SelectItem>
+                          <SelectItem value="all">All Sizes</SelectItem>
                           {Array.from(new Set(colorsData.map(c => c.variant.packingSize))).sort().map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                         </SelectContent>
                       </Select>
@@ -1474,19 +1474,19 @@ export default function StockManagement() {
                       <Select value={colorStockStatusFilter} onValueChange={setColorStockStatusFilter}>
                         <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Status</SelectItem>
+                          <SelectItem value="all">All Status</SelectItem>
                           <SelectItem value="out">Out of Stock</SelectItem>
                           <SelectItem value="low">Low Stock</SelectItem>
                           <SelectItem value="in">In Stock</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-                    {(colorCompanyFilter || colorProductFilter || colorSizeFilter || colorStockStatusFilter) && (
+                    {(colorCompanyFilter !== "all" || colorProductFilter !== "all" || colorSizeFilter !== "all" || colorStockStatusFilter !== "all") && (
                       <Button variant="outline" size="sm" onClick={() => {
-                        setColorCompanyFilter("");
-                        setColorProductFilter("");
-                        setColorSizeFilter("");
-                        setColorStockStatusFilter("");
+                        setColorCompanyFilter("all");
+                        setColorProductFilter("all");
+                        setColorSizeFilter("all");
+                        setColorStockStatusFilter("all");
                       }}>Clear Filters</Button>
                     )}
                   </div>
