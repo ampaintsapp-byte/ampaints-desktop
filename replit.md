@@ -20,6 +20,13 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
   - Made header and footer fully configurable from Settings page
   - Settings include: Business Name, Address, Dealer Label, Dealer Brands, and Thank You Message
   - All settings saved to localStorage and applied to thermal receipts
+  - **Customizable Font Sizes and Margins:**
+    - Added controls for General Font Size (8-16px, default 11px)
+    - Added controls for Item List Font Size (10-18px, default 12px)
+    - Added controls for Receipt Padding (0-20px, default 12px)
+    - All font and spacing settings adjustable from Settings page
+    - Settings saved to localStorage and applied to all thermal receipts
+    - Real-time customization without code changes
 - Migrated from GitHub import to Replit environment
 - Fixed database configuration (changed from PostgreSQL to SQLite to match original design)
 - Configured development workflow on port 5000
