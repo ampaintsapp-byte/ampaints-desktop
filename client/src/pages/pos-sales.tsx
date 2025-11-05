@@ -695,64 +695,62 @@ export default function POSSales() {
                 <p className="text-gray-500">Try adjusting your search terms</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
-                    className="border-2 border-gray-200 shadow-md bg-white hover:shadow-xl hover:border-blue-400 transition-all duration-200 cursor-pointer group overflow-hidden rounded-xl"
+                    className="border border-gray-200 bg-white hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
                     onClick={() => openConfirmFor(color)}
                   >
-                    <CardContent className="p-5">
-                      <div className="space-y-3.5">
+                    <CardContent className="p-3">
+                      <div className="space-y-2">
                         {/* Company Name */}
-                        <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide truncate">
+                        <div className="text-xs text-gray-500 uppercase truncate">
                           {color.variant.product.company}
                         </div>
 
                         {/* Product Name */}
-                        <div className="text-lg font-bold text-gray-900 leading-tight truncate">
+                        <div className="text-sm font-bold text-gray-900 truncate">
                           {color.variant.product.productName}
                         </div>
 
-                        {/* Color Code - Large Bold */}
-                        <div className="flex items-center gap-2 py-2.5 px-3 bg-gray-50 rounded-lg border border-gray-200">
-                          <div className="flex items-center justify-center w-5 h-5 border-2 border-gray-500 rounded bg-white">
-                            <div className="w-2.5 h-2.5 rounded-sm bg-gray-800"></div>
+                        {/* Color Code */}
+                        <div className="flex items-center gap-1.5 py-1.5 px-2 bg-gray-50 rounded">
+                          <div className="w-3 h-3 border border-gray-400 rounded flex items-center justify-center">
+                            <div className="w-1.5 h-1.5 bg-gray-700 rounded-sm"></div>
                           </div>
-                          <span className="text-xl font-extrabold text-gray-900 tracking-wider">
+                          <span className="text-base font-bold text-gray-900">
                             {color.colorCode}
                           </span>
                         </div>
 
                         {/* Color Name */}
-                        <div className="text-base text-gray-700 font-medium leading-relaxed min-h-[44px]">
+                        <div className="text-sm text-gray-600 line-clamp-2 min-h-[40px]">
                           {color.colorName}
                         </div>
 
                         {/* Packing Size */}
-                        <div className="text-lg font-bold text-gray-900 pt-1">
+                        <div className="text-sm font-semibold text-gray-900">
                           {color.variant.packingSize}
                         </div>
 
-                        {/* Price & Stock - Side by Side */}
-                        <div className="flex items-center justify-between pt-3 pb-2 border-t-2 border-gray-200">
-                          <div className="text-2xl font-extrabold text-blue-600">
+                        {/* Price & Stock */}
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <div className="text-lg font-bold text-blue-600">
                             Rs. {Math.round(parseFloat(color.variant.rate))}
                           </div>
-                          <div className="flex-shrink-0">
-                            <StockQuantity stock={color.stockQuantity} />
-                          </div>
+                          <StockQuantity stock={color.stockQuantity} />
                         </div>
 
-                        {/* Action Button */}
+                        {/* Button */}
                         <Button
-                          className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white text-base font-bold transition-all duration-200 shadow-md hover:shadow-lg rounded-lg"
+                          className="w-full h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(color);
                           }}
                         >
-                          <Plus className="h-5 w-5 mr-2" />
+                          <Plus className="h-3 w-3 mr-1" />
                           Add to Cart
                         </Button>
                       </div>
