@@ -32,20 +32,6 @@ export default function Settings() {
       });
     }
     
-    // Load Store Settings from localStorage
-    try {
-      const savedStoreSettings = localStorage.getItem('storeSettings');
-      if (savedStoreSettings) {
-        const settings = JSON.parse(savedStoreSettings);
-        setStoreName(settings.storeName || "PaintPulse Store");
-        setStoreAddress(settings.storeAddress || "");
-        setStorePhone(settings.storePhone || "");
-        setStoreEmail(settings.storeEmail || "");
-      }
-    } catch (error) {
-      console.error("Error loading store settings:", error);
-    }
-    
     // Load POS receipt settings from localStorage
     try {
       const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
@@ -81,13 +67,6 @@ export default function Settings() {
   const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
 
   const handleSaveStoreSettings = () => {
-    const storeSettings = {
-      storeName,
-      storeAddress,
-      storePhone,
-      storeEmail,
-    };
-    localStorage.setItem('storeSettings', JSON.stringify(storeSettings));
     toast({ title: "Store settings saved successfully" });
   };
 
@@ -430,20 +409,7 @@ export default function Settings() {
               
               {/* POS Receipt Header/Footer Settings */}
               <div className="space-y-4 pt-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold">Thermal Receipt Customization</h3>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => {
-                      setReceiptBusinessName(storeName);
-                      setReceiptAddress(`${storeAddress}${storePhone ? '. ' + storePhone : ''}`);
-                      toast({ title: "Store settings copied to receipt settings" });
-                    }}
-                  >
-                    Use Store Settings
-                  </Button>
-                </div>
+                <h3 className="font-semibold">Thermal Receipt Customization</h3>
                 
                 <div className="space-y-2">
                   <Label htmlFor="receiptBusinessName">Business Name</Label>

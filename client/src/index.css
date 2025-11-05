@@ -2,39 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* High-Quality Print Optimizations for Thermal Receipts */
-@media print {
-  @page {
-    margin: 0;
-    size: 80mm auto;
-  }
-  
-  body {
-    margin: 0;
-    padding: 0;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
-  }
-  
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
-  }
-  
-  /* Hide all non-print elements */
-  .no-print,
-  .print\\:hidden,
-  button,
-  header,
-  nav,
-  dialog,
-  [role="dialog"] {
-    display: none !important;
-  }
-}
-
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0,0,0, .10);
