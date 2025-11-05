@@ -27,6 +27,7 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
     - All font and spacing settings adjustable from Settings page
     - Settings saved to localStorage and applied to all thermal receipts
     - Real-time customization without code changes
+    - Removed unwanted top border/line from printed receipts for cleaner appearance
 - Migrated from GitHub import to Replit environment
 - Fixed database configuration (changed from PostgreSQL to SQLite to match original design)
 - Configured development workflow on port 5000

@@ -509,6 +509,8 @@ export default function BillPrint() {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
             overflow-x: hidden;
+            border: none !important;
+            outline: none !important;
           }
           .no-print, dialog, button { 
             display: none !important; 
