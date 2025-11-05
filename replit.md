@@ -26,6 +26,16 @@ PaintPulse is a professional Paint Store Point of Sale (POS) and Inventory Manag
   - Added bulk delete operations with "Select All" capability and confirmation dialogs
   - Fixed edit forms to properly populate with existing data using useEffect hooks
   - All filters work in combination and use memoized filtering for optimal performance
+  - **Unique ID System & Duplicate Handling (COMPLETE):**
+    - Each item (Product, Variant, Color) has a globally unique UUID-based ID (text type)
+    - System supports multiple items with same names, codes, sizes, and rates
+    - Added 11 composite database indexes for high-performance queries with duplicates:
+      - Products: (company, product_name), (company)
+      - Variants: (product_id, packing_size, rate), (packing_size), (product_id, created_at)
+      - Colors: (variant_id, color_code), (color_code), (color_name), (color_code, color_name), (variant_id, created_at)
+    - Full hierarchy displayed in tables: Company → Product → Packing → Color Code
+    - No data conflicts - each item uniquely identifiable by ID
+    - Optimized for high-performance filtering and searching across duplicate values
 - **Unpaid Bills Enhancements (COMPLETE):**
   - Added `dueDate`, `isManualBalance`, and `notes` fields to sales schema
   - Created API endpoint (POST /api/sales/manual-balance) for adding manual pending balances without sale items
