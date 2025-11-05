@@ -468,6 +468,29 @@ export default function UnpaidBills() {
       filtered = filtered.filter(customer => customer.daysOverdue >= days);
     }
 
+    // Apply due date filter
+    if (filters.dueDate.from || filters.dueDate.to) {
+      const fromDate = filters.dueDate.from ? new Date(filters.dueDate.from) : null;
+      const toDate = filters.dueDate.to ? new Date(filters.dueDate.to) : null;
+      
+      filtered = filtered.filter(customer => {
+        // Check if any bill has a due date in the range
+        return customer.bills.some(bill => {
+          if (!bill.dueDate) return false;
+          const dueDate = new Date(bill.dueDate);
+          
+          if (fromDate && toDate) {
+            return dueDate >= fromDate && dueDate <= toDate;
+          } else if (fromDate) {
+            return dueDate >= fromDate;
+          } else if (toDate) {
+            return dueDate <= toDate;
+          }
+          return false;
+        });
+      });
+    }
+
     // Apply sorting
     switch (filters.sortBy) {
       case "newest":
@@ -627,6 +650,31 @@ export default function UnpaidBills() {
                       onChange={(e) => setFilters(prev => ({ ...prev, daysOverdue: e.target.value }))}
                       type="number"
                     />
+                  </div>
+
+                  {/* Due Date Range */}
+                  <div className="space-y-2">
+                    <Label className="text-sm">Due Date Range</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="From"
+                        value={filters.dueDate.from}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          dueDate: { ...prev.dueDate, from: e.target.value }
+                        }))}
+                        type="date"
+                      />
+                      <Input
+                        placeholder="To"
+                        value={filters.dueDate.to}
+                        onChange={(e) => setFilters(prev => ({
+                          ...prev,
+                          dueDate: { ...prev.dueDate, to: e.target.value }
+                        }))}
+                        type="date"
+                      />
+                    </div>
                   </div>
 
                   {/* Sort By */}
