@@ -695,64 +695,64 @@ export default function POSSales() {
                 <p className="text-gray-500">Try adjusting your search terms</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredColors.map((color) => (
                   <Card 
                     key={color.id} 
-                    className="border border-gray-200 shadow-sm bg-white hover:shadow-lg hover:border-blue-300 transition-all duration-200 cursor-pointer group overflow-hidden rounded-lg"
+                    className="border-2 border-gray-200 shadow-md bg-white hover:shadow-xl hover:border-blue-400 transition-all duration-200 cursor-pointer group overflow-hidden rounded-xl"
                     onClick={() => openConfirmFor(color)}
                   >
-                    <CardContent className="p-4">
-                      <div className="space-y-3">
-                        {/* Header: Company & Product Name */}
-                        <div className="flex justify-between items-start gap-2 min-h-[40px]">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium text-gray-500 truncate">
-                              {color.variant.product.company}
-                            </div>
-                            <div className="text-sm font-bold text-gray-900 truncate mt-0.5">
-                              {color.variant.product.productName}
-                            </div>
+                    <CardContent className="p-5">
+                      <div className="space-y-3.5">
+                        {/* Company Name */}
+                        <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide truncate">
+                          {color.variant.product.company}
+                        </div>
+
+                        {/* Product Name */}
+                        <div className="text-lg font-bold text-gray-900 leading-tight truncate">
+                          {color.variant.product.productName}
+                        </div>
+
+                        {/* Color Code - Large Bold */}
+                        <div className="flex items-center gap-2 py-2.5 px-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="flex items-center justify-center w-5 h-5 border-2 border-gray-500 rounded bg-white">
+                            <div className="w-2.5 h-2.5 rounded-sm bg-gray-800"></div>
+                          </div>
+                          <span className="text-xl font-extrabold text-gray-900 tracking-wider">
+                            {color.colorCode}
+                          </span>
+                        </div>
+
+                        {/* Color Name */}
+                        <div className="text-base text-gray-700 font-medium leading-relaxed min-h-[44px]">
+                          {color.colorName}
+                        </div>
+
+                        {/* Packing Size */}
+                        <div className="text-lg font-bold text-gray-900 pt-1">
+                          {color.variant.packingSize}
+                        </div>
+
+                        {/* Price & Stock - Side by Side */}
+                        <div className="flex items-center justify-between pt-3 pb-2 border-t-2 border-gray-200">
+                          <div className="text-2xl font-extrabold text-blue-600">
+                            Rs. {Math.round(parseFloat(color.variant.rate))}
                           </div>
                           <div className="flex-shrink-0">
                             <StockQuantity stock={color.stockQuantity} />
                           </div>
                         </div>
 
-                        {/* Color Code - Checkbox Style */}
-                        <div className="flex items-center gap-2.5 py-2 border-t border-b border-gray-100">
-                          <div className="flex items-center justify-center w-4 h-4 border-2 border-gray-400 rounded bg-white">
-                            <div className="w-2 h-2 rounded-sm bg-gray-700"></div>
-                          </div>
-                          <span className="text-base font-bold text-gray-900 tracking-wide">
-                            {color.colorCode}
-                          </span>
-                        </div>
-
-                        {/* Color Name */}
-                        <div className="text-sm text-gray-700 font-medium leading-snug min-h-[36px] line-clamp-2">
-                          {color.colorName}
-                        </div>
-
-                        {/* Packing Size & Rate */}
-                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                          <div className="text-base font-bold text-gray-900">
-                            {color.variant.packingSize}
-                          </div>
-                          <div className="text-lg font-bold text-blue-600">
-                            Rs. {Math.round(parseFloat(color.variant.rate))}
-                          </div>
-                        </div>
-
                         {/* Action Button */}
                         <Button
-                          className="w-full h-10 bg-gradient-to-r from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-white text-sm font-semibold transition-all duration-200 shadow-sm hover:shadow-md"
+                          className="w-full h-11 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white text-base font-bold transition-all duration-200 shadow-md hover:shadow-lg rounded-lg"
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(color);
                           }}
                         >
-                          <Plus className="h-4 w-4 mr-1.5" />
+                          <Plus className="h-5 w-5 mr-2" />
                           Add to Cart
                         </Button>
                       </div>
