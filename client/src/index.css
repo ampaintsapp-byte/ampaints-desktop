@@ -22,6 +22,17 @@
     print-color-adjust: exact !important;
     color-adjust: exact !important;
   }
+  
+  /* Hide all non-print elements */
+  .no-print,
+  .print\\:hidden,
+  button,
+  header,
+  nav,
+  dialog,
+  [role="dialog"] {
+    display: none !important;
+  }
 }
 
 /* LIGHT MODE */

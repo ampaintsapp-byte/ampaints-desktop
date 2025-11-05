@@ -245,10 +245,10 @@ export default function BillPrint() {
 
   return (
     <>
-      <div className="p-6 max-w-2xl mx-auto">
+      <div className="p-6 max-w-2xl mx-auto print:hidden">
 
         {/* Header */}
-        <div className="flex justify-between items-center mb-6 no-print">
+        <div className="flex justify-between items-center mb-6">
           <Link href="/pos">
             <Button variant="outline">
               <ArrowLeft className="h-4 w-4 mr-2" /> Back
