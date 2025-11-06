@@ -48,9 +48,22 @@ None specified yet.
 - **Vite**: Frontend tooling for development and build.
 - **Express.js**: Web application framework for Node.js.
 
+## Recent Updates (November 6, 2025)
+
+### Per-Color Rate Override System (12:50 AM - LATEST)
+- ✅ Added `rateOverride` column to colors table (nullable TEXT for decimal precision)
+- ✅ Implemented automatic migration for backward compatibility with existing databases
+- ✅ Created API endpoint (PATCH /api/colors/:id/rate-override) for rate updates
+- ✅ Added `getEffectiveRate()` helper function (rateOverride ?? variant.rate)
+- ✅ Enhanced Quick Add wizard Step 3 with optional per-color rate input
+- ✅ Updated Stock Management view dialog to show Default/Custom/Effective rates
+- ✅ Updated Stock Management edit dialog to allow rate override modification
+- ✅ Integrated effective rates throughout POS sales for accurate pricing
+- ✅ Architect review: PASS - implementation is complete and functioning correctly
+
 ## Recent Updates (November 5, 2025)
 
-### AMP Clean Teal Icon (12:14 AM - LATEST)
+### AMP Clean Teal Icon (12:14 AM)
 - ✅ Generated clean minimalist teal icon with white "AMP" letters
 - ✅ Rounded square (squircle) shape, solid teal background
 - ✅ Ultra-clean flat design with modern geometric fonts
