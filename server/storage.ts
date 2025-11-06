@@ -4,6 +4,7 @@ import {
   colors,
   sales,
   saleItems,
+  settings,
   type Product,
   type InsertProduct,
   type Variant,
@@ -14,6 +15,8 @@ import {
   type InsertSale,
   type SaleItem,
   type InsertSaleItem,
+  type Settings,
+  type UpdateSettings,
   type VariantWithProduct,
   type ColorWithVariantAndProduct,
   type SaleWithItems,
@@ -69,6 +72,10 @@ export interface IStorage {
     monthlyChart: { date: string; revenue: number }[];
     topCustomers: Array<{ customerName: string; customerPhone: string; totalPurchases: number; transactionCount: number }>;
   }>;
+
+  // Settings
+  getSettings(): Promise<Settings>;
+  updateSettings(data: UpdateSettings): Promise<Settings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -655,6 +662,37 @@ export class DatabaseStorage implements IStorage {
         transactionCount: Number(customer.transactionCount || 0),
       })),
     };
+  }
+
+  // Settings
+  async getSettings(): Promise<Settings> {
+    const [setting] = await db.select().from(settings).where(eq(settings.id, 'default'));
+    if (!setting) {
+      // Create default settings if not found
+      const defaultSettings: Settings = {
+        id: 'default',
+        storeName: 'PaintPulse',
+        cardBorderStyle: 'shadow',
+        cardShadowSize: 'sm',
+        cardButtonColor: 'gray-900',
+        cardPriceColor: 'blue-600',
+        showStockBadgeBorder: false,
+        updatedAt: new Date(),
+      };
+      await db.insert(settings).values(defaultSettings);
+      return defaultSettings;
+    }
+    return setting;
+  }
+
+  async updateSettings(data: UpdateSettings): Promise<Settings> {
+    await db
+      .update(settings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(settings.id, 'default'));
+    
+    const updated = await this.getSettings();
+    return updated;
   }
 }
 

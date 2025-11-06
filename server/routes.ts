@@ -532,6 +532,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Settings routes
+  app.get("/api/settings", async (_req, res) => {
+    try {
+      const settingsData = await storage.getSettings();
+      res.json(settingsData);
+    } catch (error) {
+      console.error("Error getting settings:", error);
+      res.status(500).json({ error: "Failed to get settings" });
+    }
+  });
+
+  app.patch("/api/settings", async (req, res) => {
+    try {
+      const updated = await storage.updateSettings(req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating settings:", error);
+      res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

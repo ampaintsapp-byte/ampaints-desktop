@@ -45,6 +45,31 @@ export function migrateDatabase(db: Database.Database): void {
       db.exec('ALTER TABLE colors ADD COLUMN rate_override TEXT');
     }
     
+    // Create settings table if it doesn't exist (added in v0.1.9)
+    console.log('[Migration] Creating/verifying settings table...');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS settings (
+        id TEXT PRIMARY KEY DEFAULT 'default',
+        store_name TEXT NOT NULL DEFAULT 'PaintPulse',
+        card_border_style TEXT NOT NULL DEFAULT 'shadow',
+        card_shadow_size TEXT NOT NULL DEFAULT 'sm',
+        card_button_color TEXT NOT NULL DEFAULT 'gray-900',
+        card_price_color TEXT NOT NULL DEFAULT 'blue-600',
+        show_stock_badge_border INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    
+    // Insert default settings row if not exists
+    const settingsExists = db.prepare('SELECT COUNT(*) as count FROM settings WHERE id = ?').get('default') as { count: number };
+    if (settingsExists.count === 0) {
+      console.log('[Migration] Inserting default settings row');
+      db.prepare(`
+        INSERT INTO settings (id, store_name, card_border_style, card_shadow_size, card_button_color, card_price_color, show_stock_badge_border, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run('default', 'PaintPulse', 'shadow', 'sm', 'gray-900', 'blue-600', 0, Date.now());
+    }
+    
     // Ensure all indexes exist (CREATE INDEX IF NOT EXISTS is safe)
     console.log('[Migration] Creating/verifying indexes...');
     db.exec(`

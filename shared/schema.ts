@@ -62,11 +62,13 @@ export const saleItems = sqliteTable("sale_items", {
 // Settings table - stores app preferences (single row)
 export const settings = sqliteTable("settings", {
   id: text("id").primaryKey().default("default"),
+  // Store Settings
+  storeName: text("store_name").notNull().default("PaintPulse"),
   // Card Design Settings
   cardBorderStyle: text("card_border_style").notNull().default("shadow"), // shadow, border, none
   cardShadowSize: text("card_shadow_size").notNull().default("sm"), // sm, md, lg
-  cardButtonColor: text("card_button_color").notNull().default("gray-900"), // color class
-  cardPriceColor: text("card_price_color").notNull().default("blue-600"), // color class
+  cardButtonColor: text("card_button_color").notNull().default("gray-900"), // gray-900, blue-600, green-600, etc
+  cardPriceColor: text("card_price_color").notNull().default("blue-600"), // blue-600, green-600, gray-900, etc
   showStockBadgeBorder: integer("show_stock_badge_border", { mode: 'boolean' }).notNull().default(false),
   updatedAt: integer("updated_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
