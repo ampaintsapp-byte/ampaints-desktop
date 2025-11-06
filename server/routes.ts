@@ -576,6 +576,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // FIXED: Complete the function properly
+  // ✅ FIXED: Complete the function properly with closing bracket
   const httpServer = createServer(app);
   return httpServer;
+} // ✅ YEH MISSING THA - CLOSING BRACKET
