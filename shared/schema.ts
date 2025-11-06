@@ -175,3 +175,9 @@ export type SaleWithItems = Sale & {
 export type SaleItemWithDetails = SaleItem & {
   color: ColorWithVariantAndProduct;
 };
+
+// Helper function to compute effective rate for a color
+// Returns rateOverride if set, otherwise falls back to variant rate
+export function getEffectiveRate(color: ColorWithVariantAndProduct): string {
+  return color.rateOverride ?? color.variant.rate;
+}

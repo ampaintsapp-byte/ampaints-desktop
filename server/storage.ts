@@ -42,6 +42,7 @@ export interface IStorage {
   createColor(color: InsertColor): Promise<Color>;
   updateColor(id: string, data: { colorName: string; colorCode: string }): Promise<Color>;
   updateColorStock(id: string, stockQuantity: number): Promise<Color>;
+  updateColorRateOverride(id: string, rateOverride: number | null): Promise<Color>;
   stockIn(id: string, quantity: number): Promise<Color>;
   deleteColor(id: string): Promise<void>;
 
@@ -170,6 +171,9 @@ export class DatabaseStorage implements IStorage {
     const color: Color = {
       id: crypto.randomUUID(),
       ...insertColor,
+      rateOverride: typeof insertColor.rateOverride === 'number' 
+        ? insertColor.rateOverride.toString() 
+        : insertColor.rateOverride || null,
       createdAt: new Date(),
     };
     await db.insert(colors).values(color);
@@ -190,6 +194,16 @@ export class DatabaseStorage implements IStorage {
     await db
       .update(colors)
       .set({ stockQuantity })
+      .where(eq(colors.id, id));
+    
+    const [color] = await db.select().from(colors).where(eq(colors.id, id));
+    return color;
+  }
+
+  async updateColorRateOverride(id: string, rateOverride: number | null): Promise<Color> {
+    await db
+      .update(colors)
+      .set({ rateOverride: rateOverride !== null ? rateOverride.toString() : null })
       .where(eq(colors.id, id));
     
     const [color] = await db.select().from(colors).where(eq(colors.id, id));

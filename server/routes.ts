@@ -167,6 +167,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/colors/:id/rate-override", async (req, res) => {
+    try {
+      const { rateOverride } = req.body;
+      if (rateOverride !== null && (typeof rateOverride !== "number" || rateOverride < 0)) {
+        res.status(400).json({ error: "Invalid rate override" });
+        return;
+      }
+      const color = await storage.updateColorRateOverride(req.params.id, rateOverride);
+      res.json(color);
+    } catch (error) {
+      console.error("Error updating color rate override:", error);
+      res.status(500).json({ error: "Failed to update color rate override" });
+    }
+  });
+
   app.post("/api/colors/:id/stock-in", async (req, res) => {
     try {
       const { quantity } = req.body;
