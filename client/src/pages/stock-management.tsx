@@ -48,6 +48,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Product, VariantWithProduct, ColorWithVariantAndProduct } from "@shared/schema";
+import { getEffectiveRate } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -76,6 +77,7 @@ const colorFormSchema = z.object({
   colorName: z.string().min(1, "Color name is required"),
   colorCode: z.string().min(1, "Color code is required"),
   stockQuantity: z.string().min(1, "Quantity is required"),
+  rateOverride: z.string().optional(),
 });
 
 const stockInFormSchema = z.object({
@@ -251,6 +253,7 @@ export default function StockManagement() {
       colorForm.setValue("colorName", editingColor.colorName);
       colorForm.setValue("colorCode", editingColor.colorCode);
       colorForm.setValue("stockQuantity", String(editingColor.stockQuantity));
+      colorForm.setValue("rateOverride", editingColor.rateOverride || "");
     }
   }, [editingColor, colorForm]);
 
@@ -1924,12 +1927,22 @@ export default function StockManagement() {
             <DialogTitle>Edit Color</DialogTitle>
           </DialogHeader>
           <Form {...colorForm}>
-            <form onSubmit={colorForm.handleSubmit((data) => {
+            <form onSubmit={colorForm.handleSubmit(async (data) => {
               if (editingColor) {
+                // Update basic color details
                 updateColorMutation.mutate({ 
                   id: editingColor.id, 
                   ...data, 
                   stockQuantity: parseInt(data.stockQuantity, 10) 
+                });
+                
+                // Update rate override separately
+                const rateOverrideValue = data.rateOverride && data.rateOverride.trim() !== "" 
+                  ? parseFloat(data.rateOverride) 
+                  : null;
+                
+                await apiRequest("PATCH", `/api/colors/${editingColor.id}/rate-override`, {
+                  rateOverride: rateOverrideValue
                 });
               }
             })} className="space-y-4">
@@ -1965,6 +1978,14 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Quantity</FormLabel>
                   <FormControl><Input type="number" min="0" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={colorForm.control} name="rateOverride" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Custom Rate (Optional)</FormLabel>
+                  <FormControl><Input type="number" min="0" step="0.01" placeholder="Leave empty to use variant rate" {...field} /></FormControl>
+                  <p className="text-xs text-muted-foreground">Default: Rs. {editingColor ? Math.round(parseFloat(editingColor.variant.rate)) : '0'}</p>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -2078,8 +2099,16 @@ export default function StockManagement() {
                   <p className="text-sm">{viewingColor.variant.packingSize}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Rate</Label>
+                  <Label className="text-sm font-medium">Default Rate</Label>
                   <p className="text-sm">Rs. {Math.round(parseFloat(viewingColor.variant.rate))}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Custom Rate</Label>
+                  <p className="text-sm">{viewingColor.rateOverride ? `Rs. ${Math.round(parseFloat(viewingColor.rateOverride))}` : <span className="text-muted-foreground">-</span>}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Effective Rate</Label>
+                  <p className="text-sm font-bold text-blue-600">Rs. {Math.round(parseFloat(getEffectiveRate(viewingColor)))}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Color Name</Label>
