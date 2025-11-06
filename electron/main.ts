@@ -61,7 +61,6 @@ function createWindow() {
     ...windowBounds,
     minWidth: 1024,
     minHeight: 768,
-    fullscreen: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -84,10 +83,10 @@ function createWindow() {
     store.set("windowBounds", bounds);
   });
 
-  // Show window when ready
+  // Show window when ready - maximize to fit screen but not fullscreen
   mainWindow.once("ready-to-show", () => {
+    mainWindow?.maximize();
     mainWindow?.show();
-    mainWindow?.setFullScreen(true);
   });
 
   // ✅ FIXED: Always load from local server (works for both dev and production)

@@ -119,11 +119,13 @@ None specified yet.
 - ✅ Updated hover state to gray-800 for smooth interaction
 - ✅ Button now stands out more clearly in product cards
 
-### Fullscreen Desktop Mode (1:00 AM)
-- ✅ Desktop application now launches in fullscreen mode by default
-- ✅ Added `fullscreen: true` option to BrowserWindow configuration
-- ✅ Added `setFullScreen(true)` on window ready-to-show event
-- ✅ Users can press F11 or ESC to exit fullscreen if needed
+### Windowed Desktop Mode (9:15 AM - UPDATED)
+- ✅ Desktop application now launches maximized (fits screen) but NOT fullscreen
+- ✅ Removed `fullscreen: true` from BrowserWindow configuration
+- ✅ Changed to `maximize()` instead of `setFullScreen(true)`
+- ✅ Taskbar and title bar remain visible
+- ✅ Users can resize/move window freely
+- ✅ Window size and position are saved and restored on next launch
 
 ### Per-Color Rate Override System (12:50 AM)
 - ✅ Added `rateOverride` column to colors table (nullable TEXT for decimal precision)
