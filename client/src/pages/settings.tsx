@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,17 +7,74 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { Store, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Store, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { Settings as UISettings, UpdateSettings } from "@shared/schema";
 
 export default function Settings() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // UI Settings from backend
+  const { data: uiSettings, isLoading: isLoadingSettings } = useQuery<UISettings>({
+    queryKey: ["/api/settings"],
+  });
+
+  const [uiFormData, setUiFormData] = useState<UpdateSettings>({
+    storeName: "PaintPulse",
+    cardBorderStyle: "shadow",
+    cardShadowSize: "sm",
+    cardButtonColor: "gray-900",
+    cardPriceColor: "blue-600",
+    showStockBadgeBorder: false,
+  });
+
+  useEffect(() => {
+    if (uiSettings) {
+      setUiFormData({
+        storeName: uiSettings.storeName,
+        cardBorderStyle: uiSettings.cardBorderStyle,
+        cardShadowSize: uiSettings.cardShadowSize,
+        cardButtonColor: uiSettings.cardButtonColor,
+        cardPriceColor: uiSettings.cardPriceColor,
+        showStockBadgeBorder: uiSettings.showStockBadgeBorder,
+      });
+    }
+  }, [uiSettings]);
+
+  const updateUiMutation = useMutation({
+    mutationFn: async (data: UpdateSettings) => {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update settings");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "UI Settings Saved",
+        description: "Your customization has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save UI settings. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
   
   // Desktop/Database Settings
   const [databasePath, setDatabasePath] = useState<string>("");
   const [isElectron, setIsElectron] = useState(false);
   
-  // Store Settings
+  // Store Settings (legacy - can be migrated to UI settings)
   const [storeName, setStoreName] = useState("PaintPulse Store");
   const [storeAddress, setStoreAddress] = useState("");
   const [storePhone, setStorePhone] = useState("");
@@ -273,8 +331,12 @@ export default function Settings() {
         <p className="text-sm text-muted-foreground">Manage your store, POS, and device settings</p>
       </div>
 
-      <Tabs defaultValue="store" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs defaultValue="ui" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="ui" data-testid="tab-ui-settings">
+            <Palette className="h-4 w-4 mr-2" />
+            UI
+          </TabsTrigger>
           <TabsTrigger value="store" data-testid="tab-store-settings">
             <Store className="h-4 w-4 mr-2" />
             Store
@@ -292,6 +354,164 @@ export default function Settings() {
             Database
           </TabsTrigger>
         </TabsList>
+
+        {/* UI Customization Settings */}
+        <TabsContent value="ui" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Store Branding</CardTitle>
+              <CardDescription>Customize your store name</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="uiStoreName">Store Name</Label>
+                <Input
+                  id="uiStoreName"
+                  value={uiFormData.storeName}
+                  onChange={(e) => setUiFormData({ ...uiFormData, storeName: e.target.value })}
+                  placeholder="Enter store name"
+                  className="mt-1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  This name will appear in the sidebar
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Product Card Design</CardTitle>
+              <CardDescription>Customize how products appear in POS Sales</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                <Label>Card Border Style</Label>
+                <RadioGroup
+                  value={uiFormData.cardBorderStyle}
+                  onValueChange={(value: 'shadow' | 'border' | 'none') =>
+                    setUiFormData({ ...uiFormData, cardBorderStyle: value })
+                  }
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="shadow" id="shadow" />
+                    <Label htmlFor="shadow" className="font-normal cursor-pointer">
+                      Shadow (Modern)
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="border" id="border" />
+                    <Label htmlFor="border" className="font-normal cursor-pointer">
+                      Border (Classic)
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="none" id="none" />
+                    <Label htmlFor="none" className="font-normal cursor-pointer">
+                      None (Minimal)
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="shadowSize">Shadow Size</Label>
+                <Select
+                  value={uiFormData.cardShadowSize}
+                  onValueChange={(value: 'sm' | 'md' | 'lg') =>
+                    setUiFormData({ ...uiFormData, cardShadowSize: value })
+                  }
+                >
+                  <SelectTrigger id="shadowSize">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sm">Small</SelectItem>
+                    <SelectItem value="md">Medium</SelectItem>
+                    <SelectItem value="lg">Large</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="buttonColor">Add to Cart Button Color</Label>
+                <Select
+                  value={uiFormData.cardButtonColor}
+                  onValueChange={(value) => setUiFormData({ ...uiFormData, cardButtonColor: value })}
+                >
+                  <SelectTrigger id="buttonColor">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gray-900">Black</SelectItem>
+                    <SelectItem value="blue-600">Blue</SelectItem>
+                    <SelectItem value="green-600">Green</SelectItem>
+                    <SelectItem value="purple-600">Purple</SelectItem>
+                    <SelectItem value="red-600">Red</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <Label htmlFor="priceColor">Price Text Color</Label>
+                <Select
+                  value={uiFormData.cardPriceColor}
+                  onValueChange={(value) => setUiFormData({ ...uiFormData, cardPriceColor: value })}
+                >
+                  <SelectTrigger id="priceColor">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="blue-600">Blue</SelectItem>
+                    <SelectItem value="green-600">Green</SelectItem>
+                    <SelectItem value="purple-600">Purple</SelectItem>
+                    <SelectItem value="gray-900">Black</SelectItem>
+                    <SelectItem value="orange-600">Orange</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="stockBadgeBorder">Show Stock Badge Border</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Add border around Low/Out of Stock badges
+                  </p>
+                </div>
+                <Switch
+                  id="stockBadgeBorder"
+                  checked={uiFormData.showStockBadgeBorder}
+                  onCheckedChange={(checked) =>
+                    setUiFormData({ ...uiFormData, showStockBadgeBorder: checked })
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (uiSettings) {
+                  setUiFormData({
+                    storeName: uiSettings.storeName,
+                    cardBorderStyle: uiSettings.cardBorderStyle,
+                    cardShadowSize: uiSettings.cardShadowSize,
+                    cardButtonColor: uiSettings.cardButtonColor,
+                    cardPriceColor: uiSettings.cardPriceColor,
+                    showStockBadgeBorder: uiSettings.showStockBadgeBorder,
+                  });
+                }
+              }}
+            >
+              Reset
+            </Button>
+            <Button onClick={() => updateUiMutation.mutate(uiFormData)} disabled={updateUiMutation.isPending}>
+              {updateUiMutation.isPending ? "Saving..." : "Save UI Settings"}
+            </Button>
+          </div>
+        </TabsContent>
 
         {/* Store Settings */}
         <TabsContent value="store" className="space-y-4">
