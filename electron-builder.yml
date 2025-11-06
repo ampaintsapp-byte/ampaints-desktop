@@ -25,6 +25,7 @@ win:
         - x64
   icon: build/icon.ico
   artifactName: ${productName}-Setup-${version}.${ext}
+  publisherName: AMPaints
 
 nsis:
   oneClick: false
