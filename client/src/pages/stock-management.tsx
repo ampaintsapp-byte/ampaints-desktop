@@ -99,7 +99,7 @@ type QuickColor = {
   colorName: string;
   colorCode: string;
   stockQuantity: string;
-  rateOverride?: string; // optional per-color rate override
+  rateOverride?: string;
 };
 
 /* -------------------------
@@ -124,7 +124,7 @@ export default function StockManagement() {
 
   /* Quick Add wizard */
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
-  const [quickStep, setQuickStep] = useState<number>(1); // 1: product, 2: variants, 3: colors
+  const [quickStep, setQuickStep] = useState<number>(1);
   const [selectedCompany, setSelectedCompany] = useState<string>("");
   const [selectedProduct, setSelectedProduct] = useState<string>("");
   const [newCompany, setNewCompany] = useState<string>("");
@@ -218,7 +218,6 @@ export default function StockManagement() {
     if (last && (last.packingSize.trim() !== "" || last.rate.trim() !== "")) {
       setQuickVariants(prev => [...prev, { id: String(Date.now()), packingSize: "", rate: "" }]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickVariants.length]);
 
   useEffect(() => {
@@ -226,7 +225,6 @@ export default function StockManagement() {
     if (last && (last.colorName.trim() !== "" || last.colorCode.trim() !== "" || last.stockQuantity.trim() !== "")) {
       setQuickColors(prev => [...prev, { id: String(Date.now()), colorName: "", colorCode: "", stockQuantity: "" }]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickColors.length]);
 
   /* -------------------------
@@ -271,14 +269,15 @@ export default function StockManagement() {
       productForm.reset();
       setIsProductDialogOpen(false);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Create product error:", error);
       toast({ title: "Failed to create product", variant: "destructive" });
     },
   });
 
   const updateProductMutation = useMutation({
     mutationFn: async (data: { id: string; company: string; productName: string }) => {
-      const res = await apiRequest("PUT", `/api/products/${data.id}`, {
+      const res = await apiRequest("PATCH", `/api/products/${data.id}`, {
         company: data.company,
         productName: data.productName,
       });
@@ -286,10 +285,12 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
       toast({ title: "Product updated successfully" });
       setEditingProduct(null);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Update product error:", error);
       toast({ title: "Failed to update product", variant: "destructive" });
     },
   });
@@ -304,7 +305,8 @@ export default function StockManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: "Product deleted successfully" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Delete product error:", error);
       toast({ title: "Failed to delete product", variant: "destructive" });
     },
   });
@@ -320,14 +322,18 @@ export default function StockManagement() {
       setSelectedProducts(new Set());
       toast({ title: "Products deleted successfully" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Bulk delete products error:", error);
       toast({ title: "Failed to delete products", variant: "destructive" });
     },
   });
 
   const createVariantSingleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof variantFormSchema>) => {
-      const res = await apiRequest("POST", "/api/variants", { ...data, rate: parseFloat(data.rate) });
+      const res = await apiRequest("POST", "/api/variants", { 
+        ...data, 
+        rate: parseFloat(data.rate) 
+      });
       return await res.json();
     },
     onSuccess: () => {
@@ -336,14 +342,15 @@ export default function StockManagement() {
       variantForm.reset();
       setIsVariantDialogOpen(false);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Create variant error:", error);
       toast({ title: "Failed to create variant", variant: "destructive" });
     },
   });
 
   const updateVariantMutation = useMutation({
     mutationFn: async (data: { id: string; productId: string; packingSize: string; rate: number }) => {
-      const res = await apiRequest("PUT", `/api/variants/${data.id}`, {
+      const res = await apiRequest("PATCH", `/api/variants/${data.id}`, {
         productId: data.productId,
         packingSize: data.packingSize,
         rate: data.rate,
@@ -355,7 +362,8 @@ export default function StockManagement() {
       toast({ title: "Variant updated successfully" });
       setEditingVariant(null);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Update variant error:", error);
       toast({ title: "Failed to update variant", variant: "destructive" });
     },
   });
@@ -369,7 +377,8 @@ export default function StockManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: "Variant deleted successfully" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Delete variant error:", error);
       toast({ title: "Failed to delete variant", variant: "destructive" });
     },
   });
@@ -384,14 +393,18 @@ export default function StockManagement() {
       setSelectedVariants(new Set());
       toast({ title: "Variants deleted successfully" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Bulk delete variants error:", error);
       toast({ title: "Failed to delete variants", variant: "destructive" });
     },
   });
 
   const createColorSingleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof colorFormSchema>) => {
-      const res = await apiRequest("POST", "/api/colors", { ...data, stockQuantity: parseInt(data.stockQuantity, 10) });
+      const res = await apiRequest("POST", "/api/colors", { 
+        ...data, 
+        stockQuantity: parseInt(data.stockQuantity, 10) 
+      });
       return await res.json();
     },
     onSuccess: () => {
@@ -401,15 +414,15 @@ export default function StockManagement() {
       colorForm.reset();
       setIsColorDialogOpen(false);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Create color error:", error);
       toast({ title: "Failed to add color", variant: "destructive" });
     },
   });
 
   const updateColorMutation = useMutation({
     mutationFn: async (data: { id: string; variantId: string; colorName: string; colorCode: string; stockQuantity: number }) => {
-      const res = await apiRequest("PUT", `/api/colors/${data.id}`, {
-        variantId: data.variantId,
+      const res = await apiRequest("PATCH", `/api/colors/${data.id}`, {
         colorName: data.colorName,
         colorCode: data.colorCode,
         stockQuantity: data.stockQuantity,
@@ -422,7 +435,8 @@ export default function StockManagement() {
       toast({ title: "Color updated successfully" });
       setEditingColor(null);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Update color error:", error);
       toast({ title: "Failed to update color", variant: "destructive" });
     },
   });
@@ -436,7 +450,8 @@ export default function StockManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       toast({ title: "Color deleted successfully" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Delete color error:", error);
       toast({ title: "Failed to delete color", variant: "destructive" });
     },
   });
@@ -451,12 +466,13 @@ export default function StockManagement() {
       setSelectedColors(new Set());
       toast({ title: "Colors deleted successfully" });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Bulk delete colors error:", error);
       toast({ title: "Failed to delete colors", variant: "destructive" });
     },
   });
 
-  /* Quick Add bulk mutations (used by wizard) */
+  /* Quick Add bulk mutations */
   const createProductMutation = useMutation({
     mutationFn: async (data: { company: string; productName: string }) => {
       const res = await apiRequest("POST", "/api/products", data);
@@ -481,7 +497,9 @@ export default function StockManagement() {
   /* Stock In mutation */
   const stockInMutation = useMutation({
     mutationFn: async (data: z.infer<typeof stockInFormSchema>) => {
-      const res = await apiRequest("POST", `/api/colors/${data.colorId}/stock-in`, { quantity: parseInt(data.quantity, 10) });
+      const res = await apiRequest("POST", `/api/colors/${data.colorId}/stock-in`, { 
+        quantity: parseInt(data.quantity, 10) 
+      });
       return await res.json();
     },
     onSuccess: () => {
@@ -490,8 +508,10 @@ export default function StockManagement() {
       toast({ title: "Stock added successfully" });
       stockInForm.reset();
       setIsStockInDialogOpen(false);
+      setSelectedColorForStockIn(null);
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Stock in error:", error);
       toast({ title: "Failed to add stock", variant: "destructive" });
     },
   });
@@ -696,7 +716,11 @@ export default function StockManagement() {
       // Create variants and capture ids
       const createdVariantIds: string[] = [];
       for (const variant of finalVariants) {
-        const vResp = await createVariantMutation.mutateAsync({ productId, packingSize: variant.packingSize, rate: parseFloat(variant.rate) });
+        const vResp = await createVariantMutation.mutateAsync({ 
+          productId, 
+          packingSize: variant.packingSize, 
+          rate: parseFloat(variant.rate) 
+        });
         createdVariantIds.push(vResp.id);
       }
 
@@ -738,7 +762,11 @@ export default function StockManagement() {
       setQuickColors([{ id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }]);
     } catch (err: any) {
       console.error("Quick Add save error:", err);
-      toast({ title: "Save failed", description: err?.message || "Unknown error occurred", variant: "destructive" });
+      toast({ 
+        title: "Save failed", 
+        description: err?.message || "Unknown error occurred", 
+        variant: "destructive" 
+      });
     } finally {
       setIsSavingQuick(false);
     }
@@ -1670,7 +1698,7 @@ export default function StockManagement() {
                   ) : (
                     <div className="grid gap-3">
                       {filteredColorsForStockIn.map(color => (
-                        <Card key={color.id} className="hover-elevate" >
+                        <Card key={color.id} className="hover:shadow-md transition-shadow">
                           <CardContent className="p-4">
                             <div className="flex items-center justify-between gap-4">
                               <div className="flex-1 min-w-0 space-y-1">
@@ -1756,7 +1784,7 @@ export default function StockManagement() {
                       </div>
                     ) : (
                       filteredColorsForStockIn.map(color => (
-                        <Card key={color.id} className="hover-elevate cursor-pointer" onClick={() => {
+                        <Card key={color.id} className="hover:shadow-md cursor-pointer transition-shadow" onClick={() => {
                           setSelectedColorForStockIn(color);
                           stockInForm.setValue("colorId", color.id);
                         }}>
@@ -1876,8 +1904,9 @@ export default function StockManagement() {
               if (editingVariant) {
                 updateVariantMutation.mutate({ 
                   id: editingVariant.id, 
-                  ...data, 
-                  rate: parseFloat(data.rate) 
+                  productId: data.productId,
+                  packingSize: data.packingSize,
+                  rate: parseFloat(data.rate)
                 });
               }
             })} className="space-y-4">
@@ -1929,21 +1958,34 @@ export default function StockManagement() {
           <Form {...colorForm}>
             <form onSubmit={colorForm.handleSubmit(async (data) => {
               if (editingColor) {
-                // Update basic color details
-                updateColorMutation.mutate({ 
-                  id: editingColor.id, 
-                  ...data, 
-                  stockQuantity: parseInt(data.stockQuantity, 10) 
-                });
-                
-                // Update rate override separately
-                const rateOverrideValue = data.rateOverride && data.rateOverride.trim() !== "" 
-                  ? parseFloat(data.rateOverride) 
-                  : null;
-                
-                await apiRequest("PATCH", `/api/colors/${editingColor.id}/rate-override`, {
-                  rateOverride: rateOverrideValue
-                });
+                try {
+                  // Update basic color details
+                  await updateColorMutation.mutateAsync({ 
+                    id: editingColor.id, 
+                    variantId: data.variantId,
+                    colorName: data.colorName, 
+                    colorCode: data.colorCode,
+                    stockQuantity: parseInt(data.stockQuantity, 10) 
+                  });
+                  
+                  // Update rate override separately
+                  const rateOverrideValue = data.rateOverride && data.rateOverride.trim() !== "" 
+                    ? parseFloat(data.rateOverride) 
+                    : null;
+                  
+                  if (rateOverrideValue !== (editingColor.rateOverride ? parseFloat(editingColor.rateOverride) : null)) {
+                    await apiRequest("PATCH", `/api/colors/${editingColor.id}/rate-override`, {
+                      rateOverride: rateOverrideValue
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+                  }
+                  
+                  toast({ title: "Color updated successfully" });
+                  setEditingColor(null);
+                } catch (error) {
+                  console.error("Error updating color:", error);
+                  toast({ title: "Failed to update color", variant: "destructive" });
+                }
               }
             })} className="space-y-4">
               <FormField control={colorForm.control} name="variantId" render={({ field }) => (

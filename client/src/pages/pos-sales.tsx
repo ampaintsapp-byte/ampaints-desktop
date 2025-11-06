@@ -1,4 +1,4 @@
-// pos-sales.tsx
+// pos-sales.tsx - Fixed version with consistent stock validation
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -146,7 +146,8 @@ export default function POSSales() {
       setAmountPaid("");
       setLocation(`/bill/${sale.id}`);
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Create sale error:", error);
       toast({ title: "Failed to create sale", variant: "destructive" });
     },
   });
@@ -180,6 +181,7 @@ export default function POSSales() {
     return () => window.removeEventListener("keydown", handler);
   }, [cart, customerName, customerPhone, amountPaid]);
 
+  // FIXED: Consistent stock validation - allow adding but show clear warnings
   const addToCart = (
     color: ColorWithVariantAndProduct,
     qty = 1,
@@ -187,13 +189,23 @@ export default function POSSales() {
   ) => {
     const effectiveRate = rate ?? parseFloat(getEffectiveRate(color));
     
-    // REMOVED STOCK VALIDATION - Allow adding even when stock is 0
-    // Only show warning but don't prevent adding to cart
+    // Show warning for low stock but allow proceeding
     if (qty > color.stockQuantity) {
       toast({ 
-        title: "Low Stock Warning", 
-        description: `Only ${color.stockQuantity} units available in stock, but you can still proceed with the sale.`,
-        variant: "default" 
+        title: "⚠️ Low Stock Warning", 
+        description: `Only ${color.stockQuantity} units available in stock. You can still proceed with the sale.`,
+        variant: "default",
+        duration: 4000
+      });
+    }
+
+    // Show warning for out of stock but allow proceeding
+    if (color.stockQuantity === 0) {
+      toast({ 
+        title: "⚠️ Out of Stock", 
+        description: `This item is out of stock. You can still proceed with the sale.`,
+        variant: "default",
+        duration: 4000
       });
     }
 
@@ -201,12 +213,13 @@ export default function POSSales() {
       const existing = prev.find((p) => p.colorId === color.id);
       if (existing) {
         const newQuantity = existing.quantity + qty;
-        // Show warning but allow adding
+        // Show warning for increased quantity exceeding stock
         if (newQuantity > color.stockQuantity) {
           toast({ 
-            title: "Low Stock Warning", 
-            description: `Only ${color.stockQuantity} units available in stock, but you can still proceed with the sale.`,
-            variant: "default" 
+            title: "⚠️ Low Stock Warning", 
+            description: `Only ${color.stockQuantity} units available in stock. You can still proceed with the sale.`,
+            variant: "default",
+            duration: 4000
           });
         }
         return prev.map((p) =>
@@ -234,13 +247,22 @@ export default function POSSales() {
     if (!selectedColor) return;
     const qty = Math.max(1, Math.floor(confirmQty));
     
-    // REMOVED STOCK VALIDATION - Allow adding even when stock is 0
-    // Only show warning but don't prevent adding to cart
+    // Show warnings but allow proceeding
     if (qty > selectedColor.stockQuantity) {
       toast({ 
-        title: "Low Stock Warning", 
-        description: `Only ${selectedColor.stockQuantity} units available in stock, but you can still proceed with the sale.`,
-        variant: "default" 
+        title: "⚠️ Low Stock Warning", 
+        description: `Only ${selectedColor.stockQuantity} units available in stock. You can still proceed with the sale.`,
+        variant: "default",
+        duration: 4000
+      });
+    }
+
+    if (selectedColor.stockQuantity === 0) {
+      toast({ 
+        title: "⚠️ Out of Stock", 
+        description: `This item is out of stock. You can still proceed with the sale.`,
+        variant: "default",
+        duration: 4000
       });
     }
 
@@ -257,12 +279,13 @@ export default function POSSales() {
       prev.map((it) => {
         if (it.colorId === id) {
           const newQuantity = Math.max(1, it.quantity + delta);
-          // Show warning but allow updating
+          // Show warning for increased quantity exceeding stock
           if (newQuantity > it.color.stockQuantity) {
             toast({ 
-              title: "Low Stock Warning", 
-              description: `Only ${it.color.stockQuantity} units available in stock, but you can still proceed with the sale.`,
-              variant: "default" 
+              title: "⚠️ Low Stock Warning", 
+              description: `Only ${it.color.stockQuantity} units available in stock. You can still proceed with the sale.`,
+              variant: "default",
+              duration: 4000
             });
           }
           return { ...it, quantity: newQuantity };
@@ -288,15 +311,28 @@ export default function POSSales() {
       return;
     }
 
-    // Check for low stock items and show warning
+    // Check for low stock items and show consolidated warning
     const lowStockItems = cart.filter(item => item.quantity > item.color.stockQuantity);
-    if (lowStockItems.length > 0) {
+    const outOfStockItems = cart.filter(item => item.color.stockQuantity === 0);
+    
+    if (lowStockItems.length > 0 || outOfStockItems.length > 0) {
       const lowStockNames = lowStockItems.map(item => item.color.colorName).join(', ');
+      const outOfStockNames = outOfStockItems.map(item => item.color.colorName).join(', ');
+      
+      let warningMessage = "";
+      if (outOfStockItems.length > 0 && lowStockItems.length > 0) {
+        warningMessage = `Out of stock: ${outOfStockNames}. Low stock: ${lowStockNames}. You can still proceed with the sale.`;
+      } else if (outOfStockItems.length > 0) {
+        warningMessage = `Out of stock items: ${outOfStockNames}. You can still proceed with the sale.`;
+      } else {
+        warningMessage = `Low stock items: ${lowStockNames}. You can still proceed with the sale.`;
+      }
+      
       toast({
-        title: "Low Stock Items",
-        description: `The following items have insufficient stock: ${lowStockNames}. You can still proceed with the sale.`,
+        title: "⚠️ Stock Check",
+        description: warningMessage,
         variant: "default",
-        duration: 5000,
+        duration: 6000,
       });
     }
 
@@ -753,6 +789,14 @@ export default function POSSales() {
                     <p className="text-orange-700 flex items-center gap-1">
                       <AlertTriangle className="h-3 w-3" />
                       This item is out of stock, but you can still add it to the sale.
+                    </p>
+                  </div>
+                )}
+                {selectedColor.stockQuantity > 0 && selectedColor.stockQuantity < 10 && (
+                  <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
+                    <p className="text-yellow-700 flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      Low stock: Only {selectedColor.stockQuantity} units available.
                     </p>
                   </div>
                 )}

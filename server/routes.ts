@@ -82,6 +82,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/variants/:id", async (req, res) => {
+    try {
+      const { productId, packingSize, rate } = req.body;
+      if (!productId || !packingSize || rate === undefined) {
+        res.status(400).json({ error: "Product, packing size, and rate are required" });
+        return;
+      }
+      const variant = await storage.updateVariant(req.params.id, { 
+        productId, 
+        packingSize, 
+        rate: parseFloat(rate) 
+      });
+      res.json(variant);
+    } catch (error) {
+      console.error("Error updating variant:", error);
+      res.status(500).json({ error: "Failed to update variant" });
+    }
+  });
+
   app.patch("/api/variants/:id/rate", async (req, res) => {
     try {
       const { rate } = req.body;
@@ -137,14 +156,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/colors/:id", async (req, res) => {
     try {
-      const { colorName, colorCode } = req.body;
-      if (!colorName || !colorCode) {
-        res.status(400).json({ error: "Color name and code are required" });
+      const { colorName, colorCode, stockQuantity } = req.body;
+      if (!colorName || !colorCode || stockQuantity === undefined) {
+        res.status(400).json({ error: "Color name, code, and stock quantity are required" });
         return;
       }
       // Normalize color code (uppercase and trim)
       const normalizedCode = colorCode.trim().toUpperCase();
-      const color = await storage.updateColor(req.params.id, { colorName: colorName.trim(), colorCode: normalizedCode });
+      const color = await storage.updateColor(req.params.id, { 
+        colorName: colorName.trim(), 
+        colorCode: normalizedCode,
+        stockQuantity: parseInt(stockQuantity)
+      });
       res.json(color);
     } catch (error) {
       console.error("Error updating color:", error);
@@ -242,7 +265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Customer Suggestions
+  // Customer Suggestions - FIXED: Consistent endpoint naming
   app.get("/api/customers/suggestions", async (_req, res) => {
     try {
       const sales = await storage.getSales();
@@ -349,7 +372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // UPDATE SALE ITEM ENDPOINT - ADD THIS
+  // UPDATE SALE ITEM ENDPOINT
   app.patch("/api/sale-items/:id", async (req, res) => {
     try {
       const { quantity, rate, subtotal } = req.body;
@@ -553,6 +576,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // FIXED: Complete the function properly
   const httpServer = createServer(app);
   return httpServer;
-}

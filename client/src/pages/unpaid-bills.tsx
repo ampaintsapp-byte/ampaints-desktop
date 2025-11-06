@@ -126,8 +126,9 @@ export default function UnpaidBills() {
   
   const { toast } = useToast();
 
+  // FIXED: Correct endpoint path
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
-    queryKey: ["/api/customer-suggestions"],
+    queryKey: ["/api/customers/suggestions"],
   });
 
   const [filters, setFilters] = useState<FilterType>({
@@ -172,7 +173,8 @@ export default function UnpaidBills() {
       setPaymentDialogOpen(false);
       setPaymentAmount("");
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Payment recording error:", error);
       toast({ title: "Failed to record payment", variant: "destructive" });
     },
   });
@@ -198,7 +200,8 @@ export default function UnpaidBills() {
       setQuantity("1");
       setSearchQuery("");
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Add product error:", error);
       toast({ title: "Failed to add product", variant: "destructive" });
     },
   });
@@ -215,7 +218,8 @@ export default function UnpaidBills() {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: "Product removed from bill" });
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Delete item error:", error);
       toast({ title: "Failed to remove product", variant: "destructive" });
     },
   });
@@ -237,7 +241,8 @@ export default function UnpaidBills() {
         notes: ""
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Create manual balance error:", error);
       toast({ title: "Failed to add pending balance", variant: "destructive" });
     },
   });
@@ -259,7 +264,8 @@ export default function UnpaidBills() {
       setEditingSaleId(null);
       setDueDateForm({ dueDate: "", notes: "" });
     },
-    onError: () => {
+    onError: (error: Error) => {
+      console.error("Update due date error:", error);
       toast({ title: "Failed to update due date", variant: "destructive" });
     },
   });
@@ -326,6 +332,7 @@ export default function UnpaidBills() {
       setPaymentAmount("");
       setSelectedCustomerPhone(null);
     } catch (error) {
+      console.error("Payment processing error:", error);
       toast({ title: "Failed to record payment", variant: "destructive" });
     }
   };

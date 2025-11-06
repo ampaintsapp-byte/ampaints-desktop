@@ -36,6 +36,7 @@ export interface IStorage {
   getVariants(): Promise<VariantWithProduct[]>;
   getVariant(id: string): Promise<Variant | undefined>;
   createVariant(variant: InsertVariant): Promise<Variant>;
+  updateVariant(id: string, data: { productId: string; packingSize: string; rate: number }): Promise<Variant>;
   updateVariantRate(id: string, rate: number): Promise<Variant>;
   deleteVariant(id: string): Promise<void>;
 
@@ -43,7 +44,7 @@ export interface IStorage {
   getColors(): Promise<ColorWithVariantAndProduct[]>;
   getColor(id: string): Promise<Color | undefined>;
   createColor(color: InsertColor): Promise<Color>;
-  updateColor(id: string, data: { colorName: string; colorCode: string }): Promise<Color>;
+  updateColor(id: string, data: { colorName: string; colorCode: string; stockQuantity: number }): Promise<Color>;
   updateColorStock(id: string, stockQuantity: number): Promise<Color>;
   updateColorRateOverride(id: string, rateOverride: number | null): Promise<Color>;
   stockIn(id: string, quantity: number): Promise<Color>;
@@ -140,6 +141,21 @@ export class DatabaseStorage implements IStorage {
     return variant;
   }
 
+  async updateVariant(id: string, data: { productId: string; packingSize: string; rate: number }): Promise<Variant> {
+    await db
+      .update(variants)
+      .set({ 
+        productId: data.productId,
+        packingSize: data.packingSize,
+        rate: data.rate.toString()
+      })
+      .where(eq(variants.id, id));
+    
+    const [variant] = await db.select().from(variants).where(eq(variants.id, id));
+    if (!variant) throw new Error("Variant not found after update");
+    return variant;
+  }
+
   async updateVariantRate(id: string, rate: number): Promise<Variant> {
     await db
       .update(variants)
@@ -147,6 +163,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(variants.id, id));
     
     const [variant] = await db.select().from(variants).where(eq(variants.id, id));
+    if (!variant) throw new Error("Variant not found after update");
     return variant;
   }
 
@@ -187,14 +204,19 @@ export class DatabaseStorage implements IStorage {
     return color;
   }
 
-  async updateColor(id: string, data: { colorName: string; colorCode: string }): Promise<Color> {
+  async updateColor(id: string, data: { colorName: string; colorCode: string; stockQuantity: number }): Promise<Color> {
     await db
       .update(colors)
-      .set({ colorName: data.colorName, colorCode: data.colorCode })
+      .set({ 
+        colorName: data.colorName, 
+        colorCode: data.colorCode,
+        stockQuantity: data.stockQuantity
+      })
       .where(eq(colors.id, id));
-    const updated = await this.getColor(id);
-    if (!updated) throw new Error("Color not found after update");
-    return updated;
+    
+    const [color] = await db.select().from(colors).where(eq(colors.id, id));
+    if (!color) throw new Error("Color not found after update");
+    return color;
   }
 
   async updateColorStock(id: string, stockQuantity: number): Promise<Color> {
@@ -204,6 +226,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(colors.id, id));
     
     const [color] = await db.select().from(colors).where(eq(colors.id, id));
+    if (!color) throw new Error("Color not found after update");
     return color;
   }
 
@@ -214,6 +237,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(colors.id, id));
     
     const [color] = await db.select().from(colors).where(eq(colors.id, id));
+    if (!color) throw new Error("Color not found after update");
     return color;
   }
 
@@ -226,6 +250,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(colors.id, id));
     
     const [color] = await db.select().from(colors).where(eq(colors.id, id));
+    if (!color) throw new Error("Color not found after stock in");
     return color;
   }
 
@@ -233,7 +258,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(colors).where(eq(colors.id, id));
   }
 
-  // Sales
+  // Sales (existing methods remain the same)
   async getSales(): Promise<Sale[]> {
     return await db.select().from(sales).orderBy(desc(sales.createdAt));
   }
@@ -428,7 +453,6 @@ export class DatabaseStorage implements IStorage {
     return saleItem;
   }
 
-  // UPDATE SALE ITEM METHOD - ADDED
   async updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem> {
     try {
       // Get the current item to check stock changes
@@ -540,7 +564,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(sales.id, saleId));
   }
 
-  // Dashboard Stats
+  // Dashboard Stats (existing implementation remains the same)
   async getDashboardStats() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
