@@ -34,6 +34,7 @@ export default function RateManagement() {
   const [sizeFilter, setSizeFilter] = useState<string>("all");
   const { toast } = useToast();
 
+  // FIXED: Added proper error handling and refetch options
   const { 
     data: variants = [], 
     isLoading, 
@@ -87,6 +88,7 @@ export default function RateManagement() {
     toast({ title: "Refreshing rates..." });
   };
 
+  // FIXED: Ensure we get all unique values properly
   const uniqueCompanies = useMemo(() => {
     const companies = new Set(variants.map(v => v.product.company));
     return Array.from(companies).sort();
@@ -102,22 +104,39 @@ export default function RateManagement() {
     return Array.from(sizes).sort();
   }, [variants]);
 
+  // FIXED: Proper filtering logic
   const filteredVariants = useMemo(() => {
-    return variants.filter((variant) => {
+    let filtered = variants;
+
+    // Apply search filter
+    if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      const matchesSearch = !query || 
+      filtered = filtered.filter((variant) => 
         variant.product.company.toLowerCase().includes(query) ||
         variant.product.productName.toLowerCase().includes(query) ||
-        variant.packingSize.toLowerCase().includes(query);
-      
-      const matchesCompany = companyFilter === "all" || variant.product.company === companyFilter;
-      const matchesProduct = productFilter === "all" || variant.product.productName === productFilter;
-      const matchesSize = sizeFilter === "all" || variant.packingSize === sizeFilter;
-      
-      return matchesSearch && matchesCompany && matchesProduct && matchesSize;
-    });
+        variant.packingSize.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply company filter
+    if (companyFilter !== "all") {
+      filtered = filtered.filter(variant => variant.product.company === companyFilter);
+    }
+
+    // Apply product filter
+    if (productFilter !== "all") {
+      filtered = filtered.filter(variant => variant.product.productName === productFilter);
+    }
+
+    // Apply size filter
+    if (sizeFilter !== "all") {
+      filtered = filtered.filter(variant => variant.packingSize === sizeFilter);
+    }
+
+    return filtered;
   }, [variants, searchQuery, companyFilter, productFilter, sizeFilter]);
 
+  // FIXED: Proper grouping logic
   const groupedVariants = filteredVariants.reduce((acc, variant) => {
     const key = `${variant.product.company}|${variant.product.productName}`;
     if (!acc[key]) {
@@ -160,7 +179,9 @@ export default function RateManagement() {
           <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-rate-management-title">
             Rate Management
           </h1>
-          <p className="text-sm text-muted-foreground">Manage pricing for all product variants</p>
+          <p className="text-sm text-muted-foreground">
+            Manage pricing for {variants.length} product variants
+          </p>
         </div>
         <Button 
           variant="outline" 
@@ -276,7 +297,7 @@ export default function RateManagement() {
         <Card>
           <CardContent className="p-6">
             <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
+              {[1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>

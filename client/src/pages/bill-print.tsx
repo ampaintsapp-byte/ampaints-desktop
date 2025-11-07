@@ -40,6 +40,7 @@ export default function BillPrint() {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingItems, setEditingItems] = useState<{ [key: string]: { quantity: string; rate: string } }>({});
   const [isPrinting, setIsPrinting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Load receipt settings from localStorage
   const [receiptSettings, setReceiptSettings] = useState({
@@ -76,42 +77,42 @@ export default function BillPrint() {
     }
   }, []);
 
-  const { data: sale, isLoading, error } = useQuery<SaleWithItems>({
+  const { data: sale, isLoading, error, refetch } = useQuery<SaleWithItems>({
     queryKey: ["/api/sales", saleId],
     enabled: !!saleId,
   });
 
+  // FIXED: Get ALL colors without limiting to 20
   const { data: colors = [] } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
     enabled: addItemDialogOpen,
   });
 
-  // Debug logging
-  useEffect(() => {
-    if (sale) {
-      console.log("Sale data:", sale);
-      console.log("Sale items:", sale.saleItems);
-    }
-    if (error) {
-      console.error("Error loading sale:", error);
-    }
-  }, [sale, error]);
-
-  // Complete Bill Delete Function
+  // Complete Bill Delete Function - FIXED
   const deleteSale = async () => {
     if (!saleId) return;
     
     try {
-      setIsPrinting(true);
+      setIsDeleting(true);
       
-      // Delete all sale items first
-      if (sale?.saleItems) {
-        for (const item of sale.saleItems) {
+      console.log("Starting delete process for sale:", saleId);
+      
+      // First, get all sale items to return stock
+      const saleResponse = await apiRequest("GET", `/api/sales/${saleId}`);
+      const saleData = await saleResponse.json();
+      
+      if (saleData.saleItems && saleData.saleItems.length > 0) {
+        console.log("Deleting sale items:", saleData.saleItems.length);
+        
+        // Delete all sale items
+        for (const item of saleData.saleItems) {
           await apiRequest("DELETE", `/api/sale-items/${item.id}`);
+          console.log("Deleted sale item:", item.id);
         }
       }
       
-      // Then delete the sale
+      // Then delete the sale itself
+      console.log("Deleting sale record:", saleId);
       await apiRequest("DELETE", `/api/sales/${saleId}`);
       
       // Invalidate all related queries
@@ -121,6 +122,8 @@ export default function BillPrint() {
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
       ]);
+      
+      console.log("Delete completed successfully");
       
       toast({ 
         title: "Bill deleted successfully",
@@ -142,11 +145,11 @@ export default function BillPrint() {
         variant: "destructive" 
       });
     } finally {
-      setIsPrinting(false);
+      setIsDeleting(false);
     }
   };
 
-  // Print Thermal Function with Auto-print Logic
+  // Print Thermal Function with Auto-print Logic - FIXED
   const printThermal = () => {
     if (isPrinting) return;
     
@@ -162,23 +165,52 @@ export default function BillPrint() {
         autoprintEnabled = settings.autoprint || false;
       }
       
+      console.log("Auto-print enabled:", autoprintEnabled);
+      
       if (autoprintEnabled) {
-        // Direct print logic
-        console.log("Auto-print enabled, printing directly...");
+        // Direct print logic - FIXED: Use a more reliable approach
+        console.log("Auto-print: Printing directly...");
         
-        // Use browser's print functionality
-        setTimeout(() => {
+        // Create a hidden iframe for printing
+        const printFrame = document.createElement('iframe');
+        printFrame.style.position = 'absolute';
+        printFrame.style.left = '-9999px';
+        printFrame.style.top = '0';
+        printFrame.style.width = '80mm';
+        printFrame.style.height = '0';
+        printFrame.style.border = 'none';
+        
+        document.body.appendChild(printFrame);
+        
+        // Get the thermal receipt HTML
+        const thermalReceipt = document.getElementById('thermal-receipt');
+        if (thermalReceipt) {
+          printFrame.contentDocument?.write(thermalReceipt.outerHTML);
+          printFrame.contentDocument?.close();
+          
+          setTimeout(() => {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+            
+            // Clean up
+            setTimeout(() => {
+              document.body.removeChild(printFrame);
+              setIsPrinting(false);
+              toast({ 
+                title: "Receipt printed successfully",
+                description: "Auto-print completed."
+              });
+            }, 500);
+          }, 500);
+        } else {
+          // Fallback to regular print
           window.print();
           setIsPrinting(false);
-          toast({ 
-            title: "Receipt sent to printer",
-            description: "Auto-print completed successfully."
-          });
-        }, 500);
+        }
         
       } else {
-        // Show print dialog
-        console.log("Auto-print disabled, showing print dialog...");
+        // Show print dialog - FIXED: Use window.print() directly
+        console.log("Auto-print disabled: Showing print dialog...");
         
         setTimeout(() => {
           window.print();
@@ -199,13 +231,6 @@ export default function BillPrint() {
       });
       setIsPrinting(false);
     }
-  };
-
-  // Manual Print Dialog (for when auto-print is off)
-  const openPrintDialog = () => {
-    setTimeout(() => {
-      window.print();
-    }, 200);
   };
 
   // Add Item (Zero Stock Allowed)
@@ -352,18 +377,17 @@ export default function BillPrint() {
     }
   };
 
+  // FIXED: Show ALL colors without limiting to 20
   const filteredColors = useMemo(() => {
-    if (!searchQuery) return colors.slice(0, 20);
+    if (!searchQuery) return colors; // Remove .slice(0, 20)
     const q = searchQuery.toLowerCase();
-    return colors
-      .filter(c =>
-        c.colorName.toLowerCase().includes(q) ||
-        c.colorCode.toLowerCase().includes(q) ||
-        c.variant.product.company.toLowerCase().includes(q) ||
-        c.variant.product.productName.toLowerCase().includes(q) ||
-        c.variant.packingSize.toLowerCase().includes(q)
-      )
-      .slice(0, 20);
+    return colors.filter(c =>
+      c.colorName.toLowerCase().includes(q) ||
+      c.colorCode.toLowerCase().includes(q) ||
+      c.variant.product.company.toLowerCase().includes(q) ||
+      c.variant.product.productName.toLowerCase().includes(q) ||
+      c.variant.packingSize.toLowerCase().includes(q)
+    ); // Remove .slice(0, 20)
   }, [colors, searchQuery]);
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB");
@@ -380,14 +404,6 @@ export default function BillPrint() {
       return "Product information not available";
     }
     return `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
-  };
-
-  // Helper: Short Product Name for Receipt
-  const getShortProductLine = (item: any) => {
-    if (!item.color || !item.color.variant || !item.color.variant.product) {
-      return "Product info missing";
-    }
-    return `${item.color.variant.product.productName} - ${item.color.colorName}`;
   };
 
   return (
@@ -579,7 +595,9 @@ export default function BillPrint() {
       </div>
 
       {/* PRINT ONLY: Thermal Receipt */}
-      <ThermalReceipt sale={sale} receiptSettings={receiptSettings} />
+      <div id="thermal-receipt">
+        <ThermalReceipt sale={sale} receiptSettings={receiptSettings} />
+      </div>
 
       {/* Delete Bill Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -600,16 +618,16 @@ export default function BillPrint() {
             <Button 
               variant="outline" 
               onClick={() => setDeleteDialogOpen(false)}
-              disabled={isPrinting}
+              disabled={isDeleting}
             >
               Cancel
             </Button>
             <Button 
               variant="destructive" 
               onClick={deleteSale}
-              disabled={isPrinting}
+              disabled={isDeleting}
             >
-              {isPrinting ? (
+              {isDeleting ? (
                 <>
                   <Trash2 className="h-4 w-4 mr-2 animate-spin" />
                   Deleting...
@@ -625,13 +643,13 @@ export default function BillPrint() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Item Dialog */}
+      {/* Add Item Dialog - FIXED: Show all colors without limit */}
       <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle>Add Item to Bill</DialogTitle>
             <DialogDescription>
-              Search and select a product to add to the bill
+              Search and select a product to add to the bill. Showing {filteredColors.length} products.
             </DialogDescription>
           </DialogHeader>
           <Input 
@@ -639,7 +657,7 @@ export default function BillPrint() {
             value={searchQuery} 
             onChange={e => setSearchQuery(e.target.value)} 
           />
-          <div className="max-h-64 overflow-y-auto my-4 space-y-2">
+          <div className="max-h-96 overflow-y-auto my-4 space-y-2">
             {filteredColors.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 {searchQuery ? "No products found matching your search" : "No products available"}
@@ -652,14 +670,14 @@ export default function BillPrint() {
                   onClick={() => setSelectedColor(c)}
                 >
                   <div className="flex justify-between">
-                    <div>
+                    <div className="flex-1">
                       <p className="font-semibold">{c.variant.product.productName} - {c.colorName} {c.colorCode} - {c.variant.packingSize}</p>
                       <p className="text-sm text-muted-foreground">
                         {c.variant.product.company} • Stock: {c.stockQuantity}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-mono">Rs. {Math.round(parseFloat(c.variant.rate))}</p>
+                      <p className="font-mono font-bold">Rs. {Math.round(parseFloat(c.variant.rate))}</p>
                       <Badge variant={c.stockQuantity > 0 ? "default" : "destructive"}>
                         {c.stockQuantity} in stock
                       </Badge>
@@ -681,7 +699,7 @@ export default function BillPrint() {
               />
               <p className="text-xs text-muted-foreground">Zero stock allowed</p>
               <div className="p-3 bg-muted rounded-md">
-                <div className="flex justify-between font-mono">
+                <div className="flex justify-between font-mono font-bold">
                   <span>Subtotal:</span>
                   <span>Rs. {Math.round(parseFloat(selectedColor.variant.rate) * parseInt(quantity || "0"))}</span>
                 </div>
