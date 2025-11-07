@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Edit2, Check, X, TrendingUp, Search, Filter, RefreshCw, AlertCircle } from "lucide-react";
+import { Edit2, Check, X, TrendingUp, Search, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { VariantWithProduct } from "@shared/schema";
@@ -34,47 +34,22 @@ export default function RateManagement() {
   const [sizeFilter, setSizeFilter] = useState<string>("all");
   const { toast } = useToast();
 
-  // Enhanced query with proper error handling and real-time updates
-  const { 
-    data: variants = [], 
-    isLoading, 
-    error,
-    refetch 
-  } = useQuery<VariantWithProduct[]>({
+  const { data: variants = [], isLoading } = useQuery<VariantWithProduct[]>({
     queryKey: ["/api/variants"],
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
-    staleTime: 0, // Always fetch fresh data
-    retry: 3, // Retry 3 times on failure
   });
 
   const updateRateMutation = useMutation({
     mutationFn: async (data: { id: string; rate: number }) => {
-      const response = await fetch(`/api/variants/${data.id}/rate`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rate: data.rate })
-      });
-      if (!response.ok) throw new Error("Failed to update rate");
-      return response.json();
+      return await apiRequest("PATCH", `/api/variants/${data.id}/rate`, { rate: data.rate });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      toast({ 
-        title: "Rate updated successfully",
-        description: "The new rate has been saved and will be reflected immediately."
-      });
+      toast({ title: "Rate updated successfully" });
       setEditingId(null);
       setEditRate("");
     },
-    onError: (error: Error) => {
-      console.error("Update rate error:", error);
-      toast({ 
-        title: "Failed to update rate", 
-        description: "Please check your connection and try again.",
-        variant: "destructive" 
-      });
+    onError: () => {
+      toast({ title: "Failed to update rate", variant: "destructive" });
     },
   });
 
@@ -86,11 +61,7 @@ export default function RateManagement() {
   const saveRate = (id: string) => {
     const rate = parseFloat(editRate);
     if (isNaN(rate) || rate <= 0) {
-      toast({ 
-        title: "Invalid rate", 
-        description: "Please enter a valid positive number.",
-        variant: "destructive" 
-      });
+      toast({ title: "Please enter a valid rate", variant: "destructive" });
       return;
     }
     updateRateMutation.mutate({ id, rate });
@@ -101,87 +72,43 @@ export default function RateManagement() {
     setEditRate("");
   };
 
-  const handleRefresh = async () => {
-    try {
-      await refetch();
-      toast({ 
-        title: "Rates refreshed",
-        description: "Latest rates loaded successfully."
-      });
-    } catch (error) {
-      toast({ 
-        title: "Refresh failed", 
-        description: "Could not load the latest rates.",
-        variant: "destructive" 
-      });
-    }
-  };
-
-  // Enhanced data processing with error handling
   const uniqueCompanies = useMemo(() => {
-    if (!variants || variants.length === 0) return [];
-    const companies = variants.map(v => v.product?.company).filter(Boolean) as string[];
-    return Array.from(new Set(companies)).sort();
+    const companies = new Set(variants.map(v => v.product.company));
+    return Array.from(companies).sort();
   }, [variants]);
 
   const uniqueProducts = useMemo(() => {
-    if (!variants || variants.length === 0) return [];
-    const products = variants.map(v => v.product?.productName).filter(Boolean) as string[];
-    return Array.from(new Set(products)).sort();
+    const products = new Set(variants.map(v => v.product.productName));
+    return Array.from(products).sort();
   }, [variants]);
 
   const uniqueSizes = useMemo(() => {
-    if (!variants || variants.length === 0) return [];
-    const sizes = variants.map(v => v.packingSize).filter(Boolean) as string[];
-    return Array.from(new Set(sizes)).sort();
+    const sizes = new Set(variants.map(v => v.packingSize));
+    return Array.from(sizes).sort();
   }, [variants]);
 
-  // Enhanced filtering with proper null checks
   const filteredVariants = useMemo(() => {
-    let filtered = [...variants];
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter((variant) => {
-        const company = variant.product?.company?.toLowerCase() || "";
-        const productName = variant.product?.productName?.toLowerCase() || "";
-        const packingSize = variant.packingSize?.toLowerCase() || "";
-        
-        return company.includes(query) || 
-               productName.includes(query) || 
-               packingSize.includes(query);
-      });
-    }
-
-    // Apply company filter
-    if (companyFilter !== "all") {
-      filtered = filtered.filter(variant => variant.product?.company === companyFilter);
-    }
-
-    // Apply product filter
-    if (productFilter !== "all") {
-      filtered = filtered.filter(variant => variant.product?.productName === productFilter);
-    }
-
-    // Apply size filter
-    if (sizeFilter !== "all") {
-      filtered = filtered.filter(variant => variant.packingSize === sizeFilter);
-    }
-
-    return filtered;
+    return variants.filter((variant) => {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = !query || 
+        variant.product.company.toLowerCase().includes(query) ||
+        variant.product.productName.toLowerCase().includes(query) ||
+        variant.packingSize.toLowerCase().includes(query);
+      
+      const matchesCompany = companyFilter === "all" || variant.product.company === companyFilter;
+      const matchesProduct = productFilter === "all" || variant.product.productName === productFilter;
+      const matchesSize = sizeFilter === "all" || variant.packingSize === sizeFilter;
+      
+      return matchesSearch && matchesCompany && matchesProduct && matchesSize;
+    });
   }, [variants, searchQuery, companyFilter, productFilter, sizeFilter]);
 
-  // Enhanced grouping with proper error handling
   const groupedVariants = filteredVariants.reduce((acc, variant) => {
-    const company = variant.product?.company || "Unknown Company";
-    const productName = variant.product?.productName || "Unknown Product";
-    const key = `${company}|${productName}`;
-    
+    const key = `${variant.product.company}|${variant.product.productName}`;
     if (!acc[key]) {
       acc[key] = {
-        company,
-        productName,
+        company: variant.product.company,
+        productName: variant.product.productName,
         variants: [],
       };
     }
@@ -191,51 +118,13 @@ export default function RateManagement() {
 
   const groupedArray = Object.values(groupedVariants);
 
-  if (error) {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-            <h3 className="text-lg font-medium mb-1">Error Loading Rates</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              {error.message || "Failed to load product variants from the server."}
-            </p>
-            <div className="flex gap-2">
-              <Button onClick={() => refetch()} variant="outline">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Try Again
-              </Button>
-              <Button onClick={() => window.location.reload()} variant="default">
-                Reload Page
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-rate-management-title">
-            Rate Management
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage pricing for {variants.length} product variants across {uniqueCompanies.length} companies
-          </p>
-        </div>
-        <Button 
-          variant="outline" 
-          onClick={handleRefresh}
-          disabled={isLoading}
-          className="flex items-center gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          {isLoading ? "Refreshing..." : "Refresh"}
-        </Button>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-rate-management-title">
+          Rate Management
+        </h1>
+        <p className="text-sm text-muted-foreground">Manage pricing for all product variants</p>
       </div>
 
       {/* Filters */}
@@ -243,7 +132,7 @@ export default function RateManagement() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Filter className="h-4 w-4" />
-            Filters & Search
+            Filters
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -251,7 +140,7 @@ export default function RateManagement() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by company, product name, or packing size..."
+              placeholder="Search by company, product, or size..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               data-testid="input-search-rates"
@@ -265,10 +154,10 @@ export default function RateManagement() {
               <label className="text-sm font-medium mb-2 block">Company</label>
               <Select value={companyFilter} onValueChange={setCompanyFilter}>
                 <SelectTrigger data-testid="select-company-filter">
-                  <SelectValue placeholder="All Companies" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Companies ({uniqueCompanies.length})</SelectItem>
+                  <SelectItem value="all">All Companies</SelectItem>
                   {uniqueCompanies.map((company) => (
                     <SelectItem key={company} value={company}>
                       {company}
@@ -282,10 +171,10 @@ export default function RateManagement() {
               <label className="text-sm font-medium mb-2 block">Product</label>
               <Select value={productFilter} onValueChange={setProductFilter}>
                 <SelectTrigger data-testid="select-product-filter">
-                  <SelectValue placeholder="All Products" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Products ({uniqueProducts.length})</SelectItem>
+                  <SelectItem value="all">All Products</SelectItem>
                   {uniqueProducts.map((product) => (
                     <SelectItem key={product} value={product}>
                       {product}
@@ -299,10 +188,10 @@ export default function RateManagement() {
               <label className="text-sm font-medium mb-2 block">Packing Size</label>
               <Select value={sizeFilter} onValueChange={setSizeFilter}>
                 <SelectTrigger data-testid="select-size-filter">
-                  <SelectValue placeholder="All Sizes" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Sizes ({uniqueSizes.length})</SelectItem>
+                  <SelectItem value="all">All Sizes</SelectItem>
                   {uniqueSizes.map((size) => (
                     <SelectItem key={size} value={size}>
                       {size}
@@ -313,16 +202,11 @@ export default function RateManagement() {
             </div>
           </div>
 
-          {/* Results Summary */}
-          <div className="flex items-center justify-between text-sm">
-            <p className="text-muted-foreground">
-              Showing {filteredVariants.length} of {variants.length} variants
-              {searchQuery && ` for "${searchQuery}"`}
-              {companyFilter !== "all" && ` in ${companyFilter}`}
-              {productFilter !== "all" && ` • ${productFilter}`}
-              {sizeFilter !== "all" && ` • ${sizeFilter}`}
-            </p>
-            {(searchQuery || companyFilter !== "all" || productFilter !== "all" || sizeFilter !== "all") && (
+          {(searchQuery || companyFilter !== "all" || productFilter !== "all" || sizeFilter !== "all") && (
+            <div className="flex items-center justify-between text-sm">
+              <p className="text-muted-foreground">
+                Showing {filteredVariants.length} of {variants.length} variants
+              </p>
               <Button
                 variant="ghost"
                 size="sm"
@@ -334,10 +218,10 @@ export default function RateManagement() {
                 }}
                 data-testid="button-clear-filters"
               >
-                Clear All Filters
+                Clear Filters
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -345,146 +229,103 @@ export default function RateManagement() {
       {isLoading ? (
         <Card>
           <CardContent className="p-6">
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="flex items-center space-x-4">
-                  <Skeleton className="h-4 w-4" />
-                  <Skeleton className="h-4 flex-1" />
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-8 w-8 rounded-full" />
-                </div>
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
           </CardContent>
         </Card>
-      ) : filteredVariants.length === 0 ? (
+      ) : groupedArray.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <TrendingUp className="h-12 w-12 text-muted-foreground mb-4 opacity-50" />
             <h3 className="text-lg font-medium mb-1">
-              {variants.length === 0 ? "No products found" : "No matching variants found"}
+              {variants.length === 0 ? "No products found" : "No results found"}
             </h3>
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm text-muted-foreground">
               {variants.length === 0 
-                ? "Add products and variants to manage their rates"
-                : "Try adjusting your search criteria or filters"
+                ? "Add products to manage their rates"
+                : "Try adjusting your filters"
               }
             </p>
-            {variants.length === 0 ? (
-              <div className="flex gap-2">
-                <Button variant="outline" asChild>
-                  <a href="/products">Add Products</a>
-                </Button>
-                <Button variant="outline" asChild>
-                  <a href="/inventory">Manage Inventory</a>
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchQuery("");
-                  setCompanyFilter("all");
-                  setProductFilter("all");
-                  setSizeFilter("all");
-                }}
-              >
-                Clear All Filters
-              </Button>
-            )}
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {groupedArray.map((group) => (
-            <Card key={`${group.company}|${group.productName}`} className="overflow-hidden">
-              <CardHeader className="bg-muted/50 pb-3">
+            <Card key={`${group.company}|${group.productName}`}>
+              <CardHeader>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="outline" className="text-sm">{group.company}</Badge>
+                  <Badge variant="outline">{group.company}</Badge>
                   <CardTitle className="text-lg">{group.productName}</CardTitle>
                   <Badge variant="secondary">{group.variants.length} sizes</Badge>
                 </div>
               </CardHeader>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
+              <CardContent>
+                <div className="rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-1/3">Packing Size</TableHead>
-                        <TableHead className="w-1/3">Current Rate</TableHead>
-                        <TableHead className="w-1/3 text-right">Actions</TableHead>
+                        <TableHead>Packing Size</TableHead>
+                        <TableHead>Current Rate</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {group.variants.map((variant) => (
                         <TableRow key={variant.id} data-testid={`rate-row-${variant.id}`}>
                           <TableCell>
-                            <Badge variant="outline" className="text-base px-3 py-1">
-                              {variant.packingSize}
-                            </Badge>
+                            <Badge variant="outline">{variant.packingSize}</Badge>
                           </TableCell>
                           <TableCell>
                             {editingId === variant.id ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Rs.</span>
-                                <Input
-                                  type="number"
-                                  step="1"
-                                  min="1"
-                                  value={editRate}
-                                  onChange={(e) => setEditRate(e.target.value)}
-                                  className="w-32 h-9"
-                                  data-testid={`input-edit-rate-${variant.id}`}
-                                  autoFocus
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveRate(variant.id);
-                                    if (e.key === 'Escape') cancelEditing();
-                                  }}
-                                />
-                              </div>
+                              <Input
+                                type="number"
+                                step="1"
+                                value={editRate}
+                                onChange={(e) => setEditRate(e.target.value)}
+                                className="w-32 h-8"
+                                data-testid={`input-edit-rate-${variant.id}`}
+                                autoFocus
+                              />
                             ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Rs.</span>
-                                <span className="font-mono text-lg font-bold">
-                                  {Math.round(parseFloat(variant.rate)).toLocaleString()}
-                                </span>
-                              </div>
+                              <span className="font-mono">Rs. {Math.round(parseFloat(variant.rate))}</span>
                             )}
                           </TableCell>
                           <TableCell className="text-right">
                             {editingId === variant.id ? (
-                              <div className="flex justify-end gap-2">
+                              <div className="flex justify-end gap-1">
                                 <Button
-                                  variant="default"
-                                  size="sm"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
                                   onClick={() => saveRate(variant.id)}
                                   disabled={updateRateMutation.isPending}
                                   data-testid={`button-save-rate-${variant.id}`}
                                 >
-                                  <Check className="h-4 w-4 mr-1" />
-                                  Save
+                                  <Check className="h-4 w-4" />
                                 </Button>
                                 <Button
-                                  variant="outline"
-                                  size="sm"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
                                   onClick={cancelEditing}
                                   disabled={updateRateMutation.isPending}
                                   data-testid={`button-cancel-edit-${variant.id}`}
                                 >
-                                  <X className="h-4 w-4 mr-1" />
-                                  Cancel
+                                  <X className="h-4 w-4" />
                                 </Button>
                               </div>
                             ) : (
                               <Button
-                                variant="outline"
-                                size="sm"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
                                 onClick={() => startEditing(variant.id, variant.rate)}
                                 data-testid={`button-edit-rate-${variant.id}`}
-                                disabled={!!editingId} // Disable other edit buttons when one is being edited
                               >
-                                <Edit2 className="h-4 w-4 mr-1" />
-                                Edit Rate
+                                <Edit2 className="h-4 w-4" />
                               </Button>
                             )}
                           </TableCell>
@@ -497,36 +338,6 @@ export default function RateManagement() {
             </Card>
           ))}
         </div>
-      )}
-
-      {/* Summary Footer */}
-      {!isLoading && variants.length > 0 && (
-        <Card className="bg-muted/50">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-4">
-                <span className="text-muted-foreground">Total Variants:</span>
-                <Badge variant="secondary">{variants.length}</Badge>
-                
-                <span className="text-muted-foreground">Companies:</span>
-                <Badge variant="secondary">{uniqueCompanies.length}</Badge>
-                
-                <span className="text-muted-foreground">Products:</span>
-                <Badge variant="secondary">{uniqueProducts.length}</Badge>
-              </div>
-              
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handleRefresh}
-                disabled={isLoading}
-              >
-                <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       )}
     </div>
   );
