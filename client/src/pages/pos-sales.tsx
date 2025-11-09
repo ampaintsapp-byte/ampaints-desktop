@@ -1,4 +1,4 @@
-// pos-sales.tsx - Fixed version with consistent stock validation
+// pos-sales.tsx - Multi-tab POS with complete implementation
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -86,6 +86,10 @@ export default function POSSales() {
   const [confirmQty, setConfirmQty] = useState(1);
   const [confirmRate, setConfirmRate] = useState<number | "">("");
 
+  // Multi-tab state
+  const [posInstances, setPosInstances] = useState<number>(1);
+  const [activeInstance, setActiveInstance] = useState<number>(1);
+
   const { data: colors = [], isLoading } =
     useQuery<ColorWithVariantAndProduct[]>({
       queryKey: ["/api/colors"],
@@ -97,9 +101,8 @@ export default function POSSales() {
 
   const filteredColors = useMemo(() => {
     if (!searchQuery) return colors;
-    const q = searchQuery.toUpperCase().trim(); // Uppercase for exact color code matching
+    const q = searchQuery.toUpperCase().trim();
     
-    // Priority-based filtering for super-fast exact color code matching
     const results = colors.filter(
       (c) =>
         c.colorCode.toUpperCase().includes(q) ||
@@ -108,12 +111,10 @@ export default function POSSales() {
         c.variant.product.company.toLowerCase().includes(q.toLowerCase())
     );
     
-    // Sort with priority: Exact color code matches first, then starts-with, then contains
     return results.sort((a, b) => {
       const aCodeUpper = a.colorCode.toUpperCase();
       const bCodeUpper = b.colorCode.toUpperCase();
       
-      // Exact match gets highest priority
       const aExact = aCodeUpper === q ? 0 : aCodeUpper.startsWith(q) ? 1 : 2;
       const bExact = bCodeUpper === q ? 0 : bCodeUpper.startsWith(q) ? 1 : 2;
       
@@ -152,6 +153,28 @@ export default function POSSales() {
     },
   });
 
+  // New POS instance function
+  const openNewPOSInstance = () => {
+    const newInstanceNumber = posInstances + 1;
+    setPosInstances(newInstanceNumber);
+    
+    // Open in new tab with instance identifier
+    const newTab = window.open(`/pos?instance=${newInstanceNumber}`, `pos-${newInstanceNumber}`);
+    
+    if (!newTab) {
+      toast({
+        title: "Popup blocked!",
+        description: "Please allow popups for this site to open multiple POS instances",
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "New POS Instance Opened",
+        description: `POS Instance ${newInstanceNumber} opened in new tab`
+      });
+    }
+  };
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "F2") {
@@ -176,10 +199,15 @@ export default function POSSales() {
         e.preventDefault();
         setCustomerSuggestionsOpen(true);
       }
+      // New shortcut for opening new POS instance
+      if (e.ctrlKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        openNewPOSInstance();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cart, customerName, customerPhone, amountPaid]);
+  }, [cart, customerName, customerPhone, amountPaid, posInstances]);
 
   // FIXED: Consistent stock validation - allow adding but show clear warnings
   const addToCart = (
@@ -413,12 +441,29 @@ export default function POSSales() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
+        {/* Header with Multi-tab Controls */}
         <div className="mb-8 text-center">
+          {/* Instance Controls */}
+          <div className="flex justify-between items-center mb-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openNewPOSInstance}
+              className="flex items-center gap-2 bg-white hover:bg-gray-50 border-gray-300"
+            >
+              <Plus className="h-4 w-4" />
+              New POS Instance (Ctrl+N)
+            </Button>
+            
+            <Badge variant="secondary" className="bg-blue-100 text-blue-700 font-medium px-3 py-1">
+              Instance: {activeInstance}
+            </Badge>
+          </div>
+
           <h1 className="text-3xl font-bold text-gray-900 mb-3 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             POS Sales
           </h1>
-          <p className="text-sm text-gray-600 mb-6 flex items-center justify-center gap-4">
+          <p className="text-sm text-gray-600 mb-6 flex items-center justify-center gap-4 flex-wrap">
             <span className="flex items-center gap-1">
               <Zap className="h-4 w-4 text-yellow-500" />
               Use <kbd className="bg-white border border-gray-300 px-2 py-1 rounded shadow-sm text-xs font-mono">F2</kbd> to search products
@@ -426,6 +471,10 @@ export default function POSSales() {
             <span className="flex items-center gap-1">
               <User className="h-4 w-4 text-blue-500" />
               <kbd className="bg-white border border-gray-300 px-2 py-1 rounded shadow-sm text-xs font-mono">Ctrl+S</kbd> for customer suggestions
+            </span>
+            <span className="flex items-center gap-1">
+              <Plus className="h-4 w-4 text-green-500" />
+              <kbd className="bg-white border border-gray-300 px-2 py-1 rounded shadow-sm text-xs font-mono">Ctrl+N</kbd> for new POS instance
             </span>
           </p>
           <div className="flex justify-center">
@@ -677,6 +726,19 @@ export default function POSSales() {
                     Create Bill (Ctrl+B)
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Multi-tab Info Card */}
+            <Card className="bg-blue-50 border-blue-200">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="h-4 w-4 text-blue-600" />
+                  <h3 className="text-sm font-medium text-blue-900">Multi-Tab POS</h3>
+                </div>
+                <p className="text-xs text-blue-700">
+                  Use <kbd className="bg-blue-100 text-blue-700 px-1 py-0.5 rounded text-xs">Ctrl+N</kbd> to open new POS instances for different customers
+                </p>
               </CardContent>
             </Card>
           </div>
