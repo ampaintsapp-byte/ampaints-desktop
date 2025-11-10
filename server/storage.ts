@@ -1,3 +1,4 @@
+// storage.ts
 import {
   products,
   variants,
@@ -258,7 +259,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(colors).where(eq(colors.id, id));
   }
 
-  // Sales (existing methods remain the same)
+  // Sales
   async getSales(): Promise<Sale[]> {
     return await db.select().from(sales).orderBy(desc(sales.createdAt));
   }
@@ -564,7 +565,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(sales.id, saleId));
   }
 
-  // Dashboard Stats (existing implementation remains the same)
+  // Dashboard Stats
   async getDashboardStats() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());

@@ -1,3 +1,4 @@
+// unpaid-bills.tsx
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -231,7 +232,10 @@ export default function UnpaidBills() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      toast({ title: "Pending balance added successfully" });
+      toast({ 
+        title: "New pending balance added successfully",
+        description: "A new separate bill has been created for this customer"
+      });
       setManualBalanceDialogOpen(false);
       setManualBalanceForm({
         customerName: "",
@@ -1047,7 +1051,7 @@ export default function UnpaidBills() {
                       <Badge variant="secondary">{customer.bills.length} Bills</Badge>
                     )}
                   </div>
-                </CardHeader>
+                </CardContent>
                 <CardContent className="space-y-3">
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">

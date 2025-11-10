@@ -1,3 +1,4 @@
+// routes.ts
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -308,24 +309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedSale = insertSaleSchema.parse(saleData);
       const validatedItems = z.array(insertSaleItemSchema).parse(items);
 
-      if (validatedSale.paymentStatus === "unpaid") {
-        const existingUnpaidSale = await storage.findUnpaidSaleByPhone(validatedSale.customerPhone);
-        
-        if (existingUnpaidSale) {
-          console.log("Found existing unpaid bill, adding items to it:", existingUnpaidSale.id);
-          
-          for (const item of validatedItems) {
-            await storage.addSaleItem(existingUnpaidSale.id, item);
-          }
-          
-          const updatedSale = await storage.getSale(existingUnpaidSale.id);
-          console.log("Items added to existing unpaid bill successfully");
-          
-          res.json(updatedSale);
-          return;
-        }
-      }
-
+      // Always create a new sale - don't add to existing unpaid sale
       const sale = await storage.createSale(validatedSale, validatedItems);
       
       console.log("Sale created successfully:", JSON.stringify(sale, null, 2));
@@ -576,7 +560,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ✅ FIXED: Complete the function properly with closing bracket
   const httpServer = createServer(app);
   return httpServer;
-} // ✅ YEH MISSING THA - CLOSING BRACKET
+}
