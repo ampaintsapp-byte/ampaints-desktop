@@ -74,7 +74,7 @@ export default function BillPrint() {
     }
   }, []);
 
-  const { data: sale, isLoading } = useQuery<SaleWithItems>({
+  const { data: sale, isLoading, error } = useQuery<SaleWithItems>({
     queryKey: ["/api/sales", saleId],
     enabled: !!saleId,
   });
@@ -84,16 +84,42 @@ export default function BillPrint() {
     enabled: addItemDialogOpen,
   });
 
-  // Delete Bill
+  // Delete Bill - IMPROVED VERSION
   const deleteSale = async () => {
     if (!saleId) return;
-    for (const item of sale?.saleItems || []) {
-      await apiRequest("DELETE", `/api/sale-items/${item.id}`);
+    
+    try {
+      // First delete all sale items
+      for (const item of sale?.saleItems || []) {
+        await apiRequest("DELETE", `/api/sale-items/${item.id}`);
+      }
+      
+      // Then delete the sale record
+      await apiRequest("DELETE", `/api/sales/${saleId}`);
+      
+      // Invalidate all relevant queries
+      await queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/sale-items"] });
+      
+      toast({ 
+        title: "Bill completely deleted", 
+        description: "All bill data has been removed successfully" 
+      });
+      
+      // Redirect to POS with cache clearance
+      setTimeout(() => {
+        window.location.href = "/pos?refresh=" + Date.now();
+      }, 500);
+      
+    } catch (error) {
+      console.error("Error deleting bill:", error);
+      toast({ 
+        title: "Failed to delete bill", 
+        variant: "destructive",
+        description: "Please try again" 
+      });
     }
-    await apiRequest("DELETE", `/api/sales/${saleId}`);
-    queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-    toast({ title: "Bill deleted" });
-    window.location.href = "/pos";
   };
 
   // Print Thermal
@@ -263,6 +289,23 @@ export default function BillPrint() {
   }, [selectedColor]);
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString("en-GB");
+
+  // Show error if bill not found
+  if (error) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <div className="text-center space-y-4">
+          <h1 className="text-2xl font-bold text-red-600">Bill Not Found</h1>
+          <p className="text-muted-foreground">The bill you are looking for does not exist or has been deleted.</p>
+          <Link href="/pos">
+            <Button>
+              <ArrowLeft className="h-4 w-4 mr-2" /> Back to POS
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) return <div className="p-6"><Skeleton className="h-96 w-full max-w-2xl mx-auto" /></div>;
   if (!sale) return <div className="p-6 text-center text-muted-foreground">Bill not found</div>;
@@ -455,11 +498,28 @@ export default function BillPrint() {
       {/* Delete Bill Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Delete Bill?</DialogTitle></DialogHeader>
-          <p>This action cannot be undone.</p>
+          <DialogHeader>
+            <DialogTitle>Delete Bill Completely?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete:
+            </p>
+            <ul className="text-sm list-disc list-inside space-y-1 text-muted-foreground">
+              <li>All items in this bill</li>
+              <li>Bill payment information</li>
+              <li>Complete sale record</li>
+            </ul>
+            <p className="text-sm font-medium text-red-600">
+              This action cannot be undone and all data will be lost permanently.
+            </p>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={deleteSale}>Delete</Button>
+            <Button variant="destructive" onClick={deleteSale}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Completely
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
