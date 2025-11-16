@@ -607,9 +607,12 @@ export default function POSSales() {
                         </Button>
                       </div>
                     </PopoverTrigger>
-                    <PopoverContent className="w-96 p-0 border-gray-300 shadow-xl" align="start">
+                    <PopoverContent className="w-96 p-0 border-gray-300 shadow-xl z-50" align="start">
                       <Command>
-                        <CommandInput placeholder="Search customers..." className="h-11" />
+                        <CommandInput 
+                          placeholder="Search customers..." 
+                          className="h-11 border-0 focus:ring-0"
+                        />
                         <CommandList className="max-h-64">
                           <CommandEmpty className="py-8 text-center text-gray-500">
                             <User className="mx-auto h-8 w-8 mb-2 opacity-40" />
@@ -619,8 +622,9 @@ export default function POSSales() {
                             {customerSuggestions.map((customer) => (
                               <CommandItem
                                 key={customer.customerPhone}
+                                value={`${customer.customerName} ${customer.customerPhone}`}
                                 onSelect={() => selectCustomer(customer)}
-                                className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer hover:bg-gray-50"
+                                className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer aria-selected:bg-gray-50"
                               >
                                 <div className="flex items-center gap-2 w-full">
                                   <User className="h-4 w-4 text-blue-500" />

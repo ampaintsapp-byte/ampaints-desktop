@@ -40,6 +40,10 @@ import {
   Eye,
   Edit,
   MoreVertical,
+  History,
+  Calendar,
+  Filter,
+  Download,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -103,6 +107,21 @@ type QuickColor = {
 };
 
 /* -------------------------
+   Stock In History Types
+   ------------------------- */
+interface StockInHistory {
+  id: string;
+  colorId: string;
+  color: ColorWithVariantAndProduct;
+  quantity: number;
+  previousStock: number;
+  newStock: number;
+  addedBy: string;
+  createdAt: string;
+  notes?: string;
+}
+
+/* -------------------------
    Main component
    ------------------------- */
 export default function StockManagement() {
@@ -156,6 +175,12 @@ export default function StockManagement() {
   const [colorSizeFilter, setColorSizeFilter] = useState("all");
   const [colorStockStatusFilter, setColorStockStatusFilter] = useState("all");
 
+  /* Stock In History filters */
+  const [historyCompanyFilter, setHistoryCompanyFilter] = useState("all");
+  const [historyProductFilter, setHistoryProductFilter] = useState("all");
+  const [historyDateFilter, setHistoryDateFilter] = useState("all");
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
+
   /* Multi-select state */
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedVariants, setSelectedVariants] = useState<Set<string>>(new Set());
@@ -174,6 +199,11 @@ export default function StockManagement() {
 
   const { data: colorsData = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
+  });
+
+  /* Stock In History Query */
+  const { data: stockInHistory = [], isLoading: historyLoading } = useQuery<StockInHistory[]>({
+    queryKey: ["/api/stock-in/history"],
   });
 
   /* Useful derived lists */
@@ -410,6 +440,7 @@ export default function StockManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       toast({ title: "Color added successfully" });
       colorForm.reset();
       setIsColorDialogOpen(false);
@@ -505,6 +536,7 @@ export default function StockManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       toast({ title: "Stock added successfully" });
       stockInForm.reset();
       setIsStockInDialogOpen(false);
@@ -629,6 +661,67 @@ export default function StockManagement() {
       .map(({ color }) => color);
   }, [colorsData, stockInSearchQuery]);
 
+  /* Stock In History Filtering */
+  const filteredStockInHistory = useMemo(() => {
+    let filtered = stockInHistory;
+
+    // Apply company filter
+    if (historyCompanyFilter !== "all") {
+      filtered = filtered.filter(history => 
+        history.color.variant.product.company === historyCompanyFilter
+      );
+    }
+
+    // Apply product filter
+    if (historyProductFilter !== "all") {
+      filtered = filtered.filter(history => 
+        history.color.variant.product.productName === historyProductFilter
+      );
+    }
+
+    // Apply date filter
+    if (historyDateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const lastWeek = new Date(today);
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      const lastMonth = new Date(today);
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+      filtered = filtered.filter(history => {
+        const historyDate = new Date(history.createdAt);
+        
+        switch (historyDateFilter) {
+          case "today":
+            return historyDate >= today;
+          case "yesterday":
+            return historyDate >= yesterday && historyDate < today;
+          case "week":
+            return historyDate >= lastWeek;
+          case "month":
+            return historyDate >= lastMonth;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply search filter
+    if (historySearchQuery.trim()) {
+      const query = historySearchQuery.trim().toLowerCase();
+      filtered = filtered.filter(history => 
+        history.color.colorCode.toLowerCase().includes(query) ||
+        history.color.colorName.toLowerCase().includes(query) ||
+        history.color.variant.product.company.toLowerCase().includes(query) ||
+        history.color.variant.product.productName.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [stockInHistory, historyCompanyFilter, historyProductFilter, historyDateFilter, historySearchQuery]);
+
   /* Quick Add UI helpers */
   const updateVariant = (index: number, key: keyof QuickVariant, value: string) => {
     setQuickVariants(prev => {
@@ -656,6 +749,41 @@ export default function StockManagement() {
 
   const toggleSection = (section: "variants" | "colors") => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  /* Export Stock In History */
+  const exportStockInHistory = () => {
+    const headers = ["Date", "Time", "Company", "Product", "Size", "Color Code", "Color Name", "Previous Stock", "Quantity Added", "New Stock", "Added By"];
+    
+    const csvData = filteredStockInHistory.map(history => [
+      new Date(history.createdAt).toLocaleDateString(),
+      new Date(history.createdAt).toLocaleTimeString(),
+      history.color.variant.product.company,
+      history.color.variant.product.productName,
+      history.color.variant.packingSize,
+      history.color.colorCode,
+      history.color.colorName,
+      history.previousStock.toString(),
+      history.quantity.toString(),
+      history.newStock.toString(),
+      history.addedBy
+    ]);
+
+    const csvContent = [headers, ...csvData]
+      .map(row => row.map(field => `"${field}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `stock-in-history-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast({ title: "History exported successfully" });
   };
 
   /* -------------------------
@@ -983,7 +1111,7 @@ export default function StockManagement() {
         </div>
       </div>
 
-      {/* Tabs: Quick Add + Products/Variants/Colors/Stock In */}
+      {/* Tabs: Quick Add + Products/Variants/Colors/Stock In/Stock In History */}
       <Tabs defaultValue="quick-add" className="space-y-4">
         <TabsList>
           <TabsTrigger value="quick-add"><Plus className="mr-2 h-4 w-4" /> Quick Add</TabsTrigger>
@@ -991,6 +1119,7 @@ export default function StockManagement() {
           <TabsTrigger value="variants"><Layers className="mr-2 h-4 w-4" /> Variants</TabsTrigger>
           <TabsTrigger value="colors"><Palette className="mr-2 h-4 w-4" /> Colors</TabsTrigger>
           <TabsTrigger value="stock-in"><TruckIcon className="mr-2 h-4 w-4" /> Stock In</TabsTrigger>
+          <TabsTrigger value="stock-in-history"><History className="mr-2 h-4 w-4" /> Stock In History</TabsTrigger>
         </TabsList>
 
         {/* Quick Add Tab (summary) */}
@@ -1852,6 +1981,185 @@ export default function StockManagement() {
               )}
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        {/* Stock In History Tab */}
+        <TabsContent value="stock-in-history" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardTitle>Stock In History ({stockInHistory.length})</CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={exportStockInHistory}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {historyLoading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ) : stockInHistory.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No stock in history found</p>
+                  <p className="text-sm">Stock in history will appear here when you add stock to colors</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <div className="space-y-2">
+                      <Label className="text-xs">Company</Label>
+                      <Select value={historyCompanyFilter} onValueChange={setHistoryCompanyFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Companies" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Companies</SelectItem>
+                          {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs">Product</Label>
+                      <Select value={historyProductFilter} onValueChange={setHistoryProductFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Products" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Products</SelectItem>
+                          {Array.from(new Set(stockInHistory.map(h => h.color.variant.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs">Date Range</Label>
+                      <Select value={historyDateFilter} onValueChange={setHistoryDateFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Time" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Time</SelectItem>
+                          <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="yesterday">Yesterday</SelectItem>
+                          <SelectItem value="week">Last 7 Days</SelectItem>
+                          <SelectItem value="month">Last 30 Days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2 md:col-span-2">
+                      <Label className="text-xs">Search</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                          placeholder="Search by color code, name, company..." 
+                          value={historySearchQuery}
+                          onChange={e => setHistorySearchQuery(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Clear Filters */}
+                  {(historyCompanyFilter !== "all" || historyProductFilter !== "all" || historyDateFilter !== "all" || historySearchQuery) && (
+                    <div className="flex justify-end">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => {
+                          setHistoryCompanyFilter("all");
+                          setHistoryProductFilter("all");
+                          setHistoryDateFilter("all");
+                          setHistorySearchQuery("");
+                        }}
+                      >
+                        <Filter className="h-4 w-4 mr-2" />
+                        Clear Filters
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* History Table */}
+                  {filteredStockInHistory.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No history found matching your filters</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date & Time</TableHead>
+                            <TableHead>Company</TableHead>
+                            <TableHead>Product</TableHead>
+                            <TableHead>Size</TableHead>
+                            <TableHead>Color Code</TableHead>
+                            <TableHead>Color Name</TableHead>
+                            <TableHead>Previous Stock</TableHead>
+                            <TableHead>Quantity Added</TableHead>
+                            <TableHead>New Stock</TableHead>
+                            <TableHead>Added By</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredStockInHistory.map(history => (
+                            <TableRow key={history.id}>
+                              <TableCell>
+                                <div className="space-y-1">
+                                  <div className="text-sm font-medium">
+                                    {new Date(history.createdAt).toLocaleDateString()}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {new Date(history.createdAt).toLocaleTimeString()}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>{history.color.variant.product.company}</TableCell>
+                              <TableCell>{history.color.variant.product.productName}</TableCell>
+                              <TableCell>{history.color.variant.packingSize}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="font-mono">
+                                  {history.color.colorCode}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{history.color.colorName}</TableCell>
+                              <TableCell>
+                                <span className="font-mono text-orange-600">{history.previousStock}</span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="font-mono text-green-600 font-bold">+{history.quantity}</span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="font-mono text-blue-600 font-bold">{history.newStock}</span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{history.addedBy}</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      
+                      {(historyCompanyFilter !== "all" || historyProductFilter !== "all" || historyDateFilter !== "all" || historySearchQuery) && (
+                        <p className="text-xs text-muted-foreground text-center">
+                          Showing {filteredStockInHistory.length} of {stockInHistory.length} records
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
