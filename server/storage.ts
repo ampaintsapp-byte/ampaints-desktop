@@ -105,10 +105,17 @@ export class DatabaseStorage implements IStorage {
     return `${day}-${month}-${year}`;
   }
 
-  // Helper method to parse DD-MM-YYYY to Date
-  private parseDDMMYYYYToDate(dateString: string): Date {
+  // Helper method to validate DD-MM-YYYY format
+  private isValidDDMMYYYY(dateString: string): boolean {
+    const pattern = /^\d{2}-\d{2}-\d{4}$/;
+    if (!pattern.test(dateString)) return false;
+    
     const [day, month, year] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day);
+    const date = new Date(year, month - 1, day);
+    
+    return date.getDate() === day && 
+           date.getMonth() === month - 1 && 
+           date.getFullYear() === year;
   }
 
   // Products
@@ -299,7 +306,9 @@ export class DatabaseStorage implements IStorage {
       // Record in history
       try {
         // Use provided stockInDate or current date
-        const actualStockInDate = stockInDate || this.formatDateToDDMMYYYY(new Date());
+        const actualStockInDate = stockInDate && this.isValidDDMMYYYY(stockInDate) 
+          ? stockInDate 
+          : this.formatDateToDDMMYYYY(new Date());
         
         const historyRecord = {
           id: crypto.randomUUID(),
@@ -463,7 +472,9 @@ export class DatabaseStorage implements IStorage {
     stockInDate?: string
   ): Promise<StockInHistoryWithColor> {
     try {
-      const actualStockInDate = stockInDate || this.formatDateToDDMMYYYY(new Date());
+      const actualStockInDate = stockInDate && this.isValidDDMMYYYY(stockInDate) 
+        ? stockInDate 
+        : this.formatDateToDDMMYYYY(new Date());
       
       const historyRecord = {
         id: crypto.randomUUID(),
@@ -527,6 +538,10 @@ export class DatabaseStorage implements IStorage {
       }
 
       if (data.stockInDate !== undefined) {
+        // Validate the date format
+        if (data.stockInDate && !this.isValidDDMMYYYY(data.stockInDate)) {
+          throw new Error("Invalid date format. Please use DD-MM-YYYY format.");
+        }
         updateData.stockInDate = data.stockInDate;
       }
 
@@ -559,7 +574,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Helper method to get color with relations
-  private async getColor(id: string): Promise<ColorWithVariantAndProduct> {
+  private async getColorWithRelations(id: string): Promise<ColorWithVariantAndProduct> {
     const result = await db.query.colors.findFirst({
       where: eq(colors.id, id),
       with: {

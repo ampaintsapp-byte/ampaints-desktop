@@ -206,6 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // FIXED: Stock In endpoint with proper stockInDate handling
   app.post("/api/colors/:id/stock-in", async (req, res) => {
     try {
       const { quantity, notes, stockInDate } = req.body;
@@ -286,7 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Stock In History
+  // Stock In History - FIXED: Proper endpoints for stock history
   app.get("/api/stock-in/history", async (_req, res) => {
     try {
       console.log("[API] Fetching stock in history");
@@ -360,7 +361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update Stock In History Record
+  // Update Stock In History Record - FIXED: Proper stockInDate handling
   app.patch("/api/stock-in/history/:id", async (req, res) => {
     try {
       const { id } = req.params;

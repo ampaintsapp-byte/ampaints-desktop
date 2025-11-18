@@ -1,3 +1,4 @@
+// schema.ts
 import { sql, relations } from "drizzle-orm";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
@@ -66,7 +67,7 @@ export const stockInHistory = sqliteTable("stock_in_history", {
   quantity: integer("quantity").notNull(),
   previousStock: integer("previous_stock").notNull(),
   newStock: integer("new_stock").notNull(),
-  stockInDate: integer("stock_in_date", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(), // Custom stock in date
+  stockInDate: text("stock_in_date").notNull(), // Store as TEXT in DD-MM-YYYY format
   notes: text("notes"),
   createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
@@ -172,7 +173,7 @@ export const insertStockInHistorySchema = createInsertSchema(stockInHistory).omi
   id: true,
   createdAt: true,
 }).extend({
-  stockInDate: z.string().or(z.date()),
+  stockInDate: z.string().min(1, "Stock in date is required"), // Changed to string only
 });
 
 export const insertSettingsSchema = createInsertSchema(settings).omit({
@@ -256,4 +257,17 @@ export function formatDateToDDMMYYYY(date: Date | string): string {
 export function parseDDMMYYYYToDate(dateString: string): Date {
   const [day, month, year] = dateString.split('-').map(Number);
   return new Date(year, month - 1, day);
+}
+
+// Helper function to validate DD-MM-YYYY format
+export function isValidDDMMYYYY(dateString: string): boolean {
+  const pattern = /^\d{2}-\d{2}-\d{4}$/;
+  if (!pattern.test(dateString)) return false;
+  
+  const [day, month, year] = dateString.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  
+  return date.getDate() === day && 
+         date.getMonth() === month - 1 && 
+         date.getFullYear() === year;
 }

@@ -89,17 +89,18 @@ const colorFormSchema = z.object({
   rateOverride: z.string().optional(),
 });
 
+// FIXED: Added proper date validation for stock in forms
 const stockInFormSchema = z.object({
   colorId: z.string().min(1, "Color is required"),
   quantity: z.string().min(1, "Quantity is required"),
   notes: z.string().optional(),
-  stockInDate: z.string().min(1, "Date is required"), // Add this
+  stockInDate: z.string().min(1, "Date is required").regex(/^\d{2}-\d{2}-\d{4}$/, "Date must be in DD-MM-YYYY format"),
 });
 
 const stockHistoryEditSchema = z.object({
   quantity: z.string().min(1, "Quantity is required"),
   notes: z.string().optional(),
-  stockInDate: z.string().min(1, "Date is required"), // Add this
+  stockInDate: z.string().min(1, "Date is required").regex(/^\d{2}-\d{2}-\d{4}$/, "Date must be in DD-MM-YYYY format"),
 });
 
 /* -------------------------
@@ -130,7 +131,7 @@ interface StockInHistory {
   previousStock: number;
   newStock: number;
   notes?: string;
-  stockInDate: string; // Add this field
+  stockInDate: string;
   createdAt: string;
 }
 
@@ -219,7 +220,7 @@ export default function StockManagement() {
   });
 
   /* Stock In History Query */
-  const { data: stockInHistory = [], isLoading: historyLoading } = useQuery<StockInHistory[]>({
+  const { data: stockInHistory = [], isLoading: historyLoading, refetch: refetchStockHistory } = useQuery<StockInHistory[]>({
     queryKey: ["/api/stock-in/history"],
   });
 
@@ -291,7 +292,7 @@ export default function StockManagement() {
         history.color.colorName.toLowerCase().includes(query) ||
         history.color.variant.product.company.toLowerCase().includes(query) ||
         history.color.variant.product.productName.toLowerCase().includes(query) ||
-        history.stockInDate.toLowerCase().includes(query) // Search by stock in date
+        history.stockInDate.toLowerCase().includes(query)
       );
     }
 
@@ -327,13 +328,14 @@ export default function StockManagement() {
     defaultValues: { variantId: "", colorName: "", colorCode: "", stockQuantity: "" },
   });
 
+  // FIXED: Proper date initialization for stock in form
   const stockInForm = useForm<z.infer<typeof stockInFormSchema>>({
     resolver: zodResolver(stockInFormSchema),
     defaultValues: { 
       colorId: "", 
       quantity: "", 
       notes: "",
-      stockInDate: formatDateToDDMMYYYY(new Date()) // Set default to today
+      stockInDate: formatDateToDDMMYYYY(new Date())
     },
   });
 
@@ -342,7 +344,7 @@ export default function StockManagement() {
     defaultValues: { 
       quantity: "", 
       notes: "",
-      stockInDate: formatDateToDDMMYYYY(new Date()) // Set default to today
+      stockInDate: formatDateToDDMMYYYY(new Date())
     },
   });
 
@@ -639,13 +641,13 @@ export default function StockManagement() {
     },
   });
 
-  /* Stock In mutation */
+  /* FIXED: Stock In mutation with proper stockInDate handling */
   const stockInMutation = useMutation({
     mutationFn: async (data: z.infer<typeof stockInFormSchema>) => {
       const res = await apiRequest("POST", `/api/colors/${data.colorId}/stock-in`, { 
         quantity: parseInt(data.quantity, 10),
         notes: data.notes,
-        stockInDate: data.stockInDate // Add this
+        stockInDate: data.stockInDate
       });
       return await res.json();
     },
@@ -655,7 +657,7 @@ export default function StockManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       toast({ title: "Stock added successfully" });
       stockInForm.reset({
-        stockInDate: formatDateToDDMMYYYY(new Date()) // Reset with current date
+        stockInDate: formatDateToDDMMYYYY(new Date())
       });
       setIsStockInDialogOpen(false);
       setSelectedColorForStockIn(null);
@@ -681,6 +683,7 @@ export default function StockManagement() {
     },
   });
 
+  /* FIXED: Update stock history mutation with proper stockInDate handling */
   const updateStockHistoryMutation = useMutation({
     mutationFn: async (data: { id: string; quantity?: number; notes?: string; stockInDate?: string }) => {
       const res = await apiRequest("PATCH", `/api/stock-in/history/${data.id}`, {
@@ -820,7 +823,7 @@ export default function StockManagement() {
     const headers = ["Stock In Date", "Date", "Time", "Company", "Product", "Size", "Color Code", "Color Name", "Previous Stock", "Quantity Added", "New Stock", "Notes"];
     
     const csvData = filteredStockInHistory.map(history => [
-      history.stockInDate, // Add stock in date
+      history.stockInDate,
       new Date(history.createdAt).toLocaleDateString(),
       new Date(history.createdAt).toLocaleTimeString(),
       history.color.variant.product.company,
@@ -903,7 +906,7 @@ export default function StockManagement() {
 
   /* Refresh Stock In History */
   const refreshStockInHistory = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
+    refetchStockHistory();
     toast({ title: "Stock history refreshed" });
   };
 

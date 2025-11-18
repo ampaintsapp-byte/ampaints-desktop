@@ -52,7 +52,7 @@ export function migrateDatabase(db: Database.Database): void {
     
     console.log('[Migration] Current stock_in_history columns:', stockHistoryColumnNames);
     
-    // Add stock_in_date column if missing - FIXED: This was causing the error
+    // Add stock_in_date column if missing - FIXED: Changed from timestamp to text
     if (!stockHistoryColumnNames.includes('stock_in_date')) {
       console.log('[Migration] Adding stock_in_date column to stock_in_history table');
       db.exec('ALTER TABLE stock_in_history ADD COLUMN stock_in_date TEXT');
