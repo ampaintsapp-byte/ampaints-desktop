@@ -208,36 +208,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/colors/:id/stock-in", async (req, res) => {
     try {
-      const { quantity } = req.body;
+      const { quantity, notes } = req.body;
       const colorId = req.params.id;
       
-      console.log(`[API] Stock in request: Color ${colorId}, Quantity: ${quantity}`);
+      console.log(`[API] Stock in request: Color ${colorId}, Quantity: ${quantity}, Notes: ${notes}`);
 
       if (typeof quantity !== "number" || quantity <= 0) {
-        res.status(400).json({ error: "Invalid quantity. Must be a positive number." });
+        res.status(400).json({ 
+          error: "Invalid quantity", 
+          details: "Quantity must be a positive number" 
+        });
         return;
       }
 
-      if (!colorId) {
-        res.status(400).json({ error: "Color ID is required" });
+      if (!colorId || colorId === 'undefined' || colorId === 'null') {
+        res.status(400).json({ 
+          error: "Invalid color ID", 
+          details: "Color ID is required and must be valid" 
+        });
         return;
       }
 
-      const color = await storage.stockIn(colorId, quantity);
+      console.log(`[API] Processing stock in for color: ${colorId}`);
+
+      const color = await storage.stockIn(colorId, quantity, notes);
       
       if (!color) {
-        res.status(404).json({ error: "Color not found" });
+        res.status(404).json({ 
+          error: "Color not found",
+          details: `No color found with ID: ${colorId}`
+        });
         return;
       }
 
       console.log(`[API] Stock in successful: ${color.colorName} - New stock: ${color.stockQuantity}`);
-      res.json(color);
+      res.json({
+        ...color,
+        message: `Successfully added ${quantity} units to ${color.colorName}`
+      });
     } catch (error) {
       console.error("[API] Error adding stock:", error);
-      res.status(500).json({ 
-        error: "Failed to add stock",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
+      
+      // Provide more specific error messages
+      let errorMessage = "Failed to add stock";
+      let errorDetails = error instanceof Error ? error.message : 'Unknown error';
+      
+      if (errorDetails.includes('not found')) {
+        res.status(404).json({ 
+          error: "Color not found",
+          details: errorDetails
+        });
+      } else {
+        res.status(500).json({ 
+          error: errorMessage,
+          details: errorDetails
+        });
+      }
     }
   });
 
@@ -262,6 +288,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("[API] Error fetching stock in history:", error);
       // Return empty array instead of error for better UX
       res.json([]);
+    }
+  });
+
+  // Filtered Stock In History
+  app.get("/api/stock-in/history/filtered", async (req, res) => {
+    try {
+      const { startDate, endDate, company, product, colorCode, colorName } = req.query;
+      
+      console.log("[API] Fetching filtered stock history with filters:", {
+        startDate, endDate, company, product, colorCode, colorName
+      });
+
+      const filters: any = {};
+
+      if (startDate && startDate !== 'null' && startDate !== 'undefined') {
+        filters.startDate = new Date(startDate as string);
+      }
+
+      if (endDate && endDate !== 'null' && endDate !== 'undefined') {
+        filters.endDate = new Date(endDate as string);
+        // Set end date to end of day
+        filters.endDate.setHours(23, 59, 59, 999);
+      }
+
+      if (company && company !== 'all' && company !== 'null' && company !== 'undefined') {
+        filters.company = company as string;
+      }
+
+      if (product && product !== 'all' && product !== 'null' && product !== 'undefined') {
+        filters.product = product as string;
+      }
+
+      if (colorCode && colorCode !== 'null' && colorCode !== 'undefined') {
+        filters.colorCode = colorCode as string;
+      }
+
+      if (colorName && colorName !== 'null' && colorName !== 'undefined') {
+        filters.colorName = colorName as string;
+      }
+
+      const history = await storage.getFilteredStockInHistory(filters);
+      console.log(`[API] Returning ${history.length} filtered history records`);
+      res.json(history);
+    } catch (error) {
+      console.error("[API] Error fetching filtered stock history:", error);
+      res.status(500).json({ error: "Failed to fetch filtered stock history" });
+    }
+  });
+
+  // Delete Stock In History Record
+  app.delete("/api/stock-in/history/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      console.log(`[API] Deleting stock history record: ${id}`);
+      
+      await storage.deleteStockInHistory(id);
+      res.json({ success: true, message: "Stock history record deleted successfully" });
+    } catch (error) {
+      console.error("[API] Error deleting stock history:", error);
+      res.status(500).json({ error: "Failed to delete stock history record" });
+    }
+  });
+
+  // Update Stock In History Record
+  app.patch("/api/stock-in/history/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { quantity, notes } = req.body;
+      
+      console.log(`[API] Updating stock history record: ${id}`, { quantity, notes });
+
+      if (quantity !== undefined && (typeof quantity !== "number" || quantity <= 0)) {
+        res.status(400).json({ error: "Invalid quantity" });
+        return;
+      }
+
+      const updatedRecord = await storage.updateStockInHistory(id, { quantity, notes });
+      res.json(updatedRecord);
+    } catch (error) {
+      console.error("[API] Error updating stock history:", error);
+      res.status(500).json({ error: "Failed to update stock history record" });
     }
   });
 
@@ -666,14 +773,14 @@ function generateStockHistoryPDF(history: any[], filters: any): string {
   }
   
   pdfContent += `\n`;
-  pdfContent += `Date | Time | Company | Product | Size | Color Code | Color Name | Previous Stock | Quantity Added | New Stock | Added By\n`;
+  pdfContent += `Date | Time | Company | Product | Size | Color Code | Color Name | Previous Stock | Quantity Added | New Stock | Notes\n`;
   pdfContent += `--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---\n`;
   
   history.forEach((record, index) => {
     const date = new Date(record.createdAt).toLocaleDateString();
     const time = new Date(record.createdAt).toLocaleTimeString();
     
-    pdfContent += `${date} | ${time} | ${record.color.variant.product.company} | ${record.color.variant.product.productName} | ${record.color.variant.packingSize} | ${record.color.colorCode} | ${record.color.colorName} | ${record.previousStock} | +${record.quantity} | ${record.newStock} | ${record.addedBy}\n`;
+    pdfContent += `${date} | ${time} | ${record.color.variant.product.company} | ${record.color.variant.product.productName} | ${record.color.variant.packingSize} | ${record.color.colorCode} | ${record.color.colorName} | ${record.previousStock} | +${record.quantity} | ${record.newStock} | ${record.notes || '-'}\n`;
   });
 
   // Convert to base64 for PDF (simplified approach)

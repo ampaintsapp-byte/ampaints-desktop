@@ -154,7 +154,6 @@ function createTables() {
       quantity INTEGER NOT NULL,
       previous_stock INTEGER NOT NULL,
       new_stock INTEGER NOT NULL,
-      added_by TEXT NOT NULL DEFAULT 'System',
       notes TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE

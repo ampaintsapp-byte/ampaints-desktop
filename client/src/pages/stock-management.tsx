@@ -11,6 +11,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -63,6 +64,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
 
 /* -------------------------
    Validation schemas
@@ -89,6 +91,12 @@ const colorFormSchema = z.object({
 const stockInFormSchema = z.object({
   colorId: z.string().min(1, "Color is required"),
   quantity: z.string().min(1, "Quantity is required"),
+  notes: z.string().optional(),
+});
+
+const stockHistoryEditSchema = z.object({
+  quantity: z.string().min(1, "Quantity is required"),
+  notes: z.string().optional(),
 });
 
 /* -------------------------
@@ -118,9 +126,8 @@ interface StockInHistory {
   quantity: number;
   previousStock: number;
   newStock: number;
-  addedBy: string;
-  createdAt: string;
   notes?: string;
+  createdAt: string;
 }
 
 /* -------------------------
@@ -132,11 +139,13 @@ export default function StockManagement() {
   const [isVariantDialogOpen, setIsVariantDialogOpen] = useState(false);
   const [isColorDialogOpen, setIsColorDialogOpen] = useState(false);
   const [isStockInDialogOpen, setIsStockInDialogOpen] = useState(false);
+  const [isEditStockHistoryOpen, setIsEditStockHistoryOpen] = useState(false);
 
   /* Edit states */
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingVariant, setEditingVariant] = useState<VariantWithProduct | null>(null);
   const [editingColor, setEditingColor] = useState<ColorWithVariantAndProduct | null>(null);
+  const [editingStockHistory, setEditingStockHistory] = useState<StockInHistory | null>(null);
 
   /* Detail view states */
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
@@ -182,6 +191,8 @@ export default function StockManagement() {
   const [historyProductFilter, setHistoryProductFilter] = useState("all");
   const [historyDateFilter, setHistoryDateFilter] = useState("all");
   const [historySearchQuery, setHistorySearchQuery] = useState("");
+  const [historyStartDate, setHistoryStartDate] = useState<string>("");
+  const [historyEndDate, setHistoryEndDate] = useState<string>("");
 
   /* Multi-select state */
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -207,6 +218,80 @@ export default function StockManagement() {
   const { data: stockInHistory = [], isLoading: historyLoading } = useQuery<StockInHistory[]>({
     queryKey: ["/api/stock-in/history"],
   });
+
+  /* Filtered Stock In History */
+  const filteredStockInHistory = useMemo(() => {
+    let filtered = stockInHistory;
+
+    // Apply company filter
+    if (historyCompanyFilter !== "all") {
+      filtered = filtered.filter(history => 
+        history.color.variant.product.company === historyCompanyFilter
+      );
+    }
+
+    // Apply product filter
+    if (historyProductFilter !== "all") {
+      filtered = filtered.filter(history => 
+        history.color.variant.product.productName === historyProductFilter
+      );
+    }
+
+    // Apply date filter
+    if (historyDateFilter !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const lastWeek = new Date(today);
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      const lastMonth = new Date(today);
+      lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+      filtered = filtered.filter(history => {
+        const historyDate = new Date(history.createdAt);
+        
+        switch (historyDateFilter) {
+          case "today":
+            return historyDate >= today;
+          case "yesterday":
+            return historyDate >= yesterday && historyDate < today;
+          case "week":
+            return historyDate >= lastWeek;
+          case "month":
+            return historyDate >= lastMonth;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply custom date range filter
+    if (historyStartDate) {
+      const start = new Date(historyStartDate);
+      start.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(history => new Date(history.createdAt) >= start);
+    }
+
+    if (historyEndDate) {
+      const end = new Date(historyEndDate);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(history => new Date(history.createdAt) <= end);
+    }
+
+    // Apply search filter
+    if (historySearchQuery.trim()) {
+      const query = historySearchQuery.trim().toLowerCase();
+      filtered = filtered.filter(history => 
+        history.color.colorCode.toLowerCase().includes(query) ||
+        history.color.colorName.toLowerCase().includes(query) ||
+        history.color.variant.product.company.toLowerCase().includes(query) ||
+        history.color.variant.product.productName.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [stockInHistory, historyCompanyFilter, historyProductFilter, historyDateFilter, historySearchQuery, historyStartDate, historyEndDate]);
 
   /* Useful derived lists */
   const companies = useMemo(() => {
@@ -239,7 +324,12 @@ export default function StockManagement() {
 
   const stockInForm = useForm<z.infer<typeof stockInFormSchema>>({
     resolver: zodResolver(stockInFormSchema),
-    defaultValues: { colorId: "", quantity: "" },
+    defaultValues: { colorId: "", quantity: "", notes: "" },
+  });
+
+  const stockHistoryEditForm = useForm<z.infer<typeof stockHistoryEditSchema>>({
+    resolver: zodResolver(stockHistoryEditSchema),
+    defaultValues: { quantity: "", notes: "" },
   });
 
   /* -------------------------
@@ -286,6 +376,13 @@ export default function StockManagement() {
       colorForm.setValue("rateOverride", editingColor.rateOverride || "");
     }
   }, [editingColor, colorForm]);
+
+  useEffect(() => {
+    if (editingStockHistory) {
+      stockHistoryEditForm.setValue("quantity", String(editingStockHistory.quantity));
+      stockHistoryEditForm.setValue("notes", editingStockHistory.notes || "");
+    }
+  }, [editingStockHistory, stockHistoryEditForm]);
 
   /* -------------------------
      Mutations
@@ -531,7 +628,8 @@ export default function StockManagement() {
   const stockInMutation = useMutation({
     mutationFn: async (data: z.infer<typeof stockInFormSchema>) => {
       const res = await apiRequest("POST", `/api/colors/${data.colorId}/stock-in`, { 
-        quantity: parseInt(data.quantity, 10) 
+        quantity: parseInt(data.quantity, 10),
+        notes: data.notes
       });
       return await res.json();
     },
@@ -547,6 +645,41 @@ export default function StockManagement() {
     onError: (error: any) => {
       console.error("Stock in error:", error);
       toast({ title: "Failed to add stock", variant: "destructive" });
+    },
+  });
+
+  /* Stock History mutations */
+  const deleteStockHistoryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/stock-in/history/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
+      toast({ title: "Stock history record deleted successfully" });
+    },
+    onError: (error: any) => {
+      console.error("Delete stock history error:", error);
+      toast({ title: "Failed to delete stock history record", variant: "destructive" });
+    },
+  });
+
+  const updateStockHistoryMutation = useMutation({
+    mutationFn: async (data: { id: string; quantity?: number; notes?: string }) => {
+      const res = await apiRequest("PATCH", `/api/stock-in/history/${data.id}`, {
+        quantity: data.quantity,
+        notes: data.notes,
+      });
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
+      toast({ title: "Stock history updated successfully" });
+      setEditingStockHistory(null);
+      setIsEditStockHistoryOpen(false);
+    },
+    onError: (error: any) => {
+      console.error("Update stock history error:", error);
+      toast({ title: "Failed to update stock history", variant: "destructive" });
     },
   });
 
@@ -663,99 +796,9 @@ export default function StockManagement() {
       .map(({ color }) => color);
   }, [colorsData, stockInSearchQuery]);
 
-  /* Stock In History Filtering */
-  const filteredStockInHistory = useMemo(() => {
-    let filtered = stockInHistory;
-
-    // Apply company filter
-    if (historyCompanyFilter !== "all") {
-      filtered = filtered.filter(history => 
-        history.color.variant.product.company === historyCompanyFilter
-      );
-    }
-
-    // Apply product filter
-    if (historyProductFilter !== "all") {
-      filtered = filtered.filter(history => 
-        history.color.variant.product.productName === historyProductFilter
-      );
-    }
-
-    // Apply date filter
-    if (historyDateFilter !== "all") {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const lastWeek = new Date(today);
-      lastWeek.setDate(lastWeek.getDate() - 7);
-      const lastMonth = new Date(today);
-      lastMonth.setMonth(lastMonth.getMonth() - 1);
-
-      filtered = filtered.filter(history => {
-        const historyDate = new Date(history.createdAt);
-        
-        switch (historyDateFilter) {
-          case "today":
-            return historyDate >= today;
-          case "yesterday":
-            return historyDate >= yesterday && historyDate < today;
-          case "week":
-            return historyDate >= lastWeek;
-          case "month":
-            return historyDate >= lastMonth;
-          default:
-            return true;
-        }
-      });
-    }
-
-    // Apply search filter
-    if (historySearchQuery.trim()) {
-      const query = historySearchQuery.trim().toLowerCase();
-      filtered = filtered.filter(history => 
-        history.color.colorCode.toLowerCase().includes(query) ||
-        history.color.colorName.toLowerCase().includes(query) ||
-        history.color.variant.product.company.toLowerCase().includes(query) ||
-        history.color.variant.product.productName.toLowerCase().includes(query)
-      );
-    }
-
-    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [stockInHistory, historyCompanyFilter, historyProductFilter, historyDateFilter, historySearchQuery]);
-
-  /* Quick Add UI helpers */
-  const updateVariant = (index: number, key: keyof QuickVariant, value: string) => {
-    setQuickVariants(prev => {
-      const clone = [...prev];
-      clone[index] = { ...clone[index], [key]: value };
-      return clone;
-    });
-  };
-
-  const removeVariantAt = (index: number) => {
-    setQuickVariants(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updateColor = (index: number, key: keyof QuickColor, value: string) => {
-    setQuickColors(prev => {
-      const clone = [...prev];
-      clone[index] = { ...clone[index], [key]: value };
-      return clone;
-    });
-  };
-
-  const removeColorAt = (index: number) => {
-    setQuickColors(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const toggleSection = (section: "variants" | "colors") => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
   /* Export Stock In History */
   const exportStockInHistory = () => {
-    const headers = ["Date", "Time", "Company", "Product", "Size", "Color Code", "Color Name", "Previous Stock", "Quantity Added", "New Stock", "Added By"];
+    const headers = ["Date", "Time", "Company", "Product", "Size", "Color Code", "Color Name", "Previous Stock", "Quantity Added", "New Stock", "Notes"];
     
     const csvData = filteredStockInHistory.map(history => [
       new Date(history.createdAt).toLocaleDateString(),
@@ -768,7 +811,7 @@ export default function StockManagement() {
       history.previousStock.toString(),
       history.quantity.toString(),
       history.newStock.toString(),
-      history.addedBy
+      history.notes || ''
     ]);
 
     const csvContent = [headers, ...csvData]
@@ -802,32 +845,12 @@ export default function StockManagement() {
         params.append('product', historyProductFilter);
       }
       
-      if (historyDateFilter !== 'all') {
-        const now = new Date();
-        let startDate = new Date();
-        
-        switch (historyDateFilter) {
-          case 'today':
-            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            break;
-          case 'yesterday':
-            startDate = new Date(now);
-            startDate.setDate(startDate.getDate() - 1);
-            break;
-          case 'week':
-            startDate = new Date(now);
-            startDate.setDate(startDate.getDate() - 7);
-            break;
-          case 'month':
-            startDate = new Date(now);
-            startDate.setDate(startDate.getDate() - 30);
-            break;
-        }
-        
-        if (historyDateFilter !== 'all') {
-          params.append('startDate', startDate.toISOString().split('T')[0]);
-          params.append('endDate', now.toISOString().split('T')[0]);
-        }
+      if (historyStartDate) {
+        params.append('startDate', historyStartDate);
+      }
+      
+      if (historyEndDate) {
+        params.append('endDate', historyEndDate);
       }
 
       const url = `/api/stock-in/history/export-pdf?${params.toString()}`;
@@ -976,6 +999,35 @@ export default function StockManagement() {
     } finally {
       setIsSavingQuick(false);
     }
+  };
+
+  /* Quick Add UI helpers */
+  const updateVariant = (index: number, key: keyof QuickVariant, value: string) => {
+    setQuickVariants(prev => {
+      const clone = [...prev];
+      clone[index] = { ...clone[index], [key]: value };
+      return clone;
+    });
+  };
+
+  const removeVariantAt = (index: number) => {
+    setQuickVariants(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateColor = (index: number, key: keyof QuickColor, value: string) => {
+    setQuickColors(prev => {
+      const clone = [...prev];
+      clone[index] = { ...clone[index], [key]: value };
+      return clone;
+    });
+  };
+
+  const removeColorAt = (index: number) => {
+    setQuickColors(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleSection = (section: "variants" | "colors") => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
   /* -------------------------
@@ -1925,6 +1977,7 @@ export default function StockManagement() {
                                 <Button size="sm" onClick={() => {
                                   stockInForm.setValue("colorId", color.id);
                                   stockInForm.setValue("quantity", "");
+                                  stockInForm.setValue("notes", "");
                                   setSelectedColorForStockIn(color);
                                   setIsStockInDialogOpen(true);
                                 }}>
@@ -2046,6 +2099,16 @@ export default function StockManagement() {
                       </FormItem>
                     )} />
 
+                    <FormField control={stockInForm.control} name="notes" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Notes (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Add any notes about this stock addition..." {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
                     <div className="flex justify-end gap-2">
                       <Button type="button" variant="outline" onClick={() => {
                         setSelectedColorForStockIn(null);
@@ -2102,10 +2165,30 @@ export default function StockManagement() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {/* Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                  {/* Enhanced Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
                     <div className="space-y-2">
-                      <Label className="text-xs">Company</Label>
+                      <Label className="text-xs font-medium">Start Date</Label>
+                      <Input
+                        type="date"
+                        value={historyStartDate || ''}
+                        onChange={(e) => setHistoryStartDate(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium">End Date</Label>
+                      <Input
+                        type="date"
+                        value={historyEndDate || ''}
+                        onChange={(e) => setHistoryEndDate(e.target.value)}
+                        className="w-full"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium">Company</Label>
                       <Select value={historyCompanyFilter} onValueChange={setHistoryCompanyFilter}>
                         <SelectTrigger>
                           <SelectValue placeholder="All Companies" />
@@ -2118,20 +2201,38 @@ export default function StockManagement() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label className="text-xs">Product</Label>
+                      <Label className="text-xs font-medium">Product</Label>
                       <Select value={historyProductFilter} onValueChange={setHistoryProductFilter}>
                         <SelectTrigger>
                           <SelectValue placeholder="All Products" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All Products</SelectItem>
-                          {Array.from(new Set(stockInHistory.map(h => h.color.variant.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                          {Array.from(new Set(stockInHistory.map(h => h.color.variant.product.productName))).sort().map(p => (
+                            <SelectItem key={p} value={p}>{p}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+
+                  {/* Search and Quick Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2 md:col-span-2">
+                      <Label className="text-xs font-medium">Search</Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                          placeholder="Search by color code, color name..." 
+                          value={historySearchQuery}
+                          onChange={e => setHistorySearchQuery(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                    </div>
                     
                     <div className="space-y-2">
-                      <Label className="text-xs">Date Range</Label>
+                      <Label className="text-xs font-medium">Quick Date Filters</Label>
                       <Select value={historyDateFilter} onValueChange={setHistoryDateFilter}>
                         <SelectTrigger>
                           <SelectValue placeholder="All Time" />
@@ -2145,24 +2246,14 @@ export default function StockManagement() {
                         </SelectContent>
                       </Select>
                     </div>
-                    
-                    <div className="space-y-2 md:col-span-2">
-                      <Label className="text-xs">Search</Label>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          placeholder="Search by color code, name, company..." 
-                          value={historySearchQuery}
-                          onChange={e => setHistorySearchQuery(e.target.value)}
-                          className="pl-9"
-                        />
-                      </div>
-                    </div>
                   </div>
 
                   {/* Clear Filters */}
-                  {(historyCompanyFilter !== "all" || historyProductFilter !== "all" || historyDateFilter !== "all" || historySearchQuery) && (
-                    <div className="flex justify-end">
+                  {(historyCompanyFilter !== "all" || historyProductFilter !== "all" || historyDateFilter !== "all" || historySearchQuery || historyStartDate || historyEndDate) && (
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {filteredStockInHistory.length} of {stockInHistory.length} records
+                      </p>
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -2171,81 +2262,107 @@ export default function StockManagement() {
                           setHistoryProductFilter("all");
                           setHistoryDateFilter("all");
                           setHistorySearchQuery("");
+                          setHistoryStartDate("");
+                          setHistoryEndDate("");
                         }}
                       >
                         <Filter className="h-4 w-4 mr-2" />
-                        Clear Filters
+                        Clear All Filters
                       </Button>
                     </div>
                   )}
 
-                  {/* History Table */}
+                  {/* History Cards */}
                   {filteredStockInHistory.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
                       <p>No history found matching your filters</p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Date & Time</TableHead>
-                            <TableHead>Company</TableHead>
-                            <TableHead>Product</TableHead>
-                            <TableHead>Size</TableHead>
-                            <TableHead>Color Code</TableHead>
-                            <TableHead>Color Name</TableHead>
-                            <TableHead>Previous Stock</TableHead>
-                            <TableHead>Quantity Added</TableHead>
-                            <TableHead>New Stock</TableHead>
-                            <TableHead>Added By</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredStockInHistory.map(history => (
-                            <TableRow key={history.id}>
-                              <TableCell>
-                                <div className="space-y-1">
-                                  <div className="text-sm font-medium">
-                                    {new Date(history.createdAt).toLocaleDateString()}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {new Date(history.createdAt).toLocaleTimeString()}
-                                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredStockInHistory.map(history => (
+                        <Card key={history.id} className="hover:shadow-lg transition-all duration-200">
+                          <CardContent className="p-4">
+                            <div className="space-y-3">
+                              {/* Header */}
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <Badge variant="secondary" className="font-mono text-xs">
+                                    {history.color.colorCode}
+                                  </Badge>
+                                  <h3 className="font-semibold text-sm mt-1">{history.color.colorName}</h3>
                                 </div>
-                              </TableCell>
-                              <TableCell>{history.color.variant.product.company}</TableCell>
-                              <TableCell>{history.color.variant.product.productName}</TableCell>
-                              <TableCell>{history.color.variant.packingSize}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="font-mono">
-                                  {history.color.colorCode}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>{history.color.colorName}</TableCell>
-                              <TableCell>
-                                <span className="font-mono text-orange-600">{history.previousStock}</span>
-                              </TableCell>
-                              <TableCell>
-                                <span className="font-mono text-green-600 font-bold">+{history.quantity}</span>
-                              </TableCell>
-                              <TableCell>
-                                <span className="font-mono text-blue-600 font-bold">{history.newStock}</span>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary">{history.addedBy}</Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                      
-                      {(historyCompanyFilter !== "all" || historyProductFilter !== "all" || historyDateFilter !== "all" || historySearchQuery) && (
-                        <p className="text-xs text-muted-foreground text-center">
-                          Showing {filteredStockInHistory.length} of {stockInHistory.length} records
-                        </p>
-                      )}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => {
+                                      setEditingStockHistory(history);
+                                      setIsEditStockHistoryOpen(true);
+                                    }}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      className="text-destructive"
+                                      onClick={() => {
+                                        if (confirm("Are you sure you want to delete this stock history record?")) {
+                                          deleteStockHistoryMutation.mutate(history.id);
+                                        }
+                                      }}
+                                    >
+                                      <Trash className="h-4 w-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+
+                              {/* Product Info */}
+                              <div className="text-xs text-muted-foreground">
+                                <p>{history.color.variant.product.company} - {history.color.variant.product.productName}</p>
+                                <p>Size: {history.color.variant.packingSize}</p>
+                              </div>
+
+                              {/* Stock Information */}
+                              <div className="grid grid-cols-3 gap-2 text-center">
+                                <div className="space-y-1">
+                                  <p className="text-xs text-muted-foreground">Previous</p>
+                                  <p className="font-mono text-sm font-semibold text-orange-600">{history.previousStock}</p>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-xs text-muted-foreground">Added</p>
+                                  <p className="font-mono text-sm font-semibold text-green-600">+{history.quantity}</p>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-xs text-muted-foreground">New</p>
+                                  <p className="font-mono text-sm font-semibold text-blue-600">{history.newStock}</p>
+                                </div>
+                              </div>
+
+                              {/* Date and Notes */}
+                              <div className="border-t pt-2">
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-muted-foreground">
+                                    {new Date(history.createdAt).toLocaleDateString()}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    {new Date(history.createdAt).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                                {history.notes && (
+                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                    {history.notes}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -2439,6 +2556,73 @@ export default function StockManagement() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Stock History Dialog */}
+      <Dialog open={isEditStockHistoryOpen} onOpenChange={setIsEditStockHistoryOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Stock History</DialogTitle>
+            <DialogDescription>Update quantity and notes for this stock entry</DialogDescription>
+          </DialogHeader>
+          {editingStockHistory && (
+            <Form {...stockHistoryEditForm}>
+              <form onSubmit={stockHistoryEditForm.handleSubmit((data) => {
+                if (editingStockHistory) {
+                  updateStockHistoryMutation.mutate({
+                    id: editingStockHistory.id,
+                    quantity: parseInt(data.quantity, 10),
+                    notes: data.notes
+                  });
+                }
+              })} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Color Details</Label>
+                  <Card>
+                    <CardContent className="p-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="font-mono">{editingStockHistory.color.colorCode}</Badge>
+                          <span className="font-medium">{editingStockHistory.color.colorName}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {editingStockHistory.color.variant.product.company} - {editingStockHistory.color.variant.product.productName} ({editingStockHistory.color.variant.packingSize})
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <FormField control={stockHistoryEditForm.control} name="quantity" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Quantity</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="1" step="1" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={stockHistoryEditForm.control} name="notes" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Add any notes..." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsEditStockHistoryOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={updateStockHistoryMutation.isPending}>
+                    {updateStockHistoryMutation.isPending ? "Updating..." : "Update Record"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          )}
         </DialogContent>
       </Dialog>
 

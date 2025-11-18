@@ -50,7 +50,7 @@ export interface IStorage {
   updateColor(id: string, data: { colorName: string; colorCode: string; stockQuantity: number }): Promise<Color>;
   updateColorStock(id: string, stockQuantity: number): Promise<Color>;
   updateColorRateOverride(id: string, rateOverride: number | null): Promise<Color>;
-  stockIn(id: string, quantity: number): Promise<Color>;
+  stockIn(id: string, quantity: number, notes?: string): Promise<Color>;
   deleteColor(id: string): Promise<void>;
 
   // Sales
@@ -68,7 +68,17 @@ export interface IStorage {
 
   // Stock In History
   getStockInHistory(): Promise<StockInHistoryWithColor[]>;
-  recordStockIn(colorId: string, quantity: number, previousStock: number, newStock: number, addedBy?: string, notes?: string): Promise<StockInHistoryWithColor>;
+  getFilteredStockInHistory(filters: {
+    startDate?: Date;
+    endDate?: Date;
+    company?: string;
+    product?: string;
+    colorCode?: string;
+    colorName?: string;
+  }): Promise<StockInHistoryWithColor[]>;
+  recordStockIn(colorId: string, quantity: number, previousStock: number, newStock: number, notes?: string): Promise<StockInHistoryWithColor>;
+  deleteStockInHistory(id: string): Promise<void>;
+  updateStockInHistory(id: string, data: { quantity?: number; notes?: string }): Promise<StockInHistoryWithColor>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
@@ -248,11 +258,11 @@ export class DatabaseStorage implements IStorage {
     return color;
   }
 
-  async stockIn(id: string, quantity: number): Promise<Color> {
+  async stockIn(id: string, quantity: number, notes?: string): Promise<Color> {
     try {
       console.log(`[Storage] Starting stock in for color ${id}, quantity: ${quantity}`);
       
-      // Get current stock with proper error handling
+      // Get current stock
       const [currentColor] = await db.select().from(colors).where(eq(colors.id, id));
       if (!currentColor) {
         console.error(`[Storage] Color not found: ${id}`);
@@ -264,31 +274,32 @@ export class DatabaseStorage implements IStorage {
 
       console.log(`[Storage] Stock update: Previous: ${previousStock}, Adding: ${quantity}, New: ${newStock}`);
 
-      // Update stock - use transaction for safety
-      await db.transaction(async (tx) => {
-        // Update color stock
-        await tx
-          .update(colors)
-          .set({
-            stockQuantity: newStock,
-          })
-          .where(eq(colors.id, id));
+      // Update color stock
+      await db
+        .update(colors)
+        .set({
+          stockQuantity: newStock,
+        })
+        .where(eq(colors.id, id));
 
-        // Record in history
+      // Record in history
+      try {
         const historyRecord = {
           id: crypto.randomUUID(),
           colorId: id,
           quantity,
           previousStock,
           newStock,
-          addedBy: "System",
-          notes: "Stock added via stock management",
+          notes: notes || "Stock added via stock management",
           createdAt: new Date(),
         };
 
         console.log("[Storage] Recording stock history:", historyRecord);
-        await tx.insert(stockInHistory).values(historyRecord);
-      });
+        await db.insert(stockInHistory).values(historyRecord);
+      } catch (historyError) {
+        console.error("[Storage] Error recording history (non-fatal):", historyError);
+        // Continue even if history recording fails
+      }
 
       // Fetch and return updated color
       const [updatedColor] = await db.select().from(colors).where(eq(colors.id, id));
@@ -342,12 +353,94 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getFilteredStockInHistory(filters: {
+    startDate?: Date;
+    endDate?: Date;
+    company?: string;
+    product?: string;
+    colorCode?: string;
+    colorName?: string;
+  }): Promise<StockInHistoryWithColor[]> {
+    try {
+      console.log("[Storage] Fetching filtered stock in history:", filters);
+      
+      let query = db.query.stockInHistory.findMany({
+        with: {
+          color: {
+            with: {
+              variant: {
+                with: {
+                  product: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: desc(stockInHistory.createdAt),
+      });
+
+      // Apply filters
+      const result = await query;
+      
+      let filtered = result;
+
+      // Date filter
+      if (filters.startDate && filters.endDate) {
+        const start = filters.startDate.getTime();
+        const end = filters.endDate.getTime();
+        filtered = filtered.filter(record => {
+          const recordDate = new Date(record.createdAt).getTime();
+          return recordDate >= start && recordDate <= end;
+        });
+      } else if (filters.startDate) {
+        const start = filters.startDate.getTime();
+        filtered = filtered.filter(record => new Date(record.createdAt).getTime() >= start);
+      } else if (filters.endDate) {
+        const end = filters.endDate.getTime();
+        filtered = filtered.filter(record => new Date(record.createdAt).getTime() <= end);
+      }
+
+      // Company filter
+      if (filters.company && filters.company !== 'all') {
+        filtered = filtered.filter(record => 
+          record.color.variant.product.company === filters.company
+        );
+      }
+
+      // Product filter
+      if (filters.product && filters.product !== 'all') {
+        filtered = filtered.filter(record => 
+          record.color.variant.product.productName === filters.product
+        );
+      }
+
+      // Color code filter
+      if (filters.colorCode) {
+        filtered = filtered.filter(record => 
+          record.color.colorCode.toLowerCase().includes(filters.colorCode!.toLowerCase())
+        );
+      }
+
+      // Color name filter
+      if (filters.colorName) {
+        filtered = filtered.filter(record => 
+          record.color.colorName.toLowerCase().includes(filters.colorName!.toLowerCase())
+        );
+      }
+
+      console.log(`[Storage] Found ${filtered.length} filtered history records`);
+      return filtered;
+    } catch (error) {
+      console.error("[Storage] Error fetching filtered stock in history:", error);
+      return [];
+    }
+  }
+
   async recordStockIn(
     colorId: string, 
     quantity: number, 
     previousStock: number, 
     newStock: number, 
-    addedBy: string = "System", 
     notes?: string
   ): Promise<StockInHistoryWithColor> {
     try {
@@ -357,7 +450,6 @@ export class DatabaseStorage implements IStorage {
         quantity,
         previousStock,
         newStock,
-        addedBy,
         notes: notes || null,
         createdAt: new Date(),
       };
@@ -386,35 +478,57 @@ export class DatabaseStorage implements IStorage {
       return result;
     } catch (error) {
       console.error("Error recording stock in history:", error);
-      // If history recording fails, we still want the stock update to succeed
-      // So we'll create a minimal history record without the database relation
-      const color = await this.getColor(colorId);
-      if (!color) {
-        throw new Error("Color not found for history recording");
+      throw error;
+    }
+  }
+
+  async deleteStockInHistory(id: string): Promise<void> {
+    try {
+      await db.delete(stockInHistory).where(eq(stockInHistory.id, id));
+      console.log(`[Storage] Deleted stock history record: ${id}`);
+    } catch (error) {
+      console.error("[Storage] Error deleting stock history:", error);
+      throw new Error("Failed to delete stock history record");
+    }
+  }
+
+  async updateStockInHistory(id: string, data: { quantity?: number; notes?: string }): Promise<StockInHistoryWithColor> {
+    try {
+      const updateData: any = {};
+      
+      if (data.quantity !== undefined) {
+        updateData.quantity = data.quantity;
       }
       
-      // Create a fallback record
-      const fallbackRecord: any = {
-        id: crypto.randomUUID(),
-        colorId,
-        quantity,
-        previousStock,
-        newStock,
-        addedBy,
-        notes: notes || null,
-        createdAt: new Date(),
-        color: {
-          ...color,
-          variant: {
-            product: {
-              company: "Unknown",
-              productName: "Unknown"
+      if (data.notes !== undefined) {
+        updateData.notes = data.notes;
+      }
+
+      await db
+        .update(stockInHistory)
+        .set(updateData)
+        .where(eq(stockInHistory.id, id));
+
+      const result = await db.query.stockInHistory.findFirst({
+        where: eq(stockInHistory.id, id),
+        with: {
+          color: {
+            with: {
+              variant: {
+                with: {
+                  product: true,
+                },
+              },
             },
-            packingSize: "Unknown"
-          }
-        }
-      };
-      return fallbackRecord;
+          },
+        },
+      });
+
+      if (!result) throw new Error("Stock history record not found after update");
+      return result;
+    } catch (error) {
+      console.error("[Storage] Error updating stock history:", error);
+      throw new Error("Failed to update stock history record");
     }
   }
 

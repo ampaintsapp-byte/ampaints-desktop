@@ -66,7 +66,6 @@ export const stockInHistory = sqliteTable("stock_in_history", {
   quantity: integer("quantity").notNull(),
   previousStock: integer("previous_stock").notNull(),
   newStock: integer("new_stock").notNull(),
-  addedBy: text("added_by").notNull().default("System"),
   notes: text("notes"),
   createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
