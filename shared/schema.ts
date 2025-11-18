@@ -66,6 +66,7 @@ export const stockInHistory = sqliteTable("stock_in_history", {
   quantity: integer("quantity").notNull(),
   previousStock: integer("previous_stock").notNull(),
   newStock: integer("new_stock").notNull(),
+  stockInDate: integer("stock_in_date", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(), // Custom stock in date
   notes: text("notes"),
   createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
@@ -170,6 +171,8 @@ export const insertSaleItemSchema = createInsertSchema(saleItems).omit({
 export const insertStockInHistorySchema = createInsertSchema(stockInHistory).omit({
   id: true,
   createdAt: true,
+}).extend({
+  stockInDate: z.string().or(z.date()),
 });
 
 export const insertSettingsSchema = createInsertSchema(settings).omit({
@@ -238,4 +241,19 @@ export type StockInHistoryWithColor = StockInHistory & {
 // Returns rateOverride if set, otherwise falls back to variant rate
 export function getEffectiveRate(color: ColorWithVariantAndProduct): string {
   return color.rateOverride ?? color.variant.rate;
+}
+
+// Helper function to format date to DD-MM-YYYY
+export function formatDateToDDMMYYYY(date: Date | string): string {
+  const d = new Date(date);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+// Helper function to parse DD-MM-YYYY to Date
+export function parseDDMMYYYYToDate(dateString: string): Date {
+  const [day, month, year] = dateString.split('-').map(Number);
+  return new Date(year, month - 1, day);
 }

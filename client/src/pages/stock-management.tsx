@@ -1,3 +1,4 @@
+// stock-management.tsx
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,7 +56,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Product, VariantWithProduct, ColorWithVariantAndProduct } from "@shared/schema";
-import { getEffectiveRate } from "@shared/schema";
+import { getEffectiveRate, formatDateToDDMMYYYY, parseDDMMYYYYToDate } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -92,11 +93,13 @@ const stockInFormSchema = z.object({
   colorId: z.string().min(1, "Color is required"),
   quantity: z.string().min(1, "Quantity is required"),
   notes: z.string().optional(),
+  stockInDate: z.string().min(1, "Date is required"), // Add this
 });
 
 const stockHistoryEditSchema = z.object({
   quantity: z.string().min(1, "Quantity is required"),
   notes: z.string().optional(),
+  stockInDate: z.string().min(1, "Date is required"), // Add this
 });
 
 /* -------------------------
@@ -127,6 +130,7 @@ interface StockInHistory {
   previousStock: number;
   newStock: number;
   notes?: string;
+  stockInDate: string; // Add this field
   createdAt: string;
 }
 
@@ -286,7 +290,8 @@ export default function StockManagement() {
         history.color.colorCode.toLowerCase().includes(query) ||
         history.color.colorName.toLowerCase().includes(query) ||
         history.color.variant.product.company.toLowerCase().includes(query) ||
-        history.color.variant.product.productName.toLowerCase().includes(query)
+        history.color.variant.product.productName.toLowerCase().includes(query) ||
+        history.stockInDate.toLowerCase().includes(query) // Search by stock in date
       );
     }
 
@@ -324,12 +329,21 @@ export default function StockManagement() {
 
   const stockInForm = useForm<z.infer<typeof stockInFormSchema>>({
     resolver: zodResolver(stockInFormSchema),
-    defaultValues: { colorId: "", quantity: "", notes: "" },
+    defaultValues: { 
+      colorId: "", 
+      quantity: "", 
+      notes: "",
+      stockInDate: formatDateToDDMMYYYY(new Date()) // Set default to today
+    },
   });
 
   const stockHistoryEditForm = useForm<z.infer<typeof stockHistoryEditSchema>>({
     resolver: zodResolver(stockHistoryEditSchema),
-    defaultValues: { quantity: "", notes: "" },
+    defaultValues: { 
+      quantity: "", 
+      notes: "",
+      stockInDate: formatDateToDDMMYYYY(new Date()) // Set default to today
+    },
   });
 
   /* -------------------------
@@ -381,6 +395,7 @@ export default function StockManagement() {
     if (editingStockHistory) {
       stockHistoryEditForm.setValue("quantity", String(editingStockHistory.quantity));
       stockHistoryEditForm.setValue("notes", editingStockHistory.notes || "");
+      stockHistoryEditForm.setValue("stockInDate", editingStockHistory.stockInDate);
     }
   }, [editingStockHistory, stockHistoryEditForm]);
 
@@ -629,7 +644,8 @@ export default function StockManagement() {
     mutationFn: async (data: z.infer<typeof stockInFormSchema>) => {
       const res = await apiRequest("POST", `/api/colors/${data.colorId}/stock-in`, { 
         quantity: parseInt(data.quantity, 10),
-        notes: data.notes
+        notes: data.notes,
+        stockInDate: data.stockInDate // Add this
       });
       return await res.json();
     },
@@ -638,7 +654,9 @@ export default function StockManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       toast({ title: "Stock added successfully" });
-      stockInForm.reset();
+      stockInForm.reset({
+        stockInDate: formatDateToDDMMYYYY(new Date()) // Reset with current date
+      });
       setIsStockInDialogOpen(false);
       setSelectedColorForStockIn(null);
     },
@@ -664,10 +682,11 @@ export default function StockManagement() {
   });
 
   const updateStockHistoryMutation = useMutation({
-    mutationFn: async (data: { id: string; quantity?: number; notes?: string }) => {
+    mutationFn: async (data: { id: string; quantity?: number; notes?: string; stockInDate?: string }) => {
       const res = await apiRequest("PATCH", `/api/stock-in/history/${data.id}`, {
         quantity: data.quantity,
         notes: data.notes,
+        stockInDate: data.stockInDate,
       });
       return await res.json();
     },
@@ -798,9 +817,10 @@ export default function StockManagement() {
 
   /* Export Stock In History */
   const exportStockInHistory = () => {
-    const headers = ["Date", "Time", "Company", "Product", "Size", "Color Code", "Color Name", "Previous Stock", "Quantity Added", "New Stock", "Notes"];
+    const headers = ["Stock In Date", "Date", "Time", "Company", "Product", "Size", "Color Code", "Color Name", "Previous Stock", "Quantity Added", "New Stock", "Notes"];
     
     const csvData = filteredStockInHistory.map(history => [
+      history.stockInDate, // Add stock in date
       new Date(history.createdAt).toLocaleDateString(),
       new Date(history.createdAt).toLocaleTimeString(),
       history.color.variant.product.company,
@@ -1978,6 +1998,7 @@ export default function StockManagement() {
                                   stockInForm.setValue("colorId", color.id);
                                   stockInForm.setValue("quantity", "");
                                   stockInForm.setValue("notes", "");
+                                  stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
                                   setSelectedColorForStockIn(color);
                                   setIsStockInDialogOpen(true);
                                 }}>
@@ -2020,13 +2041,15 @@ export default function StockManagement() {
             if (!open) {
               setSelectedColorForStockIn(null);
               setStockInSearchQuery("");
-              stockInForm.reset();
+              stockInForm.reset({
+                stockInDate: formatDateToDDMMYYYY(new Date())
+              });
             }
           }}>
             <DialogContent className="max-w-3xl max-h-[85vh]">
               <DialogHeader>
                 <DialogTitle>Add Stock</DialogTitle>
-                <DialogDescription>Add quantity to inventory</DialogDescription>
+                <DialogDescription>Add quantity to inventory with date</DialogDescription>
               </DialogHeader>
 
               {!selectedColorForStockIn ? (
@@ -2047,6 +2070,7 @@ export default function StockManagement() {
                         <Card key={color.id} className="hover:shadow-md cursor-pointer transition-shadow" onClick={() => {
                           setSelectedColorForStockIn(color);
                           stockInForm.setValue("colorId", color.id);
+                          stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
                         }}>
                           <CardContent className="p-3">
                             <div className="flex items-center justify-between gap-3">
@@ -2099,6 +2123,26 @@ export default function StockManagement() {
                       </FormItem>
                     )} />
 
+                    <FormField control={stockInForm.control} name="stockInDate" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Stock In Date (DD-MM-YYYY)</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="DD-MM-YYYY" 
+                            {...field} 
+                            onChange={(e) => {
+                              // Basic validation for DD-MM-YYYY format
+                              const value = e.target.value;
+                              if (/^\d{0,2}-?\d{0,2}-?\d{0,4}$/.test(value)) {
+                                field.onChange(value);
+                              }
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
                     <FormField control={stockInForm.control} name="notes" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Notes (Optional)</FormLabel>
@@ -2113,7 +2157,9 @@ export default function StockManagement() {
                       <Button type="button" variant="outline" onClick={() => {
                         setSelectedColorForStockIn(null);
                         setStockInSearchQuery("");
-                        stockInForm.reset();
+                        stockInForm.reset({
+                          stockInDate: formatDateToDDMMYYYY(new Date())
+                        });
                       }}>Cancel</Button>
                       <Button type="submit" disabled={stockInMutation.isPending}>{stockInMutation.isPending ? "Adding..." : "Add Stock"}</Button>
                     </div>
@@ -2223,7 +2269,7 @@ export default function StockManagement() {
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input 
-                          placeholder="Search by color code, color name..." 
+                          placeholder="Search by color code, color name, stock in date..." 
                           value={historySearchQuery}
                           onChange={e => setHistorySearchQuery(e.target.value)}
                           className="pl-9"
@@ -2291,6 +2337,10 @@ export default function StockManagement() {
                                     {history.color.colorCode}
                                   </Badge>
                                   <h3 className="font-semibold text-sm mt-1">{history.color.colorName}</h3>
+                                  {/* Stock In Date Display */}
+                                  <p className="text-xs text-blue-600 font-medium mt-1">
+                                    Stock In Date: {history.stockInDate}
+                                  </p>
                                 </div>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -2564,7 +2614,7 @@ export default function StockManagement() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Stock History</DialogTitle>
-            <DialogDescription>Update quantity and notes for this stock entry</DialogDescription>
+            <DialogDescription>Update quantity, date and notes for this stock entry</DialogDescription>
           </DialogHeader>
           {editingStockHistory && (
             <Form {...stockHistoryEditForm}>
@@ -2573,7 +2623,8 @@ export default function StockManagement() {
                   updateStockHistoryMutation.mutate({
                     id: editingStockHistory.id,
                     quantity: parseInt(data.quantity, 10),
-                    notes: data.notes
+                    notes: data.notes,
+                    stockInDate: data.stockInDate
                   });
                 }
               })} className="space-y-4">
@@ -2599,6 +2650,25 @@ export default function StockManagement() {
                     <FormLabel>Quantity</FormLabel>
                     <FormControl>
                       <Input type="number" min="1" step="1" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={stockHistoryEditForm.control} name="stockInDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stock In Date (DD-MM-YYYY)</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="DD-MM-YYYY" 
+                        {...field} 
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (/^\d{0,2}-?\d{0,2}-?\d{0,4}$/.test(value)) {
+                            field.onChange(value);
+                          }
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

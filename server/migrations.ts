@@ -1,3 +1,4 @@
+// migrations.ts
 // Database migration utilities for ensuring schema compatibility
 import Database from "better-sqlite3";
 
@@ -43,6 +44,27 @@ export function migrateDatabase(db: Database.Database): void {
     if (!colorsColumnNames.includes('rate_override')) {
       console.log('[Migration] Adding rate_override column to colors table');
       db.exec('ALTER TABLE colors ADD COLUMN rate_override TEXT');
+    }
+    
+    // Check and add missing columns to stock_in_history table (added in v0.2.0)
+    const stockHistoryColumns = db.pragma('table_info(stock_in_history)') as Array<{ name: string; type: string }>;
+    const stockHistoryColumnNames = stockHistoryColumns.map((col) => col.name);
+    
+    console.log('[Migration] Current stock_in_history columns:', stockHistoryColumnNames);
+    
+    // Add stock_in_date column if missing
+    if (!stockHistoryColumnNames.includes('stock_in_date')) {
+      console.log('[Migration] Adding stock_in_date column to stock_in_history table');
+      db.exec('ALTER TABLE stock_in_history ADD COLUMN stock_in_date TEXT');
+      
+      // Set default value for existing records (current date in DD-MM-YYYY format)
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const defaultDate = `${day}-${month}-${year}`;
+      
+      db.exec(`UPDATE stock_in_history SET stock_in_date = '${defaultDate}' WHERE stock_in_date IS NULL`);
     }
     
     // Create settings table if it doesn't exist (added in v0.1.9)
@@ -95,6 +117,11 @@ export function migrateDatabase(db: Database.Database): void {
       
       -- Sale items indexes
       CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id);
+      
+      -- Stock in history indexes
+      CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at);
+      CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date);
     `);
     
     console.log('[Migration] ✅ Database migration completed successfully');

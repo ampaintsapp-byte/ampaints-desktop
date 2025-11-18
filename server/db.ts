@@ -1,3 +1,4 @@
+// db.ts
 import Database from "better-sqlite3";
 import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@shared/schema";
@@ -154,6 +155,7 @@ function createTables() {
       quantity INTEGER NOT NULL,
       previous_stock INTEGER NOT NULL,
       new_stock INTEGER NOT NULL,
+      stock_in_date TEXT NOT NULL,
       notes TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
@@ -202,6 +204,7 @@ function createTables() {
     -- Stock in history indexes
     CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at);
+    CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date);
   `);
   
     console.log('[Database] ✅ All tables and indexes created successfully');

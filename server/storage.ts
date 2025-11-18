@@ -50,7 +50,7 @@ export interface IStorage {
   updateColor(id: string, data: { colorName: string; colorCode: string; stockQuantity: number }): Promise<Color>;
   updateColorStock(id: string, stockQuantity: number): Promise<Color>;
   updateColorRateOverride(id: string, rateOverride: number | null): Promise<Color>;
-  stockIn(id: string, quantity: number, notes?: string): Promise<Color>;
+  stockIn(id: string, quantity: number, notes?: string, stockInDate?: string): Promise<Color>;
   deleteColor(id: string): Promise<void>;
 
   // Sales
@@ -76,9 +76,9 @@ export interface IStorage {
     colorCode?: string;
     colorName?: string;
   }): Promise<StockInHistoryWithColor[]>;
-  recordStockIn(colorId: string, quantity: number, previousStock: number, newStock: number, notes?: string): Promise<StockInHistoryWithColor>;
+  recordStockIn(colorId: string, quantity: number, previousStock: number, newStock: number, notes?: string, stockInDate?: string): Promise<StockInHistoryWithColor>;
   deleteStockInHistory(id: string): Promise<void>;
-  updateStockInHistory(id: string, data: { quantity?: number; notes?: string }): Promise<StockInHistoryWithColor>;
+  updateStockInHistory(id: string, data: { quantity?: number; notes?: string; stockInDate?: string }): Promise<StockInHistoryWithColor>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
@@ -97,6 +97,20 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Helper method to format dates to DD-MM-YYYY
+  private formatDateToDDMMYYYY(date: Date): string {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+
+  // Helper method to parse DD-MM-YYYY to Date
+  private parseDDMMYYYYToDate(dateString: string): Date {
+    const [day, month, year] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
   // Products
   async getProducts(): Promise<Product[]> {
     return await db.select().from(products).orderBy(desc(products.createdAt));
@@ -258,9 +272,9 @@ export class DatabaseStorage implements IStorage {
     return color;
   }
 
-  async stockIn(id: string, quantity: number, notes?: string): Promise<Color> {
+  async stockIn(id: string, quantity: number, notes?: string, stockInDate?: string): Promise<Color> {
     try {
-      console.log(`[Storage] Starting stock in for color ${id}, quantity: ${quantity}`);
+      console.log(`[Storage] Starting stock in for color ${id}, quantity: ${quantity}, date: ${stockInDate}`);
       
       // Get current stock
       const [currentColor] = await db.select().from(colors).where(eq(colors.id, id));
@@ -284,6 +298,9 @@ export class DatabaseStorage implements IStorage {
 
       // Record in history
       try {
+        // Use provided stockInDate or current date
+        const actualStockInDate = stockInDate || this.formatDateToDDMMYYYY(new Date());
+        
         const historyRecord = {
           id: crypto.randomUUID(),
           colorId: id,
@@ -291,6 +308,7 @@ export class DatabaseStorage implements IStorage {
           previousStock,
           newStock,
           notes: notes || "Stock added via stock management",
+          stockInDate: actualStockInDate,
           createdAt: new Date(),
         };
 
@@ -441,9 +459,12 @@ export class DatabaseStorage implements IStorage {
     quantity: number, 
     previousStock: number, 
     newStock: number, 
-    notes?: string
+    notes?: string,
+    stockInDate?: string
   ): Promise<StockInHistoryWithColor> {
     try {
+      const actualStockInDate = stockInDate || this.formatDateToDDMMYYYY(new Date());
+      
       const historyRecord = {
         id: crypto.randomUUID(),
         colorId,
@@ -451,6 +472,7 @@ export class DatabaseStorage implements IStorage {
         previousStock,
         newStock,
         notes: notes || null,
+        stockInDate: actualStockInDate,
         createdAt: new Date(),
       };
 
@@ -492,7 +514,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async updateStockInHistory(id: string, data: { quantity?: number; notes?: string }): Promise<StockInHistoryWithColor> {
+  async updateStockInHistory(id: string, data: { quantity?: number; notes?: string; stockInDate?: string }): Promise<StockInHistoryWithColor> {
     try {
       const updateData: any = {};
       
@@ -502,6 +524,10 @@ export class DatabaseStorage implements IStorage {
       
       if (data.notes !== undefined) {
         updateData.notes = data.notes;
+      }
+
+      if (data.stockInDate !== undefined) {
+        updateData.stockInDate = data.stockInDate;
       }
 
       await db

@@ -2,7 +2,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertProductSchema, insertVariantSchema, insertColorSchema, insertSaleSchema, insertSaleItemSchema, insertStockInHistorySchema } from "@shared/schema";
+import { insertProductSchema, insertVariantSchema, insertColorSchema, insertSaleSchema, insertSaleItemSchema, insertStockInHistorySchema, formatDateToDDMMYYYY, parseDDMMYYYYToDate } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -208,10 +208,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/colors/:id/stock-in", async (req, res) => {
     try {
-      const { quantity, notes } = req.body;
+      const { quantity, notes, stockInDate } = req.body;
       const colorId = req.params.id;
       
-      console.log(`[API] Stock in request: Color ${colorId}, Quantity: ${quantity}, Notes: ${notes}`);
+      console.log(`[API] Stock in request: Color ${colorId}, Quantity: ${quantity}, Notes: ${notes}, Date: ${stockInDate}`);
 
       if (typeof quantity !== "number" || quantity <= 0) {
         res.status(400).json({ 
@@ -229,9 +229,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Validate stockInDate format if provided
+      if (stockInDate && !/^\d{2}-\d{2}-\d{4}$/.test(stockInDate)) {
+        res.status(400).json({ 
+          error: "Invalid date format", 
+          details: "Stock in date must be in DD-MM-YYYY format" 
+        });
+        return;
+      }
+
       console.log(`[API] Processing stock in for color: ${colorId}`);
 
-      const color = await storage.stockIn(colorId, quantity, notes);
+      const color = await storage.stockIn(colorId, quantity, notes, stockInDate);
       
       if (!color) {
         res.status(404).json({ 
@@ -355,16 +364,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/stock-in/history/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { quantity, notes } = req.body;
+      const { quantity, notes, stockInDate } = req.body;
       
-      console.log(`[API] Updating stock history record: ${id}`, { quantity, notes });
+      console.log(`[API] Updating stock history record: ${id}`, { quantity, notes, stockInDate });
 
       if (quantity !== undefined && (typeof quantity !== "number" || quantity <= 0)) {
         res.status(400).json({ error: "Invalid quantity" });
         return;
       }
 
-      const updatedRecord = await storage.updateStockInHistory(id, { quantity, notes });
+      // Validate stockInDate format if provided
+      if (stockInDate && !/^\d{2}-\d{2}-\d{4}$/.test(stockInDate)) {
+        res.status(400).json({ 
+          error: "Invalid date format", 
+          details: "Stock in date must be in DD-MM-YYYY format" 
+        });
+        return;
+      }
+
+      const updatedRecord = await storage.updateStockInHistory(id, { quantity, notes, stockInDate });
       res.json(updatedRecord);
     } catch (error) {
       console.error("[API] Error updating stock history:", error);
@@ -773,14 +791,14 @@ function generateStockHistoryPDF(history: any[], filters: any): string {
   }
   
   pdfContent += `\n`;
-  pdfContent += `Date | Time | Company | Product | Size | Color Code | Color Name | Previous Stock | Quantity Added | New Stock | Notes\n`;
-  pdfContent += `--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---\n`;
+  pdfContent += `Stock In Date | Date | Time | Company | Product | Size | Color Code | Color Name | Previous Stock | Quantity Added | New Stock | Notes\n`;
+  pdfContent += `--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---\n`;
   
   history.forEach((record, index) => {
     const date = new Date(record.createdAt).toLocaleDateString();
     const time = new Date(record.createdAt).toLocaleTimeString();
     
-    pdfContent += `${date} | ${time} | ${record.color.variant.product.company} | ${record.color.variant.product.productName} | ${record.color.variant.packingSize} | ${record.color.colorCode} | ${record.color.colorName} | ${record.previousStock} | +${record.quantity} | ${record.newStock} | ${record.notes || '-'}\n`;
+    pdfContent += `${record.stockInDate} | ${date} | ${time} | ${record.color.variant.product.company} | ${record.color.variant.product.productName} | ${record.color.variant.packingSize} | ${record.color.colorCode} | ${record.color.colorName} | ${record.previousStock} | +${record.quantity} | ${record.newStock} | ${record.notes || '-'}\n`;
   });
 
   // Convert to base64 for PDF (simplified approach)
