@@ -361,7 +361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update Stock In History Record - FIXED: Proper stockInDate handling
+  // FIXED: Update Stock In History Record with proper new stock calculation
   app.patch("/api/stock-in/history/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -383,6 +383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Use the fixed updateStockInHistory function that recalculates newStock
       const updatedRecord = await storage.updateStockInHistory(id, { quantity, notes, stockInDate });
       res.json(updatedRecord);
     } catch (error) {

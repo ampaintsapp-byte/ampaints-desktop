@@ -525,12 +525,35 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // FIXED: Update stock history with proper new stock calculation
   async updateStockInHistory(id: string, data: { quantity?: number; notes?: string; stockInDate?: string }): Promise<StockInHistoryWithColor> {
     try {
+      // First get the current record to know the previous stock
+      const currentRecord = await db.query.stockInHistory.findFirst({
+        where: eq(stockInHistory.id, id),
+      });
+
+      if (!currentRecord) {
+        throw new Error("Stock history record not found");
+      }
+
       const updateData: any = {};
       
       if (data.quantity !== undefined) {
-        updateData.quantity = data.quantity;
+        // Calculate new stock based on previous stock and updated quantity
+        const newQuantity = data.quantity;
+        const newStock = currentRecord.previousStock + newQuantity;
+        
+        updateData.quantity = newQuantity;
+        updateData.newStock = newStock;
+
+        // Also update the current stock in the color table
+        await db
+          .update(colors)
+          .set({
+            stockQuantity: newStock,
+          })
+          .where(eq(colors.id, currentRecord.colorId));
       }
       
       if (data.notes !== undefined) {
