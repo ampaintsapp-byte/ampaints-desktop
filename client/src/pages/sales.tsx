@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Receipt, Calendar, RefreshCw, Download, Share2, FileText, Printer, Eye, Banknote, History } from "lucide-react";
+import { Search, Receipt, Calendar, RefreshCw, Download, Share2, FileText, Printer, Eye, Banknote, History, User, Phone, Clock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Sale {
   id: string;
@@ -25,6 +31,8 @@ interface Sale {
   amountPaid: string;
   paymentStatus: string;
   createdAt: string;
+  dueDate?: string;
+  notes?: string;
 }
 
 interface SaleItem {
@@ -112,6 +120,46 @@ const getReceiptSettings = () => {
   };
 };
 
+// Sale Card Actions Component
+const SaleCardActions = ({ sale, onView, onDownload, onShare }: { 
+  sale: SaleWithItems;
+  onView: (sale: SaleWithItems) => void;
+  onDownload: (sale: SaleWithItems) => void;
+  onShare: (sale: SaleWithItems) => void;
+}) => (
+  <DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+        <FileText className="h-4 w-4" />
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end">
+      <DropdownMenuItem onClick={() => onView(sale)}>
+        <Eye className="h-4 w-4 mr-2" />
+        View Details
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onView(sale)}>
+        <FileText className="h-4 w-4 mr-2" />
+        View Statement
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onDownload(sale)}>
+        <Download className="h-4 w-4 mr-2" />
+        Download PDF
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onShare(sale)}>
+        <Share2 className="h-4 w-4 mr-2" />
+        Share via WhatsApp
+      </DropdownMenuItem>
+      <DropdownMenuItem asChild>
+        <Link href={`/bill/${sale.id}`}>
+          <Printer className="h-4 w-4 mr-2" />
+          Print Bill
+        </Link>
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+);
+
 export default function Sales() {
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState("all");
@@ -131,12 +179,13 @@ export default function Sales() {
   // Fetch detailed sale data when a sale is selected
   const { data: saleDetails } = useQuery<SaleWithItems>({
     queryKey: ["/api/sales", selectedSale?.id],
-    enabled: !!selectedSale?.id && showSaleDetails,
+    enabled: !!selectedSale?.id && (showSaleDetails || showPaymentHistory),
   });
 
   // Add refresh function
   const refreshSales = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/sales", selectedSale?.id] });
     toast({ title: "Sales data refreshed" });
   };
 
@@ -404,6 +453,14 @@ export default function Sales() {
             font-size: 10px;
             font-weight: 600;
           }
+          .notes-section {
+            background: rgba(56, 189, 248, 0.1);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border-left: 4px solid #0ea5e9;
+            margin: 8px 0;
+            font-size: 11px;
+          }
         </style>
       </head>
       <body>
@@ -434,6 +491,12 @@ export default function Sales() {
                 <span class="info-label">Time:</span>
                 <span class="info-value">${formattedTime}</span>
               </div>
+              ${sale.dueDate ? `
+              <div class="info-item">
+                <span class="info-label">Due Date:</span>
+                <span class="info-value">${formatDate(sale.dueDate)}</span>
+              </div>
+              ` : ''}
             </div>
 
             <div class="info-card">
@@ -449,6 +512,15 @@ export default function Sales() {
             </div>
           </div>
     `;
+
+    // Notes Section
+    if (sale.notes) {
+      pdfHTML += `
+          <div class="notes-section">
+            <strong>📝 Additional Notes:</strong> ${sale.notes}
+          </div>
+      `;
+    }
 
     // Items Table
     if (sale.saleItems && sale.saleItems.length > 0) {
@@ -496,33 +568,34 @@ export default function Sales() {
       pdfHTML += `
         <div class="section">
           <div class="section-title">💳 Payment History • ${sale.paymentHistory.length} Payments</div>
-          <div class="payment-history">
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Payment Date</th>
+                <th>Method</th>
+                <th>Amount Paid</th>
+                <th>New Balance</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
       `;
       
       sale.paymentHistory.forEach((payment, index) => {
         pdfHTML += `
-            <div class="payment-item">
-              <div>
-                <div style="font-weight: 600; margin-bottom: 4px;">${formatDate(payment.createdAt)}</div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="payment-method">${payment.paymentMethod.toUpperCase()}</span>
-                  ${payment.notes ? `<span style="font-size: 10px; color: #6b7280;">${payment.notes}</span>` : ''}
-                </div>
-              </div>
-              <div style="text-align: right;">
-                <div style="font-family: 'SF Mono', Monaco, monospace; font-weight: 700; color: #059669; font-size: 14px;">
-                  +Rs. ${Math.round(parseFloat(payment.amount)).toLocaleString()}
-                </div>
-                <div style="font-size: 10px; color: #6b7280;">
-                  Balance: Rs. ${Math.round(parseFloat(payment.newBalance)).toLocaleString()}
-                </div>
-              </div>
-            </div>
+              <tr>
+                <td>${formatDate(payment.createdAt)}</td>
+                <td>${payment.paymentMethod}</td>
+                <td class="amount">Rs. ${Math.round(parseFloat(payment.amount)).toLocaleString()}</td>
+                <td class="amount">Rs. ${Math.round(parseFloat(payment.newBalance)).toLocaleString()}</td>
+                <td>${payment.notes || '-'}</td>
+              </tr>
         `;
       });
       
       pdfHTML += `
-          </div>
+            </tbody>
+          </table>
         </div>
       `;
     }
@@ -620,13 +693,24 @@ export default function Sales() {
     });
   };
 
-  // Share bill via WhatsApp
-  const shareBillViaWhatsApp = (sale: SaleWithItems) => {
-    const totalAmount = Math.round(parseFloat(sale.totalAmount));
-    const amountPaid = Math.round(parseFloat(sale.amountPaid));
-    const amountDue = totalAmount - amountPaid;
-    
-    const message = `🛍️ *${getReceiptSettings().businessName} - Sale Bill*
+  // Share bill via WhatsApp with PDF
+  const shareBillViaWhatsApp = async (sale: SaleWithItems) => {
+    try {
+      // Generate PDF
+      const pdfHTML = generateDetailedSalePDF(sale);
+      const blob = new Blob([pdfHTML], { type: 'text/html' });
+      
+      // Create FormData to send to a service that can convert HTML to PDF
+      const formData = new FormData();
+      formData.append('html', pdfHTML);
+      formData.append('filename', `Bill_${sale.customerName}_${sale.id.slice(-8)}.pdf`);
+      
+      // For now, we'll share the text version with a link to generate PDF
+      const totalAmount = Math.round(parseFloat(sale.totalAmount));
+      const amountPaid = Math.round(parseFloat(sale.amountPaid));
+      const amountDue = totalAmount - amountPaid;
+      
+      const message = `🛍️ *${getReceiptSettings().businessName} - Sale Bill*
 
 *Bill ID:* ${sale.id.slice(-8).toUpperCase()}
 *Customer:* ${sale.customerName}
@@ -641,24 +725,43 @@ export default function Sales() {
 
 *Status:* ${sale.paymentStatus.toUpperCase()}
 
+*Payment History:* ${sale.paymentHistory?.length || 0} payment(s) recorded
+
+📄 *Detailed PDF Statement Available*
+Visit the store to get your complete bill statement with itemized details and payment history.
+
 Thank you for your business! 🎨
 _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
 
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
-    
-    window.open(whatsappUrl, '_blank');
-    
-    toast({ 
-      title: "Share via WhatsApp", 
-      description: `Bill details opened for sharing with ${sale.customerName}` 
-    });
+      const encodedMessage = encodeURIComponent(message);
+      const whatsappUrl = `https://wa.me/${sale.customerPhone.replace('+', '')}?text=${encodedMessage}`;
+      
+      window.open(whatsappUrl, '_blank');
+      
+      toast({ 
+        title: "Shared via WhatsApp", 
+        description: `Bill details sent to ${sale.customerName}` 
+      });
+    } catch (error) {
+      console.error("Error sharing via WhatsApp:", error);
+      toast({
+        title: "Sharing failed",
+        description: "Could not share bill via WhatsApp",
+        variant: "destructive"
+      });
+    }
   };
 
   // View sale details
   const handleViewSaleDetails = (sale: Sale) => {
     setSelectedSale(sale as SaleWithItems);
     setShowSaleDetails(true);
+  };
+
+  // View payment history
+  const handleViewPaymentHistory = (sale: Sale) => {
+    setSelectedSale(sale as SaleWithItems);
+    setShowPaymentHistory(true);
   };
 
   const filteredSales = useMemo(() => {
@@ -759,11 +862,11 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case "paid":
-        return <Badge variant="default">Paid</Badge>;
+        return <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
       case "partial":
-        return <Badge variant="secondary">Partial</Badge>;
+        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Partial</Badge>;
       case "unpaid":
-        return <Badge variant="outline">Unpaid</Badge>;
+        return <Badge variant="outline" className="bg-red-100 text-red-800 hover:bg-red-100">Unpaid</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -897,7 +1000,7 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                       const amountDue = Math.round(totalFloat - paidFloat);
 
                       return (
-                        <Card key={sale.id} className="hover-elevate" data-testid={`card-sale-${sale.id}`}>
+                        <Card key={sale.id} className="hover:shadow-lg transition-shadow duration-200" data-testid={`card-sale-${sale.id}`}>
                           <CardContent className="p-4">
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0 space-y-2">
@@ -907,16 +1010,16 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                                   {getPaymentStatusBadge(sale.paymentStatus)}
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                                  <div>
-                                    <span className="text-muted-foreground">Phone: </span>
+                                  <div className="flex items-center gap-1">
+                                    <Phone className="h-3 w-3" />
                                     <span className="font-mono">{sale.customerPhone}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Date: </span>
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
                                     <span>{formatDate(sale.createdAt)}</span>
                                   </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Time: </span>
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
                                     <span>{formatTime(sale.createdAt)}</span>
                                   </div>
                                 </div>
@@ -927,65 +1030,23 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Paid: </span>
-                                    <span className="font-semibold">Rs. {amountPaid.toLocaleString()}</span>
+                                    <span className="font-semibold text-green-600">Rs. {amountPaid.toLocaleString()}</span>
                                   </div>
                                   {amountDue > 0 && (
                                     <div>
                                       <span className="text-muted-foreground">Due: </span>
-                                      <span className="font-semibold text-destructive">Rs. {amountDue.toLocaleString()}</span>
+                                      <span className="font-semibold text-red-600">Rs. {amountDue.toLocaleString()}</span>
                                     </div>
                                   )}
                                 </div>
                               </div>
                               <div className="flex flex-col gap-2 items-end">
-                                <div className="flex gap-1">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleViewSaleDetails(sale)}
-                                    className="flex items-center gap-1"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                    Details
-                                  </Button>
-                                  <Link
-                                    href={`/bill/${sale.id}`}
-                                    className="text-sm text-primary hover:underline whitespace-nowrap flex items-center gap-1"
-                                    data-testid={`link-view-bill-${sale.id}`}
-                                  >
-                                    <Printer className="h-3 w-3" />
-                                    Print
-                                  </Link>
-                                </div>
-                                <div className="flex gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => viewSalePDF(sale as SaleWithItems)}
-                                    className="h-8 w-8 p-0"
-                                    title="View PDF"
-                                  >
-                                    <FileText className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => downloadSalePDF(sale as SaleWithItems)}
-                                    className="h-8 w-8 p-0"
-                                    title="Download PDF"
-                                  >
-                                    <Download className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => shareBillViaWhatsApp(sale as SaleWithItems)}
-                                    className="h-8 w-8 p-0"
-                                    title="Share via WhatsApp"
-                                  >
-                                    <Share2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
+                                <SaleCardActions
+                                  sale={sale as SaleWithItems}
+                                  onView={handleViewSaleDetails}
+                                  onDownload={downloadSalePDF}
+                                  onShare={shareBillViaWhatsApp}
+                                />
                               </div>
                             </div>
                           </CardContent>
@@ -1040,21 +1101,33 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
             <div className="space-y-6">
               {/* Customer Information */}
               <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-md text-sm">
-                <div>
-                  <p className="text-muted-foreground">Customer</p>
-                  <p className="font-medium">{saleDetails.customerName}</p>
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-muted-foreground">Customer</p>
+                    <p className="font-medium">{saleDetails.customerName}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Phone</p>
-                  <p className="font-medium">{saleDetails.customerPhone}</p>
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-muted-foreground">Phone</p>
+                    <p className="font-medium">{saleDetails.customerPhone}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Bill Date</p>
-                  <p className="font-medium">{formatDate(saleDetails.createdAt)}</p>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-muted-foreground">Bill Date</p>
+                    <p className="font-medium">{formatDate(saleDetails.createdAt)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Bill Time</p>
-                  <p className="font-medium">{formatTime(saleDetails.createdAt)}</p>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-muted-foreground">Bill Time</p>
+                    <p className="font-medium">{formatTime(saleDetails.createdAt)}</p>
+                  </div>
                 </div>
               </div>
 
@@ -1093,56 +1166,57 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
               {/* Payment History */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Payment History</h3>
+                  <h3 className="font-medium">Payment History ({saleDetails.paymentHistory?.length || 0})</h3>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowPaymentHistory(!showPaymentHistory)}
+                    onClick={() => handleViewPaymentHistory(saleDetails)}
                   >
                     <History className="h-4 w-4 mr-1" />
-                    {showPaymentHistory ? "Hide" : "Show"} History
+                    View Full History
                   </Button>
                 </div>
                 
-                {showPaymentHistory && (
+                {saleDetails.paymentHistory && saleDetails.paymentHistory.length > 0 && (
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {saleDetails.paymentHistory && saleDetails.paymentHistory.length > 0 ? (
-                      saleDetails.paymentHistory.map((payment) => (
-                        <Card key={payment.id}>
-                          <CardContent className="p-3">
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="outline">
-                                    {formatDate(payment.createdAt)}
-                                  </Badge>
-                                  <Badge variant="secondary">
-                                    {payment.paymentMethod}
-                                  </Badge>
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {formatTime(payment.createdAt)}
-                                </div>
-                                {payment.notes && (
-                                  <div className="text-xs text-muted-foreground">
-                                    Notes: {payment.notes}
-                                  </div>
-                                )}
+                    {saleDetails.paymentHistory.slice(0, 3).map((payment) => (
+                      <Card key={payment.id}>
+                        <CardContent className="p-3">
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">
+                                  {formatDate(payment.createdAt)}
+                                </Badge>
+                                <Badge variant="secondary">
+                                  {payment.paymentMethod}
+                                </Badge>
                               </div>
-                              <div className="text-right space-y-1">
-                                <div className="font-mono font-medium text-green-600">
-                                  +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
-                                </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatTime(payment.createdAt)}
+                              </div>
+                              {payment.notes && (
                                 <div className="text-xs text-muted-foreground">
-                                  Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                                  Notes: {payment.notes}
                                 </div>
+                              )}
+                            </div>
+                            <div className="text-right space-y-1">
+                              <div className="font-mono font-medium text-green-600">
+                                +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
                               </div>
                             </div>
-                          </CardContent>
-                        </Card>
-                      ))
-                    ) : (
-                      <p className="text-center text-muted-foreground py-4">No payment history found</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {saleDetails.paymentHistory.length > 3 && (
+                      <div className="text-center text-sm text-muted-foreground py-2">
+                        + {saleDetails.paymentHistory.length - 3} more payments
+                      </div>
                     )}
                   </div>
                 )}
@@ -1156,7 +1230,7 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Amount Paid:</span>
-                  <span>Rs. {Math.round(parseFloat(saleDetails.amountPaid)).toLocaleString()}</span>
+                  <span className="text-green-600">Rs. {Math.round(parseFloat(saleDetails.amountPaid)).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between font-semibold text-base text-destructive border-t border-border pt-2">
                   <span>Balance Due:</span>
@@ -1181,6 +1255,73 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                     Print Bill
                   </Button>
                 </Link>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment History Dialog */}
+      <Dialog open={showPaymentHistory} onOpenChange={setShowPaymentHistory}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Payment History</DialogTitle>
+            <DialogDescription>
+              Complete payment history for {selectedSale?.customerName}
+            </DialogDescription>
+          </DialogHeader>
+
+          {saleDetails && (
+            <div className="space-y-4">
+              {saleDetails.paymentHistory && saleDetails.paymentHistory.length > 0 ? (
+                <div className="space-y-3">
+                  {saleDetails.paymentHistory.map((payment) => (
+                    <Card key={payment.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="font-mono">
+                                {formatDate(payment.createdAt)}
+                              </Badge>
+                              <Badge variant="secondary">
+                                {payment.paymentMethod}
+                              </Badge>
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {formatTime(payment.createdAt)}
+                            </div>
+                            {payment.notes && (
+                              <div className="text-sm">
+                                <span className="text-muted-foreground">Notes: </span>
+                                {payment.notes}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right space-y-2">
+                            <div className="font-mono text-lg font-bold text-green-600">
+                              +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              New Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No payment history found</p>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setShowPaymentHistory(false)}>
+                  Close
+                </Button>
               </div>
             </div>
           )}

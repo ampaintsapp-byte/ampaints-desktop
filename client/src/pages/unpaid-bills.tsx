@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Updated with detailed bill items and payment history
+// unpaid-bills.tsx - Updated with detailed customer dialog
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,7 +48,14 @@ import {
   FileDown,
   Share2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Package,
+  DollarSign,
+  Clock,
+  FileDigit,
+  ArrowRight,
+  ChevronRight,
+  MoreHorizontal
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -69,6 +76,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 
 // Interfaces
 interface CustomerSuggestion {
@@ -137,11 +146,11 @@ interface SaleWithItems extends Sale {
 const getPaymentStatusBadge = (status: string) => {
   switch (status) {
     case "paid":
-      return <Badge variant="default">Paid</Badge>;
+      return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
     case "partial":
-      return <Badge variant="secondary">Partial</Badge>;
+      return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Partial</Badge>;
     case "unpaid":
-      return <Badge variant="outline">Unpaid</Badge>;
+      return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Unpaid</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -201,19 +210,24 @@ const getReceiptSettings = () => {
 };
 
 // Customer Card Actions Component
-const CustomerCardActions = ({ customer, onView, onDownload, onShare }: { 
+const CustomerCardActions = ({ customer, onView, onDownload, onShare, onViewDetails }: { 
   customer: ConsolidatedCustomer;
   onView: (customer: ConsolidatedCustomer) => void;
   onDownload: (customer: ConsolidatedCustomer) => void;
   onShare: (customer: ConsolidatedCustomer) => void;
+  onViewDetails: (customer: ConsolidatedCustomer) => void;
 }) => (
   <DropdownMenu>
     <DropdownMenuTrigger asChild>
       <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-        <FileDown className="h-4 w-4" />
+        <MoreHorizontal className="h-4 w-4" />
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end">
+      <DropdownMenuItem onClick={() => onViewDetails(customer)}>
+        <Eye className="h-4 w-4 mr-2" />
+        View Details
+      </DropdownMenuItem>
       <DropdownMenuItem onClick={() => onView(customer)}>
         <FileText className="h-4 w-4 mr-2" />
         View Statement
@@ -230,40 +244,115 @@ const CustomerCardActions = ({ customer, onView, onDownload, onShare }: {
   </DropdownMenu>
 );
 
-// Customer Details Actions Component
-const CustomerDetailsActions = ({ customer, onView, onDownload, onShare }: {
-  customer: ConsolidatedCustomer;
-  onView: (customer: ConsolidatedCustomer) => void;
-  onDownload: (customer: ConsolidatedCustomer) => void;
-  onShare: (customer: ConsolidatedCustomer) => void;
-}) => (
-  <div className="flex justify-end gap-2">
-    <Button
-      variant="outline"
-      onClick={() => onView(customer)}
-      className="flex items-center gap-2"
-    >
-      <FileText className="h-4 w-4" />
-      View Statement
-    </Button>
-    <Button
-      variant="outline"
-      onClick={() => onDownload(customer)}
-      className="flex items-center gap-2"
-    >
-      <Download className="h-4 w-4" />
-      Download Statement
-    </Button>
-    <Button
-      variant="outline"
-      onClick={() => onShare(customer)}
-      className="flex items-center gap-2"
-    >
-      <Share2 className="h-4 w-4" />
-      Share via WhatsApp
-    </Button>
-  </div>
-);
+// Bill Item Component
+const BillItem = ({ item }: { item: SaleItem }) => {
+  const productLine = `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
+  
+  return (
+    <div className="flex items-center justify-between py-2 border-b last:border-b-0">
+      <div className="flex-1">
+        <div className="font-medium text-sm">{productLine}</div>
+        <div className="text-xs text-muted-foreground">{item.color.variant.product.company}</div>
+      </div>
+      <div className="text-right">
+        <div className="text-sm font-mono">Qty: {item.quantity}</div>
+        <div className="text-sm font-mono">Rs. {Math.round(parseFloat(item.rate)).toLocaleString()}</div>
+        <div className="font-semibold font-mono">Rs. {Math.round(parseFloat(item.subtotal)).toLocaleString()}</div>
+      </div>
+    </div>
+  );
+};
+
+// Payment History Item Component
+const PaymentHistoryItem = ({ payment }: { payment: PaymentHistoryWithSale }) => {
+  return (
+    <div className="flex items-center justify-between py-3 border-b last:border-b-0">
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <Badge variant="outline" className="text-xs">
+            {formatDate(payment.createdAt)}
+          </Badge>
+          <Badge variant="secondary" className="text-xs">
+            {payment.paymentMethod}
+          </Badge>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {formatTime(payment.createdAt)}
+        </div>
+        {payment.notes && (
+          <div className="text-xs text-muted-foreground mt-1">
+            Note: {payment.notes}
+          </div>
+        )}
+      </div>
+      <div className="text-right">
+        <div className="font-semibold text-green-600 font-mono">
+          +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+        </div>
+        <div className="text-xs text-muted-foreground font-mono">
+          Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Bill Card Component
+const BillCard = ({ bill, onViewBill }: { bill: SaleWithItems, onViewBill: (bill: SaleWithItems) => void }) => {
+  const totalAmount = parseFloat(bill.totalAmount);
+  const amountPaid = parseFloat(bill.amountPaid);
+  const outstanding = totalAmount - amountPaid;
+  
+  return (
+    <Card className="hover:shadow-md transition-shadow">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <FileDigit className="h-4 w-4 text-muted-foreground" />
+              <span className="font-semibold text-sm">Bill #{bill.id.slice(-8)}</span>
+              {getPaymentStatusBadge(bill.paymentStatus)}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {formatDate(bill.createdAt)} • {formatTime(bill.createdAt)}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onViewBill(bill)}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+        
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Total:</span>
+            <span className="font-mono font-semibold">Rs. {Math.round(totalAmount).toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Paid:</span>
+            <span className="font-mono text-green-600">Rs. {Math.round(amountPaid).toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between border-t pt-1">
+            <span className="text-muted-foreground">Due:</span>
+            <span className="font-mono text-red-600 font-semibold">
+              Rs. {Math.round(outstanding).toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        {bill.notes && (
+          <div className="mt-3 p-2 bg-blue-50 rounded text-xs text-blue-700">
+            <strong>Note:</strong> {bill.notes}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
 
 export default function UnpaidBills() {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
@@ -276,6 +365,7 @@ export default function UnpaidBills() {
   const [selectedBill, setSelectedBill] = useState<SaleWithItems | null>(null);
   const [showBillDetails, setShowBillDetails] = useState(false);
   const [showBillPaymentHistory, setShowBillPaymentHistory] = useState(false);
+  const [showCustomerDetails, setShowCustomerDetails] = useState(false);
   
   const [manualBalanceDialogOpen, setManualBalanceDialogOpen] = useState(false);
   const [manualBalanceForm, setManualBalanceForm] = useState({
@@ -570,9 +660,15 @@ export default function UnpaidBills() {
   };
 
   // View bill details
-  const handleViewBillDetails = (bill: Sale) => {
-    setSelectedBill(bill as SaleWithItems);
+  const handleViewBillDetails = (bill: SaleWithItems) => {
+    setSelectedBill(bill);
     setShowBillDetails(true);
+  };
+
+  // View customer details
+  const handleViewCustomerDetails = (customer: ConsolidatedCustomer) => {
+    setSelectedCustomerPhone(customer.customerPhone);
+    setShowCustomerDetails(true);
   };
 
   // Helper function to get product line
@@ -1966,6 +2062,7 @@ ${getReceiptSettings().thankYou}`;
                       onView={viewCustomerPDFStatement}
                       onDownload={downloadCustomerPDFStatement}
                       onShare={shareCustomerStatement}
+                      onViewDetails={handleViewCustomerDetails}
                     />
                   </div>
                 </CardHeader>
@@ -2022,12 +2119,10 @@ ${getReceiptSettings().thankYou}`;
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setSelectedCustomerPhone(customer.customerPhone);
-                        setShowPaymentHistory(true);
-                      }}
+                      onClick={() => handleViewCustomerDetails(customer)}
                     >
-                      <History className="h-4 w-4" />
+                      <Eye className="h-4 w-4" />
+                      Details
                     </Button>
                   </div>
                 </CardContent>
@@ -2036,6 +2131,193 @@ ${getReceiptSettings().thankYou}`;
           })}
         </div>
       )}
+
+      {/* Customer Details Dialog */}
+      <Dialog open={showCustomerDetails} onOpenChange={setShowCustomerDetails}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Customer Details - {selectedCustomer?.customerName}
+            </DialogTitle>
+            <DialogDescription>
+              Complete overview of all bills, items, payments, and outstanding balances
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedCustomer && (
+            <div className="space-y-6">
+              {/* Customer Summary */}
+              <Card>
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">{selectedCustomer.bills.length}</div>
+                      <div className="text-sm text-muted-foreground">Total Bills</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</div>
+                      <div className="text-sm text-muted-foreground">Total Amount</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</div>
+                      <div className="text-sm text-muted-foreground">Amount Paid</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-600">Rs. {Math.round(selectedCustomer.totalOutstanding).toLocaleString()}</div>
+                      <div className="text-sm text-muted-foreground">Outstanding</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Tabs defaultValue="bills" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="bills" className="flex items-center gap-2">
+                    <Receipt className="h-4 w-4" />
+                    Bills ({selectedCustomer.bills.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="payments" className="flex items-center gap-2">
+                    <History className="h-4 w-4" />
+                    Payments
+                  </TabsTrigger>
+                  <TabsTrigger value="summary" className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Summary
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="bills" className="space-y-4">
+                  <div className="grid gap-4">
+                    {selectedCustomer.bills.map((bill) => (
+                      <BillCard 
+                        key={bill.id} 
+                        bill={bill as SaleWithItems} 
+                        onViewBill={handleViewBillDetails}
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="payments" className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-semibold">Payment History</h3>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedCustomerPhone(selectedCustomer.customerPhone);
+                        setShowPaymentHistory(true);
+                        setShowCustomerDetails(false);
+                      }}
+                    >
+                      <History className="h-4 w-4 mr-2" />
+                      View Full History
+                    </Button>
+                  </div>
+                  
+                  {customerPaymentHistory.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No payment history found</p>
+                    </div>
+                  ) : (
+                    <Card>
+                      <CardContent className="p-4">
+                        <div className="space-y-3">
+                          {customerPaymentHistory.slice(0, 5).map((payment) => (
+                            <PaymentHistoryItem key={payment.id} payment={payment} />
+                          ))}
+                          {customerPaymentHistory.length > 5 && (
+                            <div className="text-center text-sm text-muted-foreground py-2">
+                              + {customerPaymentHistory.length - 5} more payments
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="summary" className="space-y-4">
+                  <Card>
+                    <CardContent className="p-6">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center border-b pb-2">
+                          <span className="font-medium">Customer Information</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Name:</span>
+                            <span className="font-medium ml-2">{selectedCustomer.customerName}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Phone:</span>
+                            <span className="font-medium ml-2">{selectedCustomer.customerPhone}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Oldest Bill:</span>
+                            <span className="font-medium ml-2">{formatDate(selectedCustomer.oldestBillDate)}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Days Overdue:</span>
+                            <Badge variant={selectedCustomer.daysOverdue > 30 ? "destructive" : "secondary"} className="ml-2">
+                              {selectedCustomer.daysOverdue} days
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span>Total Bills Amount:</span>
+                            <span className="font-semibold">Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Total Amount Paid:</span>
+                            <span className="font-semibold text-green-600">Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between border-t pt-2">
+                            <span className="font-semibold">Outstanding Balance:</span>
+                            <span className="font-semibold text-red-600 text-lg">
+                              Rs. {Math.round(selectedCustomer.totalOutstanding).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button variant="outline" onClick={() => setShowCustomerDetails(false)}>
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSelectedCustomerPhone(selectedCustomer.customerPhone);
+                    setPaymentDialogOpen(true);
+                    setShowCustomerDetails(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Banknote className="h-4 w-4" />
+                  Record Payment
+                </Button>
+                <Button
+                  onClick={() => viewCustomerPDFStatement(selectedCustomer)}
+                  className="flex items-center gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  View Statement
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
@@ -2268,27 +2550,39 @@ ${getReceiptSettings().thankYou}`;
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {customerPaymentHistory.map((payment) => (
-                  <div key={payment.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{payment.paymentMethod}</Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {formatDate(payment.createdAt)}
-                        </span>
+                  <Card key={payment.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="font-mono">
+                              {formatDate(payment.createdAt)}
+                            </Badge>
+                            <Badge variant="secondary">
+                              {payment.paymentMethod}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {formatTime(payment.createdAt)}
+                          </div>
+                          {payment.notes && (
+                            <div className="text-sm">
+                              <span className="text-muted-foreground">Notes: </span>
+                              {payment.notes}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right space-y-1">
+                          <div className="font-mono font-semibold text-green-600">
+                            +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                          </div>
+                          <div className="text-sm text-muted-foreground font-mono">
+                            Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                          </div>
+                        </div>
                       </div>
-                      {payment.notes && (
-                        <p className="text-sm text-muted-foreground">{payment.notes}</p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-green-600">
-                        +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             )}
@@ -2298,158 +2592,112 @@ ${getReceiptSettings().thankYou}`;
 
       {/* Bill Details Dialog */}
       <Dialog open={showBillDetails} onOpenChange={setShowBillDetails}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Bill Details</DialogTitle>
             <DialogDescription>
-              Detailed information for bill {selectedBill?.id.slice(-8)}
+              Complete bill information including items and payment history
             </DialogDescription>
           </DialogHeader>
 
           {billDetails && (
             <div className="space-y-6">
-              {/* Bill Summary */}
-              <div className="grid grid-cols-2 gap-4 p-4 border rounded-lg">
+              {/* Bill Information */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-md">
                 <div>
-                  <h4 className="font-semibold mb-2">Bill Information</h4>
-                  <div className="space-y-1 text-sm">
-                    <p>Date: {formatDate(billDetails.createdAt)}</p>
-                    <p>Bill ID: {billDetails.id.slice(-8)}</p>
-                    {billDetails.dueDate && (
-                      <p>Due Date: {formatDate(billDetails.dueDate)}</p>
-                    )}
-                  </div>
+                  <p className="text-muted-foreground">Bill ID</p>
+                  <p className="font-medium">{billDetails.id.slice(-8)}</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold mb-2">Customer Information</h4>
-                  <div className="space-y-1 text-sm">
-                    <p>Name: {billDetails.customerName}</p>
-                    <p>Phone: {billDetails.customerPhone}</p>
-                  </div>
+                  <p className="text-muted-foreground">Date & Time</p>
+                  <p className="font-medium">{formatDate(billDetails.createdAt)} • {formatTime(billDetails.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Customer</p>
+                  <p className="font-medium">{billDetails.customerName}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Phone</p>
+                  <p className="font-medium">{billDetails.customerPhone}</p>
                 </div>
               </div>
 
-              {/* Items Table */}
-              {billDetails.saleItems && billDetails.saleItems.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-3">Items</h4>
-                  <div className="border rounded-lg">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="text-left p-3 text-sm font-medium">Product</th>
-                          <th className="text-right p-3 text-sm font-medium">Qty</th>
-                          <th className="text-right p-3 text-sm font-medium">Rate</th>
-                          <th className="text-right p-3 text-sm font-medium">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+              {/* Items List */}
+              <div className="space-y-3">
+                <h3 className="font-medium">Items ({billDetails.saleItems?.length || 0})</h3>
+                {billDetails.saleItems && billDetails.saleItems.length > 0 ? (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="space-y-3">
                         {billDetails.saleItems.map((item) => (
-                          <tr key={item.id} className="border-b">
-                            <td className="p-3 text-sm">
-                              {getProductLine(item)}
-                            </td>
-                            <td className="p-3 text-sm text-right">{item.quantity}</td>
-                            <td className="p-3 text-sm text-right">Rs. {Math.round(parseFloat(item.rate)).toLocaleString()}</td>
-                            <td className="p-3 text-sm text-right font-medium">Rs. {Math.round(parseFloat(item.subtotal)).toLocaleString()}</td>
-                          </tr>
+                          <BillItem key={item.id} item={item} />
                         ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-muted/50 font-semibold">
-                          <td colSpan={3} className="p-3 text-sm text-right">Total Amount:</td>
-                          <td className="p-3 text-sm text-right">Rs. {Math.round(parseFloat(billDetails.totalAmount)).toLocaleString()}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Payment Summary */}
-              <div className="grid grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/30">
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Total Amount</p>
-                  <p className="text-lg font-semibold">Rs. {Math.round(parseFloat(billDetails.totalAmount)).toLocaleString()}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Amount Paid</p>
-                  <p className="text-lg font-semibold text-green-600">Rs. {Math.round(parseFloat(billDetails.amountPaid)).toLocaleString()}</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-muted-foreground">Balance Due</p>
-                  <p className="text-lg font-semibold text-red-600">
-                    Rs. {Math.round(parseFloat(billDetails.totalAmount) - parseFloat(billDetails.amountPaid)).toLocaleString()}
-                  </p>
-                </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">No items found</p>
+                )}
               </div>
+
+              {/* Payment History */}
+              <div className="space-y-3">
+                <h3 className="font-medium">Payment History ({billDetails.paymentHistory?.length || 0})</h3>
+                {billDetails.paymentHistory && billDetails.paymentHistory.length > 0 ? (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="space-y-3">
+                        {billDetails.paymentHistory.map((payment) => (
+                          <PaymentHistoryItem key={payment.id} payment={payment} />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">No payment history found</p>
+                )}
+              </div>
+
+              {/* Amount Summary */}
+              <Card>
+                <CardContent className="p-6">
+                  <div className="space-y-3 text-sm font-mono">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Amount:</span>
+                      <span className="font-semibold">Rs. {Math.round(parseFloat(billDetails.totalAmount)).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Amount Paid:</span>
+                      <span className="font-semibold text-green-600">Rs. {Math.round(parseFloat(billDetails.amountPaid)).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 text-base">
+                      <span className="font-semibold">Balance Due:</span>
+                      <span className="font-semibold text-red-600">
+                        Rs. {Math.round(parseFloat(billDetails.totalAmount) - parseFloat(billDetails.amountPaid)).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
               <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowBillDetails(false)}>
+                  Close
+                </Button>
                 <Button
-                  variant="outline"
                   onClick={() => viewBillPDF(billDetails)}
                   className="flex items-center gap-2"
                 >
-                  <Printer className="h-4 w-4" />
-                  Print Bill
+                  <FileText className="h-4 w-4" />
+                  View Bill
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowBillPaymentHistory(true);
-                    setShowBillDetails(false);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <History className="h-4 w-4" />
-                  Payment History
-                </Button>
+                <Link href={`/bill/${billDetails.id}`}>
+                  <Button className="flex items-center gap-2">
+                    <Printer className="h-4 w-4" />
+                    Print Bill
+                  </Button>
+                </Link>
               </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Bill Payment History Dialog */}
-      <Dialog open={showBillPaymentHistory} onOpenChange={setShowBillPaymentHistory}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Bill Payment History</DialogTitle>
-            <DialogDescription>
-              Payment history for bill {selectedBill?.id.slice(-8)}
-            </DialogDescription>
-          </DialogHeader>
-
-          {billDetails?.paymentHistory && billDetails.paymentHistory.length > 0 ? (
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {billDetails.paymentHistory.map((payment) => (
-                <div key={payment.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{payment.paymentMethod}</Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {formatDate(payment.createdAt)}
-                      </span>
-                    </div>
-                    {payment.notes && (
-                      <p className="text-sm text-muted-foreground">{payment.notes}</p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-green-600">
-                      +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      New Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No payment history found for this bill</p>
             </div>
           )}
         </DialogContent>
