@@ -1,14 +1,21 @@
-// sales.tsx - Updated with glassy design and dd-mm-yyyy dates
+// sales.tsx - Updated with detailed bill items and payment history
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Receipt, Calendar, RefreshCw, Download, Share2, FileText, Printer } from "lucide-react";
+import { Search, Receipt, Calendar, RefreshCw, Download, Share2, FileText, Printer, Eye, Banknote, History } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Sale {
   id: string;
@@ -20,15 +27,44 @@ interface Sale {
   createdAt: string;
 }
 
-interface SaleWithItems extends Sale {
-  items?: Array<{
-    productName: string;
-    variantName: string;
+interface SaleItem {
+  id: string;
+  saleId: string;
+  colorId: string;
+  quantity: number;
+  rate: string;
+  subtotal: string;
+  color: {
+    id: string;
     colorName: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  }>;
+    colorCode: string;
+    variant: {
+      id: string;
+      variantName: string;
+      packingSize: string;
+      rate: string;
+      product: {
+        id: string;
+        productName: string;
+        company: string;
+      };
+    };
+  };
+}
+
+interface PaymentHistory {
+  id: string;
+  saleId: string;
+  amount: string;
+  paymentMethod: string;
+  notes: string;
+  createdAt: string;
+  newBalance: string;
+}
+
+interface SaleWithItems extends Sale {
+  saleItems?: SaleItem[];
+  paymentHistory?: PaymentHistory[];
 }
 
 // Format date to dd-mm-yyyy
@@ -81,12 +117,21 @@ export default function Sales() {
   const [dateFilter, setDateFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [selectedSale, setSelectedSale] = useState<SaleWithItems | null>(null);
+  const [showSaleDetails, setShowSaleDetails] = useState(false);
+  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+  });
+
+  // Fetch detailed sale data when a sale is selected
+  const { data: saleDetails } = useQuery<SaleWithItems>({
+    queryKey: ["/api/sales", selectedSale?.id],
+    enabled: !!selectedSale?.id && showSaleDetails,
   });
 
   // Add refresh function
@@ -334,6 +379,31 @@ export default function Sales() {
             color: #6b7280;
             font-size: 14px;
           }
+          .payment-history {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .payment-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          }
+          .payment-item:last-child {
+            border-bottom: none;
+          }
+          .payment-method {
+            background: #e5e7eb;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 600;
+          }
         </style>
       </head>
       <body>
@@ -381,38 +451,38 @@ export default function Sales() {
     `;
 
     // Items Table
-    if (sale.items && sale.items.length > 0) {
+    if (sale.saleItems && sale.saleItems.length > 0) {
       pdfHTML += `
         <div class="section">
-          <div class="section-title">🛒 Items Details • ${sale.items.length} Items</div>
+          <div class="section-title">🛒 Items Details • ${sale.saleItems.length} Items</div>
           <table class="items-table">
             <thead>
               <tr>
-                <th>Item Description</th>
-                <th>Variant/Color</th>
-                <th>Quantity</th>
-                <th>Unit Price</th>
-                <th>Total Price</th>
+                <th>Product Description</th>
+                <th>Qty</th>
+                <th>Rate</th>
+                <th>Amount</th>
               </tr>
             </thead>
             <tbody>
       `;
       
-      sale.items.forEach((item, index) => {
+      sale.saleItems.forEach((item, index) => {
+        const productLine = `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
+        
         pdfHTML += `
               <tr>
-                <td>${item.productName}</td>
-                <td>${item.variantName} ${item.colorName ? `- ${item.colorName}` : ''}</td>
+                <td>${productLine}</td>
                 <td>${item.quantity}</td>
-                <td class="amount">Rs. ${item.unitPrice.toFixed(2)}</td>
-                <td class="amount">Rs. ${item.totalPrice.toFixed(2)}</td>
+                <td class="amount">Rs. ${Math.round(parseFloat(item.rate)).toLocaleString()}</td>
+                <td class="amount">Rs. ${Math.round(parseFloat(item.subtotal)).toLocaleString()}</td>
               </tr>
         `;
       });
       
       pdfHTML += `
               <tr class="total-row">
-                <td colspan="4"><strong>GRAND TOTAL</strong></td>
+                <td colspan="3"><strong>GRAND TOTAL</strong></td>
                 <td class="amount"><strong>Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</strong></td>
               </tr>
             </tbody>
@@ -421,7 +491,45 @@ export default function Sales() {
       `;
     }
 
+    // Payment History Section
+    if (sale.paymentHistory && sale.paymentHistory.length > 0) {
+      pdfHTML += `
+        <div class="section">
+          <div class="section-title">💳 Payment History • ${sale.paymentHistory.length} Payments</div>
+          <div class="payment-history">
+      `;
+      
+      sale.paymentHistory.forEach((payment, index) => {
+        pdfHTML += `
+            <div class="payment-item">
+              <div>
+                <div style="font-weight: 600; margin-bottom: 4px;">${formatDate(payment.createdAt)}</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="payment-method">${payment.paymentMethod.toUpperCase()}</span>
+                  ${payment.notes ? `<span style="font-size: 10px; color: #6b7280;">${payment.notes}</span>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-family: 'SF Mono', Monaco, monospace; font-weight: 700; color: #059669; font-size: 14px;">
+                  +Rs. ${Math.round(parseFloat(payment.amount)).toLocaleString()}
+                </div>
+                <div style="font-size: 10px; color: #6b7280;">
+                  Balance: Rs. ${Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                </div>
+              </div>
+            </div>
+        `;
+      });
+      
+      pdfHTML += `
+          </div>
+        </div>
+      `;
+    }
+
     // Amount Summary
+    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+    
     pdfHTML += `
       <div class="amount-section">
         <div class="amount-grid">
@@ -436,7 +544,7 @@ export default function Sales() {
           <div class="amount-item">
             <div class="amount-label">Balance Due</div>
             <div class="amount-value">
-              Rs. ${Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString()}
+              Rs. ${Math.round(outstanding).toLocaleString()}
             </div>
           </div>
         </div>
@@ -547,6 +655,12 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
     });
   };
 
+  // View sale details
+  const handleViewSaleDetails = (sale: Sale) => {
+    setSelectedSale(sale as SaleWithItems);
+    setShowSaleDetails(true);
+  };
+
   const filteredSales = useMemo(() => {
     let filtered = sales;
 
@@ -653,6 +767,11 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
+  };
+
+  // Helper function to get product line
+  const getProductLine = (item: SaleItem) => {
+    return `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
   };
 
   return (
@@ -819,13 +938,25 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
                                 </div>
                               </div>
                               <div className="flex flex-col gap-2 items-end">
-                                <Link
-                                  href={`/bill/${sale.id}`}
-                                  className="text-sm text-primary hover:underline whitespace-nowrap"
-                                  data-testid={`link-view-bill-${sale.id}`}
-                                >
-                                  View Bill
-                                </Link>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleViewSaleDetails(sale)}
+                                    className="flex items-center gap-1"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                    Details
+                                  </Button>
+                                  <Link
+                                    href={`/bill/${sale.id}`}
+                                    className="text-sm text-primary hover:underline whitespace-nowrap flex items-center gap-1"
+                                    data-testid={`link-view-bill-${sale.id}`}
+                                  >
+                                    <Printer className="h-3 w-3" />
+                                    Print
+                                  </Link>
+                                </div>
                                 <div className="flex gap-1">
                                   <Button
                                     variant="ghost"
@@ -894,6 +1025,167 @@ _${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
           )}
         </CardContent>
       </Card>
+
+      {/* Sale Details Dialog */}
+      <Dialog open={showSaleDetails} onOpenChange={setShowSaleDetails}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Sale Details</DialogTitle>
+            <DialogDescription>
+              Complete bill information for {selectedSale?.customerName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {saleDetails && (
+            <div className="space-y-6">
+              {/* Customer Information */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-md text-sm">
+                <div>
+                  <p className="text-muted-foreground">Customer</p>
+                  <p className="font-medium">{saleDetails.customerName}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Phone</p>
+                  <p className="font-medium">{saleDetails.customerPhone}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Bill Date</p>
+                  <p className="font-medium">{formatDate(saleDetails.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Bill Time</p>
+                  <p className="font-medium">{formatTime(saleDetails.createdAt)}</p>
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div className="space-y-3">
+                <h3 className="font-medium">Items ({saleDetails.saleItems?.length || 0})</h3>
+                {saleDetails.saleItems && saleDetails.saleItems.length > 0 ? (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {saleDetails.saleItems.map((item) => (
+                      <Card key={item.id}>
+                        <CardContent className="p-3">
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="flex-1 space-y-1">
+                              <div className="text-sm font-medium">
+                                {getProductLine(item)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {item.color.variant.product.company}
+                              </div>
+                            </div>
+                            <div className="text-right space-y-1 text-sm font-mono">
+                              <div>Qty: {item.quantity}</div>
+                              <div>Rate: Rs. {Math.round(parseFloat(item.rate)).toLocaleString()}</div>
+                              <div className="font-semibold">Total: Rs. {Math.round(parseFloat(item.subtotal)).toLocaleString()}</div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">No items found</p>
+                )}
+              </div>
+
+              {/* Payment History */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">Payment History</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowPaymentHistory(!showPaymentHistory)}
+                  >
+                    <History className="h-4 w-4 mr-1" />
+                    {showPaymentHistory ? "Hide" : "Show"} History
+                  </Button>
+                </div>
+                
+                {showPaymentHistory && (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {saleDetails.paymentHistory && saleDetails.paymentHistory.length > 0 ? (
+                      saleDetails.paymentHistory.map((payment) => (
+                        <Card key={payment.id}>
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline">
+                                    {formatDate(payment.createdAt)}
+                                  </Badge>
+                                  <Badge variant="secondary">
+                                    {payment.paymentMethod}
+                                  </Badge>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {formatTime(payment.createdAt)}
+                                </div>
+                                {payment.notes && (
+                                  <div className="text-xs text-muted-foreground">
+                                    Notes: {payment.notes}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-right space-y-1">
+                                <div className="font-mono font-medium text-green-600">
+                                  +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    ) : (
+                      <p className="text-center text-muted-foreground py-4">No payment history found</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Amount Summary */}
+              <div className="p-4 bg-muted rounded-md space-y-2 text-sm font-mono">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Amount:</span>
+                  <span>Rs. {Math.round(parseFloat(saleDetails.totalAmount)).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount Paid:</span>
+                  <span>Rs. {Math.round(parseFloat(saleDetails.amountPaid)).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between font-semibold text-base text-destructive border-t border-border pt-2">
+                  <span>Balance Due:</span>
+                  <span>Rs. {Math.round(parseFloat(saleDetails.totalAmount) - parseFloat(saleDetails.amountPaid)).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowSaleDetails(false)}>
+                  Close
+                </Button>
+                <Button
+                  onClick={() => viewSalePDF(saleDetails)}
+                  className="flex items-center gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  View Statement
+                </Button>
+                <Link href={`/bill/${saleDetails.id}`}>
+                  <Button className="flex items-center gap-2">
+                    <Printer className="h-4 w-4" />
+                    Print Bill
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

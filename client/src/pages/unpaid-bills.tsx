@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Fixed version
+// unpaid-bills.tsx - Updated with detailed bill items and payment history
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Popover,
@@ -45,7 +46,9 @@ import {
   MessageSquare,
   Download,
   FileDown,
-  Share2
+  Share2,
+  CheckCircle2,
+  AlertCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -58,6 +61,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Interfaces
 interface CustomerSuggestion {
@@ -92,15 +103,34 @@ interface FilterType {
   sortBy: "oldest" | "newest" | "highest" | "lowest" | "name";
 }
 
-interface SaleWithItems extends Sale {
-  items?: Array<{
-    productName: string;
-    variantName: string;
+interface SaleItem {
+  id: string;
+  saleId: string;
+  colorId: string;
+  quantity: number;
+  rate: string;
+  subtotal: string;
+  color: {
+    id: string;
     colorName: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  }>;
+    colorCode: string;
+    variant: {
+      id: string;
+      variantName: string;
+      packingSize: string;
+      rate: string;
+      product: {
+        id: string;
+        productName: string;
+        company: string;
+      };
+    };
+  };
+}
+
+interface SaleWithItems extends Sale {
+  saleItems?: SaleItem[];
+  paymentHistory?: PaymentHistoryWithSale[];
 }
 
 // Helper functions
@@ -243,6 +273,9 @@ export default function UnpaidBills() {
   const [paymentNotes, setPaymentNotes] = useState("");
   const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedBill, setSelectedBill] = useState<SaleWithItems | null>(null);
+  const [showBillDetails, setShowBillDetails] = useState(false);
+  const [showBillPaymentHistory, setShowBillPaymentHistory] = useState(false);
   
   const [manualBalanceDialogOpen, setManualBalanceDialogOpen] = useState(false);
   const [manualBalanceForm, setManualBalanceForm] = useState({
@@ -284,6 +317,12 @@ export default function UnpaidBills() {
     enabled: !!selectedCustomerPhone && showPaymentHistory,
   });
 
+  // Fetch detailed bill data when a bill is selected
+  const { data: billDetails } = useQuery<SaleWithItems>({
+    queryKey: ["/api/sales", selectedBill?.id],
+    enabled: !!selectedBill?.id && showBillDetails,
+  });
+
   // Mutations
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod?: string; notes?: string }) => {
@@ -297,6 +336,7 @@ export default function UnpaidBills() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales", selectedBill?.id] });
       toast({ title: "Payment recorded successfully" });
       setPaymentDialogOpen(false);
       setPaymentAmount("");
@@ -527,6 +567,17 @@ export default function UnpaidBills() {
       customerPhone: customer.customerPhone
     }));
     setCustomerSuggestionsOpen(false);
+  };
+
+  // View bill details
+  const handleViewBillDetails = (bill: Sale) => {
+    setSelectedBill(bill as SaleWithItems);
+    setShowBillDetails(true);
+  };
+
+  // Helper function to get product line
+  const getProductLine = (item: SaleItem) => {
+    return `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
   };
 
   // Generate detailed customer statement PDF with glassy design
@@ -771,8 +822,58 @@ export default function UnpaidBills() {
             margin: 8px 0;
             font-size: 11px;
           }
-          .glow {
-            box-shadow: 0 0 20px rgba(79, 70, 229, 0.3);
+          .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .items-table th {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            text-align: left;
+            padding: 14px 16px;
+            font-size: 12px;
+            font-weight: 600;
+          }
+          .items-table td {
+            padding: 12px 16px;
+            font-size: 11px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          }
+          .items-table .amount {
+            text-align: right;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-weight: 600;
+          }
+          .payment-history {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .payment-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          }
+          .payment-item:last-child {
+            border-bottom: none;
+          }
+          .payment-method {
+            background: #e5e7eb;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 600;
           }
         </style>
       </head>
@@ -960,6 +1061,453 @@ export default function UnpaidBills() {
     return pdfHTML;
   };
 
+  // Generate detailed bill PDF
+  const generateBillPDF = (bill: SaleWithItems) => {
+    const receiptSettings = getReceiptSettings();
+    const billDate = new Date(bill.createdAt);
+    const formattedDate = formatDate(billDate);
+    const formattedTime = formatTime(billDate);
+    
+    let pdfHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Bill Details - ${bill.id.slice(-8)}</title>
+        <style>
+          @page { size: A4; margin: 15mm; }
+          body { 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            color: #2d3748; 
+            margin: 0; 
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+          }
+          .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: 
+              0 20px 40px rgba(0, 0, 0, 0.1),
+              0 0 0 1px rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+            margin: 20px;
+          }
+          .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+          }
+          .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            position: relative;
+          }
+          .header p {
+            margin: 8px 0 0 0;
+            font-size: 16px;
+            opacity: 0.9;
+            position: relative;
+          }
+          .store-info {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            margin: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            text-align: center;
+          }
+          .store-info h2 {
+            margin: 0 0 12px 0;
+            color: #1a202c;
+            font-size: 20px;
+            font-weight: 600;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px;
+          }
+          .info-card {
+            background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
+          }
+          .info-card h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .info-label {
+            font-weight: 500;
+            opacity: 0.9;
+          }
+          .info-value {
+            font-weight: 600;
+          }
+          .amount-section {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 24px;
+            margin: 20px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(245, 158, 11, 0.3);
+          }
+          .amount-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            text-align: center;
+          }
+          .amount-item {
+            padding: 16px;
+          }
+          .amount-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+          }
+          .amount-value {
+            font-size: 20px;
+            font-weight: 700;
+            font-family: 'SF Mono', Monaco, monospace;
+          }
+          .payment-status {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 14px;
+            margin: 16px 0 0 0;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+          }
+          .status-paid {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          }
+          .status-partial {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+          }
+          .status-unpaid {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+          }
+          .section {
+            margin: 20px;
+          }
+          .section-title {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            color: white;
+            padding: 16px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 16px rgba(107, 114, 128, 0.3);
+          }
+          .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .items-table th {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            text-align: left;
+            padding: 14px 16px;
+            font-size: 12px;
+            font-weight: 600;
+          }
+          .items-table td {
+            padding: 12px 16px;
+            font-size: 11px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          }
+          .items-table .amount {
+            text-align: right;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-weight: 600;
+          }
+          .total-row {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            font-weight: 700;
+          }
+          .total-row td {
+            border-bottom: none;
+            color: #92400e;
+          }
+          .footer {
+            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+            margin-top: 30px;
+          }
+          .footer p {
+            margin: 4px 0;
+            font-size: 12px;
+            opacity: 0.8;
+          }
+          .barcode {
+            text-align: center;
+            margin: 20px 0;
+            font-family: monospace;
+            letter-spacing: 2px;
+            color: #6b7280;
+          }
+          .thank-you {
+            text-align: center;
+            margin: 20px 0;
+            font-style: italic;
+            color: #6b7280;
+            font-size: 14px;
+          }
+          .payment-history {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .payment-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          }
+          .payment-item:last-child {
+            border-bottom: none;
+          }
+          .payment-method {
+            background: #e5e7eb;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 600;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📄 Bill Details</h1>
+            <p>Complete Transaction Information • ${formattedDate} at ${formattedTime}</p>
+          </div>
+
+          <div class="store-info">
+            <h2>${receiptSettings.businessName}</h2>
+            <p>${receiptSettings.address}</p>
+            <p><strong>${receiptSettings.dealerText}</strong> ${receiptSettings.dealerBrands}</p>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-card">
+              <h3>📄 Bill Information</h3>
+              <div class="info-item">
+                <span class="info-label">Bill ID:</span>
+                <span class="info-value">${bill.id.slice(-8).toUpperCase()}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Date:</span>
+                <span class="info-value">${formattedDate}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Time:</span>
+                <span class="info-value">${formattedTime}</span>
+              </div>
+              ${bill.dueDate ? `
+              <div class="info-item">
+                <span class="info-label">Due Date:</span>
+                <span class="info-value">${formatDate(bill.dueDate)}</span>
+              </div>
+              ` : ''}
+            </div>
+
+            <div class="info-card">
+              <h3>👤 Customer Information</h3>
+              <div class="info-item">
+                <span class="info-label">Name:</span>
+                <span class="info-value">${bill.customerName}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Phone:</span>
+                <span class="info-value">${bill.customerPhone}</span>
+              </div>
+            </div>
+          </div>
+    `;
+
+    // Items Table
+    if (bill.saleItems && bill.saleItems.length > 0) {
+      pdfHTML += `
+        <div class="section">
+          <div class="section-title">🛒 Items Details • ${bill.saleItems.length} Items</div>
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Product Description</th>
+                <th>Qty</th>
+                <th>Rate</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      
+      bill.saleItems.forEach((item, index) => {
+        const productLine = `${item.color.variant.product.productName} - ${item.color.colorName} ${item.color.colorCode} - ${item.color.variant.packingSize}`;
+        
+        pdfHTML += `
+              <tr>
+                <td>${productLine}</td>
+                <td>${item.quantity}</td>
+                <td class="amount">Rs. ${Math.round(parseFloat(item.rate)).toLocaleString()}</td>
+                <td class="amount">Rs. ${Math.round(parseFloat(item.subtotal)).toLocaleString()}</td>
+              </tr>
+        `;
+      });
+      
+      pdfHTML += `
+              <tr class="total-row">
+                <td colspan="3"><strong>GRAND TOTAL</strong></td>
+                <td class="amount"><strong>Rs. ${Math.round(parseFloat(bill.totalAmount)).toLocaleString()}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    // Payment History Section
+    if (bill.paymentHistory && bill.paymentHistory.length > 0) {
+      pdfHTML += `
+        <div class="section">
+          <div class="section-title">💳 Payment History • ${bill.paymentHistory.length} Payments</div>
+          <div class="payment-history">
+      `;
+      
+      bill.paymentHistory.forEach((payment, index) => {
+        pdfHTML += `
+            <div class="payment-item">
+              <div>
+                <div style="font-weight: 600; margin-bottom: 4px;">${formatDate(payment.createdAt)}</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="payment-method">${payment.paymentMethod.toUpperCase()}</span>
+                  ${payment.notes ? `<span style="font-size: 10px; color: #6b7280;">${payment.notes}</span>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-family: 'SF Mono', Monaco, monospace; font-weight: 700; color: #059669; font-size: 14px;">
+                  +Rs. ${Math.round(parseFloat(payment.amount)).toLocaleString()}
+                </div>
+                <div style="font-size: 10px; color: #6b7280;">
+                  Balance: Rs. ${Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                </div>
+              </div>
+            </div>
+        `;
+      });
+      
+      pdfHTML += `
+          </div>
+        </div>
+      `;
+    }
+
+    // Amount Summary
+    const outstanding = parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+    
+    pdfHTML += `
+      <div class="amount-section">
+        <div class="amount-grid">
+          <div class="amount-item">
+            <div class="amount-label">Total Amount</div>
+            <div class="amount-value">Rs. ${Math.round(parseFloat(bill.totalAmount)).toLocaleString()}</div>
+          </div>
+          <div class="amount-item">
+            <div class="amount-label">Amount Paid</div>
+            <div class="amount-value">Rs. ${Math.round(parseFloat(bill.amountPaid)).toLocaleString()}</div>
+          </div>
+          <div class="amount-item">
+            <div class="amount-label">Balance Due</div>
+            <div class="amount-value">
+              Rs. ${Math.round(outstanding).toLocaleString()}
+            </div>
+          </div>
+        </div>
+        
+        <div style="text-align: center;">
+          <div class="payment-status ${
+            bill.paymentStatus === 'paid' ? 'status-paid' : 
+            bill.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid'
+          }">
+            ${bill.paymentStatus.toUpperCase()} 
+            ${bill.paymentStatus === 'partial' ? 'PAYMENT' : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="barcode">
+        ▮▮ ▮ ▮▮▮ ▮ ▮▮▮ ▮ ▮▮ ▮▮▮<br/>
+        <small>Bill ID: ${bill.id.slice(-8).toUpperCase()}</small>
+      </div>
+
+      <div class="thank-you">
+        ${receiptSettings.thankYou}! 🎨<br/>
+        We appreciate your trust in ${receiptSettings.businessName}
+      </div>
+
+      <div class="footer">
+        <p>${receiptSettings.businessName} • ${receiptSettings.address}</p>
+        <p>Generated on ${formatDate(new Date())} • This is a computer-generated bill</p>
+      </div>
+    </body>
+    </html>
+    `;
+
+    return pdfHTML;
+  };
+
   // Download PDF for individual customer
   const downloadCustomerPDFStatement = (customer: ConsolidatedCustomer) => {
     const pdfHTML = generateCustomerPDFStatement(customer);
@@ -996,6 +1544,25 @@ export default function UnpaidBills() {
     toast({ 
       title: "Statement Opened", 
       description: `Customer statement for ${customer.customerName} is ready for viewing/printing` 
+    });
+  };
+
+  // View PDF for individual bill
+  const viewBillPDF = (bill: SaleWithItems) => {
+    const pdfHTML = generateBillPDF(bill);
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    
+    if (printWindow) {
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+    
+    toast({ 
+      title: "Bill Opened", 
+      description: `Bill details are ready for viewing/printing` 
     });
   };
 
@@ -1381,76 +1948,86 @@ ${getReceiptSettings().thankYou}`;
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedCustomers.map((customer) => {
             return (
-              <Card key={customer.customerPhone} className="hover-elevate">
+              <Card key={customer.customerPhone} className="hover:shadow-lg transition-shadow duration-200">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
-                    <CardTitle className="text-base">{customer.customerName}</CardTitle>
-                    <div className="flex items-center gap-1">
-                      {customer.bills.length > 1 && (
-                        <Badge variant="secondary">{customer.bills.length} Bills</Badge>
-                      )}
-                      <CustomerCardActions 
-                        customer={customer}
-                        onView={viewCustomerPDFStatement}
-                        onDownload={downloadCustomerPDFStatement}
-                        onShare={shareCustomerStatement}
-                      />
+                    <div className="space-y-1">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <User className="h-5 w-5 text-muted-foreground" />
+                        {customer.customerName}
+                      </CardTitle>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Phone className="h-4 w-4" />
+                        {customer.customerPhone}
+                      </div>
                     </div>
+                    <CustomerCardActions
+                      customer={customer}
+                      onView={viewCustomerPDFStatement}
+                      onDownload={downloadCustomerPDFStatement}
+                      onShare={shareCustomerStatement}
+                    />
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="h-4 w-4" />
-                      <span>{customer.customerPhone}</span>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Total Outstanding</p>
+                      <p className="text-2xl font-bold text-red-600">
+                        Rs. {Math.round(customer.totalOutstanding).toLocaleString()}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Calendar className="h-4 w-4" />
-                      <span>{formatDate(customer.oldestBillDate)}</span>
-                      <Badge 
-                        variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
-                        className="ml-auto"
-                      >
-                        {customer.daysOverdue} days ago
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">Total Bills</p>
+                      <p className="text-2xl font-bold text-blue-600">
+                        {customer.bills.length}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Total Amount:</span>
+                      <span className="font-medium">Rs. {Math.round(customer.totalAmount).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Amount Paid:</span>
+                      <span className="font-medium text-green-600">Rs. {Math.round(customer.totalPaid).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Oldest Bill:</span>
+                      <span className="font-medium">{formatDate(customer.oldestBillDate)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Days Overdue:</span>
+                      <Badge variant={customer.daysOverdue > 30 ? "destructive" : "secondary"}>
+                        {customer.daysOverdue} days
                       </Badge>
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-border space-y-1 font-mono text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total:</span>
-                      <span>Rs. {Math.round(customer.totalAmount).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Paid:</span>
-                      <span>Rs. {Math.round(customer.totalPaid).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold text-base text-destructive">
-                      <span>Outstanding:</span>
-                      <span>Rs. {Math.round(customer.totalOutstanding).toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
+                  <div className="flex gap-2 pt-2">
                     <Button
-                      className="w-full"
-                      variant="outline"
-                      onClick={() => setSelectedCustomerPhone(customer.customerPhone)}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      View Details
-                    </Button>
-                    <Button
-                      className="w-full"
                       variant="default"
+                      size="sm"
+                      className="flex-1"
                       onClick={() => {
                         setSelectedCustomerPhone(customer.customerPhone);
                         setPaymentDialogOpen(true);
-                        setPaymentAmount(Math.round(customer.totalOutstanding).toString());
                       }}
                     >
                       <Banknote className="h-4 w-4 mr-2" />
-                      Payment
+                      Record Payment
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedCustomerPhone(customer.customerPhone);
+                        setShowPaymentHistory(true);
+                      }}
+                    >
+                      <History className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
@@ -1460,290 +2037,90 @@ ${getReceiptSettings().thankYou}`;
         </div>
       )}
 
-      {/* Customer Bills Details Dialog */}
-      <Dialog open={!!selectedCustomerPhone && !paymentDialogOpen} onOpenChange={(open) => !open && setSelectedCustomerPhone(null)}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Customer Bills</DialogTitle>
-            <DialogDescription>
-              All unpaid bills for {selectedCustomer?.customerName}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedCustomer && (
-            <div className="space-y-4">
-              {/* Customer Info */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-md text-sm">
-                <div>
-                  <p className="text-muted-foreground">Customer</p>
-                  <p className="font-medium">{selectedCustomer.customerName}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Phone</p>
-                  <p className="font-medium">{selectedCustomer.customerPhone}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Total Bills</p>
-                  <p className="font-medium">{selectedCustomer.bills.length}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Oldest Bill</p>
-                  <p className="font-medium">{formatDate(selectedCustomer.oldestBillDate)}</p>
-                </div>
-              </div>
-
-              {/* PDF Actions */}
-              <CustomerDetailsActions 
-                customer={selectedCustomer}
-                onView={viewCustomerPDFStatement}
-                onDownload={downloadCustomerPDFStatement}
-                onShare={shareCustomerStatement}
-              />
-
-              {/* Bills List */}
-              <div className="space-y-3">
-                <h3 className="font-medium">Bills</h3>
-                {selectedCustomer.bills.map((bill) => {
-                  const billTotal = parseFloat(bill.totalAmount);
-                  const billPaid = parseFloat(bill.amountPaid);
-                  const billOutstanding = Math.round(billTotal - billPaid);
-                  
-                  return (
-                    <Card key={bill.id}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Receipt className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm font-medium">
-                                {formatDate(bill.createdAt)} - {formatTime(bill.createdAt)}
-                              </span>
-                              {getPaymentStatusBadge(bill.paymentStatus)}
-                              {bill.isManualBalance && (
-                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                                  Manual Balance
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 text-xs font-mono">
-                              <div>
-                                <span className="text-muted-foreground">Total: </span>
-                                <span>Rs. {Math.round(billTotal).toLocaleString()}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Paid: </span>
-                                <span>Rs. {Math.round(billPaid).toLocaleString()}</span>
-                              </div>
-                              {billOutstanding > 0 && (
-                                <div>
-                                  <span className="text-muted-foreground">Due: </span>
-                                  <span className="text-destructive font-semibold">Rs. {billOutstanding.toLocaleString()}</span>
-                                </div>
-                              )}
-                            </div>
-                            {bill.isManualBalance && bill.notes && (
-                              <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 p-2 rounded border border-blue-200">
-                                <MessageSquare className="h-3 w-3 mt-0.5 text-blue-500 flex-shrink-0" />
-                                <span className="flex-1">{bill.notes}</span>
-                              </div>
-                            )}
-                            {bill.dueDate && (
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Calendar className="h-3 w-3" />
-                                <span>Due: {formatDate(bill.dueDate)}</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <Link href={`/bill/${bill.id}`}>
-                              <Button variant="outline" size="sm">
-                                <Printer className="h-4 w-4 mr-1" />
-                                Print
-                              </Button>
-                            </Link>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-
-              {/* Payment History Section */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Payment History</h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowPaymentHistory(!showPaymentHistory)}
-                  >
-                    <History className="h-4 w-4 mr-1" />
-                    {showPaymentHistory ? "Hide" : "Show"} History
-                  </Button>
-                </div>
-                
-                {showPaymentHistory && (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {customerPaymentHistory.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-4">
-                        No payment history found
-                      </p>
-                    ) : (
-                      customerPaymentHistory.map((payment) => (
-                        <Card key={payment.id}>
-                          <CardContent className="p-3">
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="outline">
-                                    {formatDate(payment.createdAt)}
-                                  </Badge>
-                                  <Badge variant="secondary">
-                                    {payment.paymentMethod}
-                                  </Badge>
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  Bill: {formatDate(payment.sale.createdAt)}
-                                </div>
-                                {payment.notes && (
-                                  <div className="text-xs text-muted-foreground">
-                                    Notes: {payment.notes}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="text-right space-y-1">
-                                <div className="font-mono font-medium text-green-600">
-                                  +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Consolidated Totals */}
-              <div className="p-4 bg-muted rounded-md space-y-2 text-sm font-mono">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Amount:</span>
-                  <span>Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount Paid:</span>
-                  <span>Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between font-semibold text-base text-destructive border-t border-border pt-2">
-                  <span>Total Outstanding:</span>
-                  <span>Rs. {Math.round(selectedCustomer.totalOutstanding).toLocaleString()}</span>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setSelectedCustomerPhone(null)}>
-                  Close
-                </Button>
-                <Button
-                  onClick={() => {
-                    setPaymentDialogOpen(true);
-                    setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
-                  }}
-                >
-                  <Banknote className="h-4 w-4 mr-2" />
-                  Record Payment
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Record Payment Dialog */}
+      {/* Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
-              Update payment for {selectedCustomer?.customerName}
+              Record a payment for {selectedCustomer?.customerName}
             </DialogDescription>
           </DialogHeader>
+          
           {selectedCustomer && (
             <div className="space-y-4">
-              <div className="p-4 bg-muted rounded-md space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Bills:</span>
-                  <span className="font-mono">Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Already Paid:</span>
-                  <span className="font-mono">Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span>Total Outstanding:</span>
-                  <span className="font-mono">
+              <div className="bg-muted p-3 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium">Outstanding Balance:</span>
+                  <span className="text-lg font-bold text-red-600">
                     Rs. {Math.round(selectedCustomer.totalOutstanding).toLocaleString()}
                   </span>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="paymentAmount">Payment Amount</Label>
+                <Label htmlFor="paymentAmount">Payment Amount *</Label>
                 <Input
                   id="paymentAmount"
                   type="number"
-                  step="1"
-                  placeholder="0"
+                  placeholder="Enter amount"
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Payment will be applied to oldest bills first
-                </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
-                <select
-                  id="paymentMethod"
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="online">Online Payment</option>
-                </select>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select payment method" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="bank">Bank Transfer</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="digital">Digital Payment</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="paymentNotes">Notes (Optional)</Label>
-                <Input
+                <Textarea
                   id="paymentNotes"
-                  placeholder="Add payment notes..."
+                  placeholder="Add any notes about this payment"
                   value={paymentNotes}
                   onChange={(e) => setPaymentNotes(e.target.value)}
                 />
               </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleRecordPayment}
-                  disabled={recordPaymentMutation.isPending}
-                >
-                  {recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}
-                </Button>
-              </div>
             </div>
           )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPaymentDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRecordPayment}
+              disabled={!paymentAmount || parseFloat(paymentAmount) <= 0 || recordPaymentMutation.isPending}
+            >
+              {recordPaymentMutation.isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Record Payment
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1753,54 +2130,55 @@ ${getReceiptSettings().thankYou}`;
           <DialogHeader>
             <DialogTitle>Add Pending Balance</DialogTitle>
             <DialogDescription>
-              Add a pending balance for a customer without creating a sale from POS
+              Create a new pending balance entry for a customer
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Customer</Label>
+              <Label htmlFor="customerName">Customer Name *</Label>
+              <Input
+                id="customerName"
+                placeholder="Enter customer name"
+                value={manualBalanceForm.customerName}
+                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="customerPhone">Phone Number *</Label>
               <div className="relative">
                 <Input
-                  value={manualBalanceForm.customerName}
-                  onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerName: e.target.value }))}
-                  className="pr-12"
-                  placeholder="Type or select customer"
+                  id="customerPhone"
+                  placeholder="Enter phone number"
+                  value={manualBalanceForm.customerPhone}
+                  onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+                  onFocus={() => setCustomerSuggestionsOpen(true)}
                 />
                 <Popover open={customerSuggestionsOpen} onOpenChange={setCustomerSuggestionsOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                     >
-                      <Search className="h-4 w-4 text-muted-foreground" />
+                      <ChevronDown className="h-4 w-4" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 p-0" align="start">
+                  <PopoverContent className="w-80 p-0" align="end">
                     <Command>
                       <CommandInput placeholder="Search customers..." />
                       <CommandList>
-                        <CommandEmpty>No customers found</CommandEmpty>
-                        <CommandGroup heading="Recent Customers">
+                        <CommandEmpty>No customers found.</CommandEmpty>
+                        <CommandGroup>
                           {customerSuggestions.map((customer) => (
                             <CommandItem
                               key={customer.customerPhone}
                               onSelect={() => selectCustomer(customer)}
-                              className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer"
                             >
-                              <div className="flex items-center gap-2 w-full">
-                                <User className="h-4 w-4 text-blue-500" />
+                              <div className="flex flex-col">
                                 <span className="font-medium">{customer.customerName}</span>
-                              </div>
-                              <div className="flex items-center gap-4 text-xs text-muted-foreground w-full pl-6">
-                                <div className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3" />
-                                  {customer.customerPhone}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  {formatDate(customer.lastSaleDate)}
-                                </div>
+                                <span className="text-sm text-muted-foreground">{customer.customerPhone}</span>
                               </div>
                             </CommandItem>
                           ))}
@@ -1811,17 +2189,9 @@ ${getReceiptSettings().thankYou}`;
                 </Popover>
               </div>
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="customerPhone">Phone</Label>
-              <Input
-                id="customerPhone"
-                placeholder="Enter phone number"
-                value={manualBalanceForm.customerPhone}
-                onChange={(e) => setManualBalanceForm(prev => ({ ...prev, customerPhone: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="totalAmount">Amount</Label>
+              <Label htmlFor="totalAmount">Amount *</Label>
               <Input
                 id="totalAmount"
                 type="number"
@@ -1830,6 +2200,7 @@ ${getReceiptSettings().thankYou}`;
                 onChange={(e) => setManualBalanceForm(prev => ({ ...prev, totalAmount: e.target.value }))}
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="dueDate">Due Date (Optional)</Label>
               <Input
@@ -1839,45 +2210,248 @@ ${getReceiptSettings().thankYou}`;
                 onChange={(e) => setManualBalanceForm(prev => ({ ...prev, dueDate: e.target.value }))}
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="notes">Notes (Optional)</Label>
-              <Input
+              <Textarea
                 id="notes"
-                placeholder="Add notes about this balance"
+                placeholder="Add any notes about this pending balance"
                 value={manualBalanceForm.notes}
                 onChange={(e) => setManualBalanceForm(prev => ({ ...prev, notes: e.target.value }))}
               />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setManualBalanceDialogOpen(false);
-                  setManualBalanceForm({
-                    customerName: "",
-                    customerPhone: "",
-                    totalAmount: "",
-                    dueDate: "",
-                    notes: ""
-                  });
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!manualBalanceForm.customerName || !manualBalanceForm.customerPhone || !manualBalanceForm.totalAmount) {
-                    toast({ title: "Please fill all required fields", variant: "destructive" });
-                    return;
-                  }
-                  createManualBalanceMutation.mutate(manualBalanceForm);
-                }}
-                disabled={createManualBalanceMutation.isPending}
-              >
-                {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
-              </Button>
-            </div>
           </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setManualBalanceDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createManualBalanceMutation.mutate(manualBalanceForm)}
+              disabled={!manualBalanceForm.customerName || !manualBalanceForm.customerPhone || !manualBalanceForm.totalAmount || createManualBalanceMutation.isPending}
+            >
+              {createManualBalanceMutation.isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Pending Balance
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment History Dialog */}
+      <Dialog open={showPaymentHistory} onOpenChange={setShowPaymentHistory}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Payment History</DialogTitle>
+            <DialogDescription>
+              Payment history for {selectedCustomer?.customerName}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {customerPaymentHistory.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No payment history found</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {customerPaymentHistory.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{payment.paymentMethod}</Badge>
+                        <span className="text-sm text-muted-foreground">
+                          {formatDate(payment.createdAt)}
+                        </span>
+                      </div>
+                      {payment.notes && (
+                        <p className="text-sm text-muted-foreground">{payment.notes}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-green-600">
+                        +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bill Details Dialog */}
+      <Dialog open={showBillDetails} onOpenChange={setShowBillDetails}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Bill Details</DialogTitle>
+            <DialogDescription>
+              Detailed information for bill {selectedBill?.id.slice(-8)}
+            </DialogDescription>
+          </DialogHeader>
+
+          {billDetails && (
+            <div className="space-y-6">
+              {/* Bill Summary */}
+              <div className="grid grid-cols-2 gap-4 p-4 border rounded-lg">
+                <div>
+                  <h4 className="font-semibold mb-2">Bill Information</h4>
+                  <div className="space-y-1 text-sm">
+                    <p>Date: {formatDate(billDetails.createdAt)}</p>
+                    <p>Bill ID: {billDetails.id.slice(-8)}</p>
+                    {billDetails.dueDate && (
+                      <p>Due Date: {formatDate(billDetails.dueDate)}</p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Customer Information</h4>
+                  <div className="space-y-1 text-sm">
+                    <p>Name: {billDetails.customerName}</p>
+                    <p>Phone: {billDetails.customerPhone}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              {billDetails.saleItems && billDetails.saleItems.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-3">Items</h4>
+                  <div className="border rounded-lg">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="text-left p-3 text-sm font-medium">Product</th>
+                          <th className="text-right p-3 text-sm font-medium">Qty</th>
+                          <th className="text-right p-3 text-sm font-medium">Rate</th>
+                          <th className="text-right p-3 text-sm font-medium">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {billDetails.saleItems.map((item) => (
+                          <tr key={item.id} className="border-b">
+                            <td className="p-3 text-sm">
+                              {getProductLine(item)}
+                            </td>
+                            <td className="p-3 text-sm text-right">{item.quantity}</td>
+                            <td className="p-3 text-sm text-right">Rs. {Math.round(parseFloat(item.rate)).toLocaleString()}</td>
+                            <td className="p-3 text-sm text-right font-medium">Rs. {Math.round(parseFloat(item.subtotal)).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-muted/50 font-semibold">
+                          <td colSpan={3} className="p-3 text-sm text-right">Total Amount:</td>
+                          <td className="p-3 text-sm text-right">Rs. {Math.round(parseFloat(billDetails.totalAmount)).toLocaleString()}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Payment Summary */}
+              <div className="grid grid-cols-3 gap-4 p-4 border rounded-lg bg-muted/30">
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Total Amount</p>
+                  <p className="text-lg font-semibold">Rs. {Math.round(parseFloat(billDetails.totalAmount)).toLocaleString()}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Amount Paid</p>
+                  <p className="text-lg font-semibold text-green-600">Rs. {Math.round(parseFloat(billDetails.amountPaid)).toLocaleString()}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-muted-foreground">Balance Due</p>
+                  <p className="text-lg font-semibold text-red-600">
+                    Rs. {Math.round(parseFloat(billDetails.totalAmount) - parseFloat(billDetails.amountPaid)).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => viewBillPDF(billDetails)}
+                  className="flex items-center gap-2"
+                >
+                  <Printer className="h-4 w-4" />
+                  Print Bill
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowBillPaymentHistory(true);
+                    setShowBillDetails(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <History className="h-4 w-4" />
+                  Payment History
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bill Payment History Dialog */}
+      <Dialog open={showBillPaymentHistory} onOpenChange={setShowBillPaymentHistory}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Bill Payment History</DialogTitle>
+            <DialogDescription>
+              Payment history for bill {selectedBill?.id.slice(-8)}
+            </DialogDescription>
+          </DialogHeader>
+
+          {billDetails?.paymentHistory && billDetails.paymentHistory.length > 0 ? (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {billDetails.paymentHistory.map((payment) => (
+                <div key={payment.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{payment.paymentMethod}</Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {formatDate(payment.createdAt)}
+                      </span>
+                    </div>
+                    {payment.notes && (
+                      <p className="text-sm text-muted-foreground">{payment.notes}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-green-600">
+                      +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      New Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No payment history found for this bill</p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
