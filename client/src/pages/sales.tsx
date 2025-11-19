@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Receipt, Calendar, RefreshCw } from "lucide-react";
+import { Search, Receipt, Calendar, RefreshCw, Download, Share2, FileText, Printer } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +36,213 @@ export default function Sales() {
   const refreshSales = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
     toast({ title: "Sales data refreshed" });
+  };
+
+  // Generate PDF for individual sale bill
+  const generateSalePDF = (sale: Sale) => {
+    const saleDate = new Date(sale.createdAt);
+    const formattedDate = saleDate.toLocaleDateString('en-PK');
+    const formattedTime = saleDate.toLocaleTimeString('en-PK');
+    
+    let pdfHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Sale Bill - ${sale.id.slice(-8)}</title>
+        <style>
+          @page { size: A4; margin: 15mm; }
+          body { font-family: 'Arial', sans-serif; color: #333; margin: 0; padding: 0; }
+          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
+          .header h1 { margin: 0; color: #2563eb; font-size: 28px; }
+          .header p { margin: 5px 0; color: #666; font-size: 14px; }
+          .store-info { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+          .store-info h2 { margin: 0 0 10px 0; color: #1e293b; font-size: 20px; }
+          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+          .info-card { background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #2563eb; }
+          .info-card h3 { margin: 0 0 10px 0; color: #1e293b; font-size: 16px; }
+          .info-item { margin-bottom: 8px; }
+          .info-label { font-weight: 600; color: #475569; display: inline-block; width: 120px; }
+          .amount-section { background: #fff7ed; padding: 20px; border-radius: 8px; margin: 20px 0; border: 2px solid #fdba74; }
+          .amount-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; text-align: center; }
+          .amount-item { padding: 10px; }
+          .amount-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+          .amount-value { font-size: 18px; font-weight: bold; font-family: monospace; }
+          .payment-status { 
+            display: inline-block; 
+            padding: 8px 16px; 
+            border-radius: 20px; 
+            font-weight: bold; 
+            font-size: 14px; 
+            margin: 10px 0; 
+          }
+          .status-paid { background: #d1fae5; color: #065f46; border: 2px solid #10b981; }
+          .status-partial { background: #fef3c7; color: #92400e; border: 2px solid #f59e0b; }
+          .status-unpaid { background: #fee2e2; color: #991b1b; border: 2px solid #ef4444; }
+          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
+          .barcode { text-align: center; margin: 20px 0; font-family: monospace; letter-spacing: 2px; }
+          .thank-you { text-align: center; margin: 20px 0; font-style: italic; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>🛍️ PaintPulse Sale Bill</h1>
+          <p>Your Trusted Paint Partner</p>
+        </div>
+
+        <div class="store-info">
+          <h2>PaintPulse Store</h2>
+          <p>Quality Paints &amp; Solutions</p>
+          <p>📞 Store: +92-XXX-XXXXXXX | 📧 info@paintpulse.com</p>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-card">
+            <h3>Bill Information</h3>
+            <div class="info-item">
+              <span class="info-label">Bill ID:</span> ${sale.id.slice(-8).toUpperCase()}
+            </div>
+            <div class="info-item">
+              <span class="info-label">Date:</span> ${formattedDate}
+            </div>
+            <div class="info-item">
+              <span class="info-label">Time:</span> ${formattedTime}
+            </div>
+          </div>
+
+          <div class="info-card">
+            <h3>Customer Information</h3>
+            <div class="info-item">
+              <span class="info-label">Name:</span> ${sale.customerName}
+            </div>
+            <div class="info-item">
+              <span class="info-label">Phone:</span> ${sale.customerPhone}
+            </div>
+          </div>
+        </div>
+
+        <div class="amount-section">
+          <div class="amount-grid">
+            <div class="amount-item">
+              <div class="amount-label">Total Amount</div>
+              <div class="amount-value">Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</div>
+            </div>
+            <div class="amount-item">
+              <div class="amount-label">Amount Paid</div>
+              <div class="amount-value">Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}</div>
+            </div>
+            <div class="amount-item">
+              <div class="amount-label">Balance Due</div>
+              <div class="amount-value" style="color: #dc2626;">
+                Rs. ${Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString()}
+              </div>
+            </div>
+          </div>
+          
+          <div style="text-align: center; margin-top: 15px;">
+            <div class="payment-status ${
+              sale.paymentStatus === 'paid' ? 'status-paid' : 
+              sale.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid'
+            }">
+              ${sale.paymentStatus.toUpperCase()} 
+              ${sale.paymentStatus === 'partial' ? 'PAYMENT' : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="barcode">
+          ▮▮ ▮ ▮▮▮ ▮ ▮▮▮ ▮ ▮▮ ▮▮▮<br/>
+          <small>Bill ID: ${sale.id.slice(-8).toUpperCase()}</small>
+        </div>
+
+        <div class="thank-you">
+          Thank you for your business! 🎨<br/>
+          We appreciate your trust in PaintPulse
+        </div>
+
+        <div class="footer">
+          <p>PaintPulse POS System • Generated on ${new Date().toLocaleDateString('en-PK')}</p>
+          <p>This is a computer-generated bill • For queries contact: +92-XXX-XXXXXXX</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return pdfHTML;
+  };
+
+  // Download PDF for individual sale
+  const downloadSalePDF = (sale: Sale) => {
+    const pdfHTML = generateSalePDF(sale);
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Bill_${sale.customerName}_${sale.id.slice(-8)}_${new Date(sale.createdAt).toLocaleDateString('en-PK').replace(/\//g, '-')}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    toast({ 
+      title: "Bill Downloaded", 
+      description: `Bill for ${sale.customerName} has been downloaded` 
+    });
+  };
+
+  // View PDF for individual sale (opens in new tab)
+  const viewSalePDF = (sale: Sale) => {
+    const pdfHTML = generateSalePDF(sale);
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    
+    if (printWindow) {
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+    
+    toast({ 
+      title: "Bill Opened", 
+      description: `Bill for ${sale.customerName} is ready for viewing/printing` 
+    });
+  };
+
+  // Share bill via WhatsApp
+  const shareBillViaWhatsApp = (sale: Sale) => {
+    const totalAmount = Math.round(parseFloat(sale.totalAmount));
+    const amountPaid = Math.round(parseFloat(sale.amountPaid));
+    const amountDue = totalAmount - amountPaid;
+    
+    const message = `🛍️ *PaintPulse Sale Bill*
+
+*Bill ID:* ${sale.id.slice(-8).toUpperCase()}
+*Customer:* ${sale.customerName}
+*Phone:* ${sale.customerPhone}
+*Date:* ${new Date(sale.createdAt).toLocaleDateString('en-PK')}
+*Time:* ${new Date(sale.createdAt).toLocaleTimeString('en-PK')}
+
+*Amount Details:*
+💰 Total: Rs. ${totalAmount.toLocaleString()}
+💳 Paid: Rs. ${amountPaid.toLocaleString()}
+⚖️ Due: Rs. ${amountDue.toLocaleString()}
+
+*Status:* ${sale.paymentStatus.toUpperCase()}
+
+Thank you for your business! 🎨
+_PaintPulse - Your Trusted Paint Partner_`;
+
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+    
+    window.open(whatsappUrl, '_blank');
+    
+    toast({ 
+      title: "Share via WhatsApp", 
+      description: `Bill details opened for sharing with ${sale.customerName}` 
+    });
   };
 
   const filteredSales = useMemo(() => {
@@ -309,13 +516,44 @@ export default function Sales() {
                                   )}
                                 </div>
                               </div>
-                              <Link
-                                href={`/bill/${sale.id}`}
-                                className="text-sm text-primary hover:underline whitespace-nowrap"
-                                data-testid={`link-view-bill-${sale.id}`}
-                              >
-                                View Bill
-                              </Link>
+                              <div className="flex flex-col gap-2 items-end">
+                                <Link
+                                  href={`/bill/${sale.id}`}
+                                  className="text-sm text-primary hover:underline whitespace-nowrap"
+                                  data-testid={`link-view-bill-${sale.id}`}
+                                >
+                                  View Bill
+                                </Link>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => viewSalePDF(sale)}
+                                    className="h-8 w-8 p-0"
+                                    title="View PDF"
+                                  >
+                                    <FileText className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => downloadSalePDF(sale)}
+                                    className="h-8 w-8 p-0"
+                                    title="Download PDF"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => shareBillViaWhatsApp(sale)}
+                                    className="h-8 w-8 p-0"
+                                    title="Share via WhatsApp"
+                                  >
+                                    <Share2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
