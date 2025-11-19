@@ -7,6 +7,7 @@ import {
   saleItems,
   settings,
   stockInHistory,
+  paymentHistory,
   type Product,
   type InsertProduct,
   type Variant,
@@ -23,6 +24,9 @@ import {
   type ColorWithVariantAndProduct,
   type SaleWithItems,
   type StockInHistoryWithColor,
+  type PaymentHistory,
+  type InsertPaymentHistory,
+  type PaymentHistoryWithSale,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, sql, and } from "drizzle-orm";
@@ -60,7 +64,7 @@ export interface IStorage {
   getSale(id: string): Promise<SaleWithItems | undefined>;
   createSale(sale: InsertSale, items: InsertSaleItem[]): Promise<Sale>;
   createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<Sale>;
-  updateSalePayment(saleId: string, amount: number): Promise<Sale>;
+  updateSalePayment(saleId: string, amount: number, paymentMethod?: string, notes?: string): Promise<Sale>;
   updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<Sale>;
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>;
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
@@ -79,6 +83,19 @@ export interface IStorage {
   recordStockIn(colorId: string, quantity: number, previousStock: number, newStock: number, notes?: string, stockInDate?: string): Promise<StockInHistoryWithColor>;
   deleteStockInHistory(id: string): Promise<void>;
   updateStockInHistory(id: string, data: { quantity?: number; notes?: string; stockInDate?: string }): Promise<StockInHistoryWithColor>;
+
+  // Payment History
+  recordPaymentHistory(data: {
+    saleId: string;
+    customerPhone: string;
+    amount: number;
+    previousBalance: number;
+    newBalance: number;
+    paymentMethod?: string;
+    notes?: string;
+  }): Promise<PaymentHistory>;
+  getPaymentHistoryByCustomer(customerPhone: string): Promise<PaymentHistoryWithSale[]>;
+  getPaymentHistoryBySale(saleId: string): Promise<PaymentHistory[]>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
@@ -596,6 +613,47 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  // Payment History
+  async recordPaymentHistory(data: {
+    saleId: string;
+    customerPhone: string;
+    amount: number;
+    previousBalance: number;
+    newBalance: number;
+    paymentMethod?: string;
+    notes?: string;
+  }): Promise<PaymentHistory> {
+    const paymentRecord: PaymentHistory = {
+      id: crypto.randomUUID(),
+      saleId: data.saleId,
+      customerPhone: data.customerPhone,
+      amount: data.amount.toString(),
+      previousBalance: data.previousBalance.toString(),
+      newBalance: data.newBalance.toString(),
+      paymentMethod: data.paymentMethod || "cash",
+      notes: data.notes || null,
+      createdAt: new Date(),
+    };
+
+    await db.insert(paymentHistory).values(paymentRecord);
+    return paymentRecord;
+  }
+
+  async getPaymentHistoryByCustomer(customerPhone: string): Promise<PaymentHistoryWithSale[]> {
+    const result = await db.query.paymentHistory.findMany({
+      where: eq(paymentHistory.customerPhone, customerPhone),
+      with: {
+        sale: true,
+      },
+      orderBy: desc(paymentHistory.createdAt),
+    });
+    return result;
+  }
+
+  async getPaymentHistoryBySale(saleId: string): Promise<PaymentHistory[]> {
+    return await db.select().from(paymentHistory).where(eq(paymentHistory.saleId, saleId)).orderBy(desc(paymentHistory.createdAt));
+  }
+
   // Helper method to get color with relations
   private async getColorWithRelations(id: string): Promise<ColorWithVariantAndProduct> {
     const result = await db.query.colors.findFirst({
@@ -700,7 +758,7 @@ export class DatabaseStorage implements IStorage {
     return sale;
   }
 
-  async updateSalePayment(saleId: string, amount: number): Promise<Sale> {
+  async updateSalePayment(saleId: string, amount: number, paymentMethod?: string, notes?: string): Promise<Sale> {
     const [sale] = await db.select().from(sales).where(eq(sales.id, saleId));
     if (!sale) {
       throw new Error("Sale not found");
@@ -709,6 +767,8 @@ export class DatabaseStorage implements IStorage {
     const currentPaid = parseFloat(sale.amountPaid);
     const newPaid = currentPaid + amount;
     const total = parseFloat(sale.totalAmount);
+    const previousBalance = total - currentPaid;
+    const newBalance = total - newPaid;
 
     let paymentStatus: string;
     if (newPaid >= total) {
@@ -726,6 +786,17 @@ export class DatabaseStorage implements IStorage {
         paymentStatus,
       })
       .where(eq(sales.id, saleId));
+
+    // Record payment history
+    await this.recordPaymentHistory({
+      saleId,
+      customerPhone: sale.customerPhone,
+      amount,
+      previousBalance,
+      newBalance,
+      paymentMethod,
+      notes,
+    });
 
     const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId));
     return updatedSale;

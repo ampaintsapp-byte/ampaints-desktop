@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Fixed version
+// unpaid-bills.tsx - Complete version with payment history and pending balance notes
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,11 +49,13 @@ import {
   Filter,
   X,
   ChevronDown,
-  FileText
+  FileText,
+  History,
+  MessageSquare
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Sale, SaleWithItems, ColorWithVariantAndProduct } from "@shared/schema";
+import type { Sale, SaleWithItems, ColorWithVariantAndProduct, PaymentHistoryWithSale } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import {
@@ -100,6 +102,8 @@ export default function UnpaidBills() {
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentNotes, setPaymentNotes] = useState("");
   const [addProductDialogOpen, setAddProductDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedColor, setSelectedColor] = useState<ColorWithVariantAndProduct | null>(null);
@@ -124,6 +128,9 @@ export default function UnpaidBills() {
     dueDate: "",
     notes: ""
   });
+  
+  // Payment history state
+  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   
   const { toast } = useToast();
 
@@ -160,9 +167,18 @@ export default function UnpaidBills() {
     enabled: addProductDialogOpen,
   });
 
+  const { data: customerPaymentHistory = [] } = useQuery<PaymentHistoryWithSale[]>({
+    queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`],
+    enabled: !!selectedCustomerPhone && showPaymentHistory,
+  });
+
   const recordPaymentMutation = useMutation({
-    mutationFn: async (data: { saleId: string; amount: number }) => {
-      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { amount: data.amount });
+    mutationFn: async (data: { saleId: string; amount: number; paymentMethod?: string; notes?: string }) => {
+      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
+        amount: data.amount,
+        paymentMethod: data.paymentMethod,
+        notes: data.notes 
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
@@ -170,9 +186,12 @@ export default function UnpaidBills() {
         queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`] });
       toast({ title: "Payment recorded successfully" });
       setPaymentDialogOpen(false);
       setPaymentAmount("");
+      setPaymentMethod("cash");
+      setPaymentNotes("");
     },
     onError: (error: Error) => {
       console.error("Payment recording error:", error);
@@ -317,23 +336,26 @@ export default function UnpaidBills() {
       }
     }
 
-    // Validate that we have payments to apply
-    if (paymentsToApply.length === 0) {
-      toast({ title: "No outstanding balance to apply payment to", variant: "destructive" });
-      return;
-    }
-
     // Apply all payments
     try {
       for (const payment of paymentsToApply) {
-        await apiRequest("POST", `/api/sales/${payment.saleId}/payment`, { amount: payment.amount });
+        await recordPaymentMutation.mutateAsync({
+          saleId: payment.saleId,
+          amount: payment.amount,
+          paymentMethod,
+          notes: paymentNotes
+        });
       }
       
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      toast({ title: `Payment of Rs. ${Math.round(amount).toLocaleString()} recorded successfully` });
+      toast({ 
+        title: `Payment of Rs. ${Math.round(amount).toLocaleString()} recorded successfully`,
+        description: `Method: ${paymentMethod}${paymentNotes ? ` - ${paymentNotes}` : ''}`
+      });
+      
       setPaymentDialogOpen(false);
       setPaymentAmount("");
+      setPaymentMethod("cash");
+      setPaymentNotes("");
       setSelectedCustomerPhone(null);
     } catch (error) {
       console.error("Payment processing error:", error);
@@ -603,6 +625,7 @@ export default function UnpaidBills() {
           .summary-box { display: inline-block; border: 2px solid #e5e7eb; padding: 15px; margin: 10px; border-radius: 8px; min-width: 180px; }
           .summary-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #666; }
           .summary-box p { margin: 0; font-size: 20px; font-weight: bold; color: #2563eb; }
+          .notes { background: #f8fafc; padding: 8px 12px; border-radius: 6px; margin: 5px 0; font-size: 11px; border-left: 3px solid #2563eb; }
         </style>
       </head>
       <body>
@@ -1168,6 +1191,11 @@ export default function UnpaidBills() {
                                 {new Date(bill.createdAt).toLocaleDateString()} - {new Date(bill.createdAt).toLocaleTimeString()}
                               </span>
                               {getPaymentStatusBadge(bill.paymentStatus)}
+                              {bill.isManualBalance && (
+                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                                  Manual Balance
+                                </Badge>
+                              )}
                             </div>
                             <div className="grid grid-cols-3 gap-2 text-xs font-mono">
                               <div>
@@ -1185,6 +1213,20 @@ export default function UnpaidBills() {
                                 </div>
                               )}
                             </div>
+                            {/* Show notes for manual balance bills */}
+                            {bill.isManualBalance && bill.notes && (
+                              <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 p-2 rounded border border-blue-200">
+                                <MessageSquare className="h-3 w-3 mt-0.5 text-blue-500 flex-shrink-0" />
+                                <span className="flex-1">{bill.notes}</span>
+                              </div>
+                            )}
+                            {/* Show due date if exists */}
+                            {bill.dueDate && (
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Calendar className="h-3 w-3" />
+                                <span>Due: {new Date(bill.dueDate).toLocaleDateString()}</span>
+                              </div>
+                            )}
                           </div>
                           <div className="flex gap-2">
                             <Link href={`/bill/${bill.id}`}>
@@ -1199,6 +1241,66 @@ export default function UnpaidBills() {
                     </Card>
                   );
                 })}
+              </div>
+
+              {/* Payment History Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">Payment History</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowPaymentHistory(!showPaymentHistory)}
+                  >
+                    <History className="h-4 w-4 mr-1" />
+                    {showPaymentHistory ? "Hide" : "Show"} History
+                  </Button>
+                </div>
+                
+                {showPaymentHistory && (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {customerPaymentHistory.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-4">
+                        No payment history found
+                      </p>
+                    ) : (
+                      customerPaymentHistory.map((payment) => (
+                        <Card key={payment.id}>
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline">
+                                    {new Date(payment.createdAt).toLocaleDateString()}
+                                  </Badge>
+                                  <Badge variant="secondary">
+                                    {payment.paymentMethod}
+                                  </Badge>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  Bill: {new Date(payment.sale.createdAt).toLocaleDateString()}
+                                </div>
+                                {payment.notes && (
+                                  <div className="text-xs text-muted-foreground">
+                                    Notes: {payment.notes}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-right space-y-1">
+                                <div className="font-mono font-medium text-green-600">
+                                  +Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  Balance: Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Consolidated Totals */}
@@ -1279,6 +1381,31 @@ export default function UnpaidBills() {
                 <p className="text-xs text-muted-foreground">
                   Payment will be applied to oldest bills first
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="paymentMethod">Payment Method</Label>
+                <select
+                  id="paymentMethod"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="online">Online Payment</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="paymentNotes">Notes (Optional)</Label>
+                <Input
+                  id="paymentNotes"
+                  placeholder="Add payment notes..."
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                />
               </div>
 
               <div className="flex justify-end gap-2">

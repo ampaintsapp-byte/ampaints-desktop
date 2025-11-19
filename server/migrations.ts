@@ -92,6 +92,38 @@ export function migrateDatabase(db: Database.Database): void {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run('default', 'PaintPulse', 'shadow', 'sm', 'gray-900', 'blue-600', 0, Date.now());
     }
+
+    // Create payment_history table if it doesn't exist (added in v0.2.1)
+    console.log('[Migration] Creating/verifying payment_history table...');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS payment_history (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        previous_balance TEXT NOT NULL,
+        new_balance TEXT NOT NULL,
+        payment_method TEXT NOT NULL DEFAULT 'cash',
+        notes TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+      );
+    `);
+    
+    // Create indexes for payment_history table
+    console.log('[Migration] Creating/verifying payment_history indexes...');
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_customer_created ON payment_history(customer_phone, created_at)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_payment_history_customer_created'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_sale ON payment_history(sale_id)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_payment_history_sale'); }
+    
+    try {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_customer_method ON payment_history(customer_phone, payment_method)');
+    } catch (e) { console.log('[Migration] Index already exists: idx_payment_history_customer_method'); }
     
     // Ensure all indexes exist (CREATE INDEX IF NOT EXISTS is safe)
     console.log('[Migration] Creating/verifying indexes...');

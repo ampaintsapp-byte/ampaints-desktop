@@ -2,7 +2,17 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertProductSchema, insertVariantSchema, insertColorSchema, insertSaleSchema, insertSaleItemSchema, insertStockInHistorySchema, formatDateToDDMMYYYY, parseDDMMYYYYToDate } from "@shared/schema";
+import { 
+  insertProductSchema, 
+  insertVariantSchema, 
+  insertColorSchema, 
+  insertSaleSchema, 
+  insertSaleItemSchema, 
+  insertStockInHistorySchema,
+  insertPaymentHistorySchema,
+  formatDateToDDMMYYYY, 
+  parseDDMMYYYYToDate 
+} from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -392,51 +402,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Stock In History PDF Export
-  app.get("/api/stock-in/history/export-pdf", async (req, res) => {
+  // Payment History routes
+  app.get("/api/payment-history/customer/:phone", async (req, res) => {
     try {
-      const { startDate, endDate, company, product } = req.query;
-      
-      let history = await storage.getStockInHistory();
-      
-      // Apply filters if provided
-      if (startDate && endDate) {
-        const start = new Date(startDate as string);
-        const end = new Date(endDate as string);
-        end.setHours(23, 59, 59, 999);
-        
-        history = history.filter(record => {
-          const recordDate = new Date(record.createdAt);
-          return recordDate >= start && recordDate <= end;
-        });
-      }
-      
-      if (company && company !== 'all') {
-        history = history.filter(record => 
-          record.color.variant.product.company === company
-        );
-      }
-      
-      if (product && product !== 'all') {
-        history = history.filter(record => 
-          record.color.variant.product.productName === product
-        );
-      }
-
-      // Generate PDF content
-      const pdfContent = generateStockHistoryPDF(history, {
-        startDate: startDate as string,
-        endDate: endDate as string,
-        company: company as string,
-        product: product as string
-      });
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="stock-history-${new Date().toISOString().split('T')[0]}.pdf"`);
-      res.send(Buffer.from(pdfContent));
+      const history = await storage.getPaymentHistoryByCustomer(req.params.phone);
+      res.json(history);
     } catch (error) {
-      console.error("Error exporting stock history PDF:", error);
-      res.status(500).json({ error: "Failed to export stock history PDF" });
+      console.error("Error fetching payment history:", error);
+      res.status(500).json({ error: "Failed to fetch payment history" });
+    }
+  });
+
+  app.get("/api/payment-history/sale/:saleId", async (req, res) => {
+    try {
+      const history = await storage.getPaymentHistoryBySale(req.params.saleId);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching payment history:", error);
+      res.status(500).json({ error: "Failed to fetch payment history" });
+    }
+  });
+
+  // Record Payment History (for direct recording if needed)
+  app.post("/api/payment-history", async (req, res) => {
+    try {
+      const validated = insertPaymentHistorySchema.parse(req.body);
+      const paymentHistory = await storage.recordPaymentHistory({
+        saleId: validated.saleId,
+        customerPhone: validated.customerPhone,
+        amount: parseFloat(validated.amount),
+        previousBalance: parseFloat(validated.previousBalance),
+        newBalance: parseFloat(validated.newBalance),
+        paymentMethod: validated.paymentMethod,
+        notes: validated.notes
+      });
+      res.json(paymentHistory);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid payment history data", details: error.errors });
+      } else {
+        console.error("Error creating payment history:", error);
+        res.status(500).json({ error: "Failed to create payment history" });
+      }
     }
   });
 
@@ -539,12 +546,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/sales/:id/payment", async (req, res) => {
     try {
-      const { amount } = req.body;
+      const { amount, paymentMethod, notes } = req.body;
       if (typeof amount !== "number" || amount <= 0) {
         res.status(400).json({ error: "Invalid payment amount" });
         return;
       }
-      const sale = await storage.updateSalePayment(req.params.id, amount);
+      const sale = await storage.updateSalePayment(req.params.id, amount, paymentMethod, notes);
       res.json(sale);
     } catch (error) {
       console.error("Error recording payment:", error);

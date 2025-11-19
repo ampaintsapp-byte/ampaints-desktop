@@ -72,6 +72,19 @@ export const stockInHistory = sqliteTable("stock_in_history", {
   createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
 
+// Payment History table - tracks all payment transactions
+export const paymentHistory = sqliteTable("payment_history", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  saleId: text("sale_id").notNull().references(() => sales.id, { onDelete: "cascade" }),
+  customerPhone: text("customer_phone").notNull(),
+  amount: text("amount").notNull(), // payment amount
+  previousBalance: text("previous_balance").notNull(), // balance before payment
+  newBalance: text("new_balance").notNull(), // balance after payment
+  paymentMethod: text("payment_method").notNull().default("cash"), // cash, card, bank_transfer
+  notes: text("notes"), // optional payment notes
+  createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
+});
+
 // Settings table - stores app preferences (single row)
 export const settings = sqliteTable("settings", {
   id: text("id").primaryKey().default("default"),
@@ -110,6 +123,7 @@ export const colorsRelations = relations(colors, ({ one, many }) => ({
 
 export const salesRelations = relations(sales, ({ many }) => ({
   saleItems: many(saleItems),
+  paymentHistory: many(paymentHistory),
 }));
 
 export const saleItemsRelations = relations(saleItems, ({ one }) => ({
@@ -127,6 +141,13 @@ export const stockInHistoryRelations = relations(stockInHistory, ({ one }) => ({
   color: one(colors, {
     fields: [stockInHistory.colorId],
     references: [colors.id],
+  }),
+}));
+
+export const paymentHistoryRelations = relations(paymentHistory, ({ one }) => ({
+  sale: one(sales, {
+    fields: [paymentHistory.saleId],
+    references: [sales.id],
   }),
 }));
 
@@ -176,6 +197,11 @@ export const insertStockInHistorySchema = createInsertSchema(stockInHistory).omi
   stockInDate: z.string().min(1, "Stock in date is required"), // Changed to string only
 });
 
+export const insertPaymentHistorySchema = createInsertSchema(paymentHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   id: true,
   updatedAt: true,
@@ -190,6 +216,7 @@ export const selectColorSchema = createSelectSchema(colors);
 export const selectSaleSchema = createSelectSchema(sales);
 export const selectSaleItemSchema = createSelectSchema(saleItems);
 export const selectStockInHistorySchema = createSelectSchema(stockInHistory);
+export const selectPaymentHistorySchema = createSelectSchema(paymentHistory);
 export const selectSettingsSchema = createSelectSchema(settings);
 
 // Types
@@ -210,6 +237,9 @@ export type SaleItem = typeof saleItems.$inferSelect;
 
 export type InsertStockInHistory = z.infer<typeof insertStockInHistorySchema>;
 export type StockInHistory = typeof stockInHistory.$inferSelect;
+
+export type InsertPaymentHistory = z.infer<typeof insertPaymentHistorySchema>;
+export type PaymentHistory = typeof paymentHistory.$inferSelect;
 
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type UpdateSettings = z.infer<typeof updateSettingsSchema>;
@@ -236,6 +266,10 @@ export type SaleItemWithDetails = SaleItem & {
 
 export type StockInHistoryWithColor = StockInHistory & {
   color: ColorWithVariantAndProduct;
+};
+
+export type PaymentHistoryWithSale = PaymentHistory & {
+  sale: Sale;
 };
 
 // Helper function to compute effective rate for a color
