@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Redesigned with glassy look and dd-mm-yyyy dates
+// unpaid-bills.tsx - Fixed version
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,8 +45,7 @@ import {
   MessageSquare,
   Download,
   FileDown,
-  Share2,
-  Sparkles
+  Share2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -170,6 +169,71 @@ const getReceiptSettings = () => {
     padding: "12"
   };
 };
+
+// Customer Card Actions Component
+const CustomerCardActions = ({ customer, onView, onDownload, onShare }: { 
+  customer: ConsolidatedCustomer;
+  onView: (customer: ConsolidatedCustomer) => void;
+  onDownload: (customer: ConsolidatedCustomer) => void;
+  onShare: (customer: ConsolidatedCustomer) => void;
+}) => (
+  <DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+        <FileDown className="h-4 w-4" />
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end">
+      <DropdownMenuItem onClick={() => onView(customer)}>
+        <FileText className="h-4 w-4 mr-2" />
+        View Statement
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onDownload(customer)}>
+        <Download className="h-4 w-4 mr-2" />
+        Download Statement
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onShare(customer)}>
+        <Share2 className="h-4 w-4 mr-2" />
+        Share via WhatsApp
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+);
+
+// Customer Details Actions Component
+const CustomerDetailsActions = ({ customer, onView, onDownload, onShare }: {
+  customer: ConsolidatedCustomer;
+  onView: (customer: ConsolidatedCustomer) => void;
+  onDownload: (customer: ConsolidatedCustomer) => void;
+  onShare: (customer: ConsolidatedCustomer) => void;
+}) => (
+  <div className="flex justify-end gap-2">
+    <Button
+      variant="outline"
+      onClick={() => onView(customer)}
+      className="flex items-center gap-2"
+    >
+      <FileText className="h-4 w-4" />
+      View Statement
+    </Button>
+    <Button
+      variant="outline"
+      onClick={() => onDownload(customer)}
+      className="flex items-center gap-2"
+    >
+      <Download className="h-4 w-4" />
+      Download Statement
+    </Button>
+    <Button
+      variant="outline"
+      onClick={() => onShare(customer)}
+      className="flex items-center gap-2"
+    >
+      <Share2 className="h-4 w-4" />
+      Share via WhatsApp
+    </Button>
+  </div>
+);
 
 export default function UnpaidBills() {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
@@ -970,84 +1034,102 @@ ${getReceiptSettings().thankYou}`;
     });
   };
 
-  // Update the customer card to use new date format
-  // In the customer cards section, update the date display:
-  <div className="flex items-center gap-2 text-muted-foreground">
-    <Calendar className="h-4 w-4" />
-    <span>{formatDate(customer.oldestBillDate)}</span>
-    <Badge 
-      variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
-      className="ml-auto"
-    >
-      {customer.daysOverdue} days ago
-    </Badge>
-  </div>
+  // Generate PDF statement for all customers
+  const generatePDFStatement = () => {
+    const receiptSettings = getReceiptSettings();
+    const currentDate = formatDate(new Date());
+    
+    let pdfHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Unpaid Bills Summary</title>
+        <style>
+          @page { size: A4; margin: 15mm; }
+          body { font-family: 'Segoe UI', system-ui, sans-serif; color: #2d3748; margin: 0; padding: 20px; }
+          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
+          .header h1 { margin: 0; color: #2563eb; font-size: 28px; }
+          .header p { margin: 5px 0; color: #666; font-size: 14px; }
+          .section { margin-bottom: 30px; page-break-inside: avoid; }
+          .section-title { background: #2563eb; color: white; padding: 10px 15px; font-size: 16px; font-weight: bold; margin-bottom: 15px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th { background: #f3f4f6; text-align: left; padding: 10px; font-size: 12px; border-bottom: 2px solid #ddd; }
+          td { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #eee; }
+          .amount { text-align: right; font-family: monospace; font-weight: 600; }
+          .total-row { background: #fef3c7; font-weight: bold; border-top: 2px solid #2563eb; }
+          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>📊 Unpaid Bills Summary</h1>
+          <p>Generated on ${currentDate}</p>
+        </div>
 
-  // Update the customer details dialog to use new date format
-  // In the bills list within customer details:
-  <span className="text-sm font-medium">
-    {formatDate(bill.createdAt)} - {formatTime(bill.createdAt)}
-  </span>
+        <div class="section">
+          <div class="section-title">All Unpaid Bills (${filteredAndSortedCustomers.length} Customers)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th class="amount">Total</th>
+                <th class="amount">Paid</th>
+                <th class="amount">Outstanding</th>
+                <th>Bills</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    filteredAndSortedCustomers.forEach(customer => {
+      pdfHTML += `
+            <tr>
+              <td>${customer.customerName}</td>
+              <td>${customer.customerPhone}</td>
+              <td class="amount">Rs. ${customer.totalAmount.toFixed(2)}</td>
+              <td class="amount">Rs. ${customer.totalPaid.toFixed(2)}</td>
+              <td class="amount">Rs. ${customer.totalOutstanding.toFixed(2)}</td>
+              <td>${customer.bills.length}</td>
+            </tr>
+      `;
+    });
+    
+    const totalOutstanding = filteredAndSortedCustomers.reduce((sum, c) => sum + c.totalOutstanding, 0);
+    
+    pdfHTML += `
+            <tr class="total-row">
+              <td colspan="2"><strong>Grand Total</strong></td>
+              <td class="amount"><strong>Rs. ${filteredAndSortedCustomers.reduce((sum, c) => sum + c.totalAmount, 0).toFixed(2)}</strong></td>
+              <td class="amount"><strong>Rs. ${filteredAndSortedCustomers.reduce((sum, c) => sum + c.totalPaid, 0).toFixed(2)}</strong></td>
+              <td class="amount"><strong>Rs. ${totalOutstanding.toFixed(2)}</strong></td>
+              <td><strong>${filteredAndSortedCustomers.reduce((sum, c) => sum + c.bills.length, 0)}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-  // Update the payment history to use new date format
-  <Badge variant="outline">
-    {formatDate(payment.createdAt)}
-  </Badge>
+      <div class="footer">
+        <p>${receiptSettings.businessName} • Statement generated on ${currentDate}</p>
+        <p>This is a system-generated report</p>
+      </div>
+    </body>
+    </html>
+    `;
 
-  // Add PDF actions dropdown to customer cards
-  const CustomerCardActions = ({ customer }: { customer: ConsolidatedCustomer }) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <FileDown className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => viewCustomerPDFStatement(customer)}>
-          <FileText className="h-4 w-4 mr-2" />
-          View Statement
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => downloadCustomerPDFStatement(customer)}>
-          <Download className="h-4 w-4 mr-2" />
-          Download Statement
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => shareCustomerStatement(customer)}>
-          <Share2 className="h-4 w-4 mr-2" />
-          Share via WhatsApp
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
-  // Update the customer details dialog actions
-  const CustomerDetailsActions = ({ customer }: { customer: ConsolidatedCustomer }) => (
-    <div className="flex justify-end gap-2">
-      <Button
-        variant="outline"
-        onClick={() => viewCustomerPDFStatement(customer)}
-        className="flex items-center gap-2"
-      >
-        <FileText className="h-4 w-4" />
-        View Statement
-      </Button>
-      <Button
-        variant="outline"
-        onClick={() => downloadCustomerPDFStatement(customer)}
-        className="flex items-center gap-2"
-      >
-        <Download className="h-4 w-4" />
-        Download Statement
-      </Button>
-      <Button
-        variant="outline"
-        onClick={() => shareCustomerStatement(customer)}
-        className="flex items-center gap-2"
-      >
-        <Share2 className="h-4 w-4" />
-        Share via WhatsApp
-      </Button>
-    </div>
-  );
+    // Create blob and open in new tab for printing
+    const blob = new Blob([pdfHTML], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const printWindow = window.open(url, '_blank');
+    if (printWindow) {
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+    
+    toast({ title: "PDF Statement opened for printing" });
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -1307,7 +1389,12 @@ ${getReceiptSettings().thankYou}`;
                       {customer.bills.length > 1 && (
                         <Badge variant="secondary">{customer.bills.length} Bills</Badge>
                       )}
-                      <CustomerCardActions customer={customer} />
+                      <CustomerCardActions 
+                        customer={customer}
+                        onView={viewCustomerPDFStatement}
+                        onDownload={downloadCustomerPDFStatement}
+                        onShare={shareCustomerStatement}
+                      />
                     </div>
                   </div>
                 </CardHeader>
@@ -1405,7 +1492,12 @@ ${getReceiptSettings().thankYou}`;
               </div>
 
               {/* PDF Actions */}
-              <CustomerDetailsActions customer={selectedCustomer} />
+              <CustomerDetailsActions 
+                customer={selectedCustomer}
+                onView={viewCustomerPDFStatement}
+                onDownload={downloadCustomerPDFStatement}
+                onShare={shareCustomerStatement}
+              />
 
               {/* Bills List */}
               <div className="space-y-3">
