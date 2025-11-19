@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Updated version with individual customer PDF statement
+// unpaid-bills.tsx - Redesigned with glassy look and dd-mm-yyyy dates
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +44,9 @@ import {
   History,
   MessageSquare,
   Download,
-  FileDown
+  FileDown,
+  Share2,
+  Sparkles
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -58,7 +60,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-// Interfaces defined outside component to avoid circular dependencies
+// Interfaces
 interface CustomerSuggestion {
   customerName: string;
   customerPhone: string;
@@ -91,7 +93,18 @@ interface FilterType {
   sortBy: "oldest" | "newest" | "highest" | "lowest" | "name";
 }
 
-// Helper functions outside component
+interface SaleWithItems extends Sale {
+  items?: Array<{
+    productName: string;
+    variantName: string;
+    colorName: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
+}
+
+// Helper functions
 const getPaymentStatusBadge = (status: string) => {
   switch (status) {
     case "paid":
@@ -113,6 +126,51 @@ const getDaysOverdue = (createdAt: string | Date) => {
   return diffDays;
 };
 
+// Format date to dd-mm-yyyy
+const formatDate = (date: Date | string) => {
+  const d = new Date(date);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+};
+
+// Format time to hh:mm:ss
+const formatTime = (date: Date | string) => {
+  const d = new Date(date);
+  return d.toLocaleTimeString('en-PK', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false 
+  });
+};
+
+// Get receipt settings from localStorage
+const getReceiptSettings = () => {
+  if (typeof window === 'undefined') return null;
+  
+  try {
+    const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+    if (savedReceiptSettings) {
+      return JSON.parse(savedReceiptSettings);
+    }
+  } catch (error) {
+    console.error("Error loading receipt settings:", error);
+  }
+  
+  return {
+    businessName: "ALI MUHAMMAD PAINTS",
+    address: "Basti Malook, Multan. 0300-868-3395",
+    dealerText: "AUTHORIZED DEALER:",
+    dealerBrands: "ICI-DULUX • MOBI PAINTS • WESTER 77",
+    thankYou: "THANKS FOR YOUR BUSINESS",
+    fontSize: "11",
+    itemFontSize: "12",
+    padding: "12"
+  };
+};
+
 export default function UnpaidBills() {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -122,7 +180,6 @@ export default function UnpaidBills() {
   const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   
-  // Manual balance state
   const [manualBalanceDialogOpen, setManualBalanceDialogOpen] = useState(false);
   const [manualBalanceForm, setManualBalanceForm] = useState({
     customerName: "",
@@ -135,7 +192,6 @@ export default function UnpaidBills() {
   
   const { toast } = useToast();
 
-  // Initialize filters
   const [filters, setFilters] = useState<FilterType>({
     search: "",
     amountRange: {
@@ -155,7 +211,7 @@ export default function UnpaidBills() {
     queryKey: ["/api/customers/suggestions"],
   });
 
-  const { data: unpaidSales = [], isLoading } = useQuery<Sale[]>({
+  const { data: unpaidSales = [], isLoading } = useQuery<SaleWithItems[]>({
     queryKey: ["/api/sales/unpaid"],
   });
 
@@ -258,7 +314,6 @@ export default function UnpaidBills() {
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...consolidatedCustomers];
 
-    // Apply search filter
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
       filtered = filtered.filter(customer => 
@@ -267,7 +322,6 @@ export default function UnpaidBills() {
       );
     }
 
-    // Apply amount range filter
     if (filters.amountRange.min) {
       const min = parseFloat(filters.amountRange.min);
       filtered = filtered.filter(customer => customer.totalOutstanding >= min);
@@ -277,13 +331,11 @@ export default function UnpaidBills() {
       filtered = filtered.filter(customer => customer.totalOutstanding <= max);
     }
 
-    // Apply days overdue filter
     if (filters.daysOverdue) {
       const days = parseInt(filters.daysOverdue);
       filtered = filtered.filter(customer => customer.daysOverdue >= days);
     }
 
-    // Apply due date filter
     if (filters.dueDate.from || filters.dueDate.to) {
       const fromDate = filters.dueDate.from ? new Date(filters.dueDate.from) : null;
       const toDate = filters.dueDate.to ? new Date(filters.dueDate.to) : null;
@@ -305,7 +357,6 @@ export default function UnpaidBills() {
       });
     }
 
-    // Apply sorting
     switch (filters.sortBy) {
       case "newest":
         filtered.sort((a, b) => b.oldestBillDate.getTime() - a.oldestBillDate.getTime());
@@ -352,7 +403,6 @@ export default function UnpaidBills() {
       return;
     }
 
-    // Sort bills by date (oldest first) and apply payment
     const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
@@ -415,371 +465,464 @@ export default function UnpaidBills() {
     setCustomerSuggestionsOpen(false);
   };
 
-  // Generate PDF for individual customer
+  // Generate detailed customer statement PDF with glassy design
   const generateCustomerPDFStatement = (customer: ConsolidatedCustomer) => {
-    const currentDate = new Date().toLocaleDateString('en-PK');
+    const receiptSettings = getReceiptSettings();
+    const currentDate = formatDate(new Date());
+    const currentTime = formatTime(new Date());
+    
     let pdfHTML = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Customer Unpaid Bills Statement - ${customer.customerName}</title>
+        <title>Customer Statement - ${customer.customerName}</title>
         <style>
-          @page { size: A4; margin: 20mm; }
-          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; }
-          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
-          .header h1 { margin: 0; color: #2563eb; font-size: 28px; }
-          .header p { margin: 5px 0; color: #666; font-size: 14px; }
-          .customer-info { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2563eb; }
-          .customer-info h2 { margin: 0 0 10px 0; color: #1e293b; font-size: 18px; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-          .info-item { margin-bottom: 5px; }
-          .info-label { font-weight: 600; color: #475569; }
-          .section { margin-bottom: 30px; page-break-inside: avoid; }
-          .section-title { background: #2563eb; color: white; padding: 10px 15px; font-size: 16px; font-weight: bold; margin-bottom: 15px; border-radius: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th { background: #f3f4f6; text-align: left; padding: 10px; font-size: 12px; border-bottom: 2px solid #ddd; }
-          td { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #eee; }
-          .amount { text-align: right; font-family: monospace; font-weight: 600; }
-          .total-row { background: #fef3c7; font-weight: bold; border-top: 2px solid #2563eb; }
-          .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
-          .badge-danger { background: #fee2e2; color: #991b1b; }
-          .badge-warning { background: #fef3c7; color: #92400e; }
-          .badge-success { background: #d1fae5; color: #065f46; }
-          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
-          .summary-box { display: inline-block; border: 2px solid #e5e7eb; padding: 15px; margin: 10px; border-radius: 8px; min-width: 180px; }
-          .summary-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #666; }
-          .summary-box p { margin: 0; font-size: 20px; font-weight: bold; color: #2563eb; }
-          .notes { background: #f0f9ff; padding: 10px; border-radius: 4px; border-left: 4px solid #0ea5e9; margin: 5px 0; font-size: 11px; }
+          @page { size: A4; margin: 15mm; }
+          body { 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            color: #2d3748; 
+            margin: 0; 
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+          }
+          .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: 
+              0 20px 40px rgba(0, 0, 0, 0.1),
+              0 0 0 1px rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+            margin: 20px;
+          }
+          .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+          }
+          .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            position: relative;
+          }
+          .header p {
+            margin: 8px 0 0 0;
+            font-size: 16px;
+            opacity: 0.9;
+            position: relative;
+          }
+          .store-info {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            margin: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            text-align: center;
+          }
+          .store-info h2 {
+            margin: 0 0 12px 0;
+            color: #1a202c;
+            font-size: 20px;
+            font-weight: 600;
+          }
+          .customer-info {
+            background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
+            color: white;
+            padding: 24px;
+            margin: 20px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
+          }
+          .customer-info h3 {
+            margin: 0 0 16px 0;
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+          }
+          .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .info-label {
+            font-weight: 500;
+            opacity: 0.9;
+          }
+          .info-value {
+            font-weight: 600;
+          }
+          .section {
+            margin: 20px;
+          }
+          .section-title {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 16px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+          }
+          th {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            color: white;
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 12px;
+            font-weight: 600;
+          }
+          td {
+            padding: 12px 16px;
+            font-size: 11px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          }
+          .amount {
+            text-align: right;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-weight: 600;
+          }
+          .total-row {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            font-weight: 700;
+          }
+          .total-row td {
+            border-bottom: none;
+            color: #92400e;
+          }
+          .status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 600;
+            text-align: center;
+          }
+          .status-paid {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+          }
+          .status-partial {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+          }
+          .status-unpaid {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+          }
+          .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin: 20px;
+          }
+          .summary-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 16px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s ease;
+          }
+          .summary-card:hover {
+            transform: translateY(-4px);
+          }
+          .summary-card h3 {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          .summary-card p {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+          }
+          .summary-card.outstanding p {
+            color: #dc2626;
+          }
+          .footer {
+            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+            margin-top: 30px;
+          }
+          .footer p {
+            margin: 4px 0;
+            font-size: 12px;
+            opacity: 0.8;
+          }
+          .notes {
+            background: rgba(56, 189, 248, 0.1);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border-left: 4px solid #0ea5e9;
+            margin: 8px 0;
+            font-size: 11px;
+          }
+          .glow {
+            box-shadow: 0 0 20px rgba(79, 70, 229, 0.3);
+          }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>📊 PaintPulse Customer Statement</h1>
-          <p>Generated on ${currentDate}</p>
-        </div>
+        <div class="container">
+          <div class="header">
+            <h1>📊 Customer Statement</h1>
+            <p>Comprehensive Financial Overview • ${currentDate} at ${currentTime}</p>
+          </div>
 
-        <div class="customer-info">
-          <h2>👤 Customer Information</h2>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">Name:</span> ${customer.customerName}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Phone:</span> ${customer.customerPhone}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Total Bills:</span> ${customer.bills.length}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Oldest Bill:</span> ${customer.oldestBillDate.toLocaleDateString('en-PK')}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Days Overdue:</span> ${customer.daysOverdue} days
+          <div class="store-info">
+            <h2>${receiptSettings.businessName}</h2>
+            <p>${receiptSettings.address}</p>
+            <p><strong>${receiptSettings.dealerText}</strong> ${receiptSettings.dealerBrands}</p>
+          </div>
+
+          <div class="customer-info">
+            <h3>👤 Customer Profile</h3>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">Customer Name:</span>
+                <span class="info-value">${customer.customerName}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Phone Number:</span>
+                <span class="info-value">${customer.customerPhone}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Total Bills:</span>
+                <span class="info-value">${customer.bills.length}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Oldest Bill:</span>
+                <span class="info-value">${formatDate(customer.oldestBillDate)}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Days Overdue:</span>
+                <span class="info-value">${customer.daysOverdue} days</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Statement Date:</span>
+                <span class="info-value">${currentDate}</span>
+              </div>
             </div>
           </div>
-        </div>
-    `;
 
-    // Bills Summary
-    pdfHTML += `
-      <div class="section">
-        <div class="section-title">💰 Bills Summary</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Bill ID</th>
-              <th>Total Amount</th>
-              <th>Amount Paid</th>
-              <th>Outstanding</th>
-              <th>Status</th>
-              <th>Due Date</th>
-            </tr>
-          </thead>
-          <tbody>
+          <div class="section">
+            <div class="section-title">
+              💰 Outstanding Bills • ${customer.bills.length} Total
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Bill Date</th>
+                  <th>Bill ID</th>
+                  <th>Total Amount</th>
+                  <th>Amount Paid</th>
+                  <th>Balance Due</th>
+                  <th>Status</th>
+                  <th>Due Date</th>
+                </tr>
+              </thead>
+              <tbody>
     `;
     
-    customer.bills.forEach((bill, index) => {
+    customer.bills.forEach((bill) => {
       const billTotal = parseFloat(bill.totalAmount);
       const billPaid = parseFloat(bill.amountPaid);
       const billOutstanding = billTotal - billPaid;
       const billDate = new Date(bill.createdAt);
       const dueDate = bill.dueDate ? new Date(bill.dueDate) : null;
       
-      let status = "Unpaid";
-      let statusClass = "badge-danger";
-      
-      if (bill.paymentStatus === "partial") {
-        status = "Partial";
-        statusClass = "badge-warning";
-      } else if (bill.paymentStatus === "paid") {
-        status = "Paid";
-        statusClass = "badge-success";
-      }
+      const statusClass = bill.paymentStatus === 'paid' ? 'status-paid' : 
+                         bill.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid';
+      const statusText = bill.paymentStatus.toUpperCase();
       
       pdfHTML += `
-            <tr>
-              <td>${billDate.toLocaleDateString('en-PK')}</td>
-              <td>${bill.id.slice(-8)}</td>
-              <td class="amount">Rs. ${billTotal.toFixed(2)}</td>
-              <td class="amount">Rs. ${billPaid.toFixed(2)}</td>
-              <td class="amount">Rs. ${billOutstanding.toFixed(2)}</td>
-              <td><span class="badge ${statusClass}">${status}</span></td>
-              <td>${dueDate ? dueDate.toLocaleDateString('en-PK') : '-'}</td>
-            </tr>
+                <tr>
+                  <td>${formatDate(billDate)}</td>
+                  <td>${bill.id.slice(-8)}</td>
+                  <td class="amount">Rs. ${billTotal.toFixed(2)}</td>
+                  <td class="amount">Rs. ${billPaid.toFixed(2)}</td>
+                  <td class="amount">Rs. ${billOutstanding.toFixed(2)}</td>
+                  <td><span class="status ${statusClass}">${statusText}</span></td>
+                  <td>${dueDate ? formatDate(dueDate) : '-'}</td>
+                </tr>
       `;
       
-      // Add notes for manual balance bills
       if (bill.isManualBalance && bill.notes) {
         pdfHTML += `
-            <tr>
-              <td colspan="7" class="notes">
-                <strong>Note:</strong> ${bill.notes}
-              </td>
-            </tr>
+                <tr>
+                  <td colspan="7" class="notes">
+                    <strong>Note:</strong> ${bill.notes}
+                  </td>
+                </tr>
         `;
       }
     });
     
     pdfHTML += `
-            <tr class="total-row">
-              <td colspan="2"><strong>Total</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalAmount.toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalPaid.toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalOutstanding.toFixed(2)}</strong></td>
-              <td colspan="2"></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                <tr class="total-row">
+                  <td colspan="2"><strong>TOTAL OUTSTANDING</strong></td>
+                  <td class="amount"><strong>Rs. ${customer.totalAmount.toFixed(2)}</strong></td>
+                  <td class="amount"><strong>Rs. ${customer.totalPaid.toFixed(2)}</strong></td>
+                  <td class="amount"><strong>Rs. ${customer.totalOutstanding.toFixed(2)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
     `;
 
-    // Summary boxes
-    pdfHTML += `
-      <div class="section" style="text-align: center;">
-        <div class="summary-box">
-          <h3>Total Bills</h3>
-          <p>${customer.bills.length}</p>
-        </div>
-        <div class="summary-box">
-          <h3>Total Amount</h3>
-          <p>Rs. ${customer.totalAmount.toFixed(2)}</p>
-        </div>
-        <div class="summary-box">
-          <h3>Amount Paid</h3>
-          <p>Rs. ${customer.totalPaid.toFixed(2)}</p>
-        </div>
-        <div class="summary-box">
-          <h3>Outstanding</h3>
-          <p style="color: #dc2626;">Rs. ${customer.totalOutstanding.toFixed(2)}</p>
-        </div>
-      </div>
-    `;
+    // Payment History Section
+    if (customerPaymentHistory.length > 0) {
+      pdfHTML += `
+          <div class="section">
+            <div class="section-title">
+              💳 Payment History • ${customerPaymentHistory.length} Records
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Payment Date</th>
+                  <th>Bill Date</th>
+                  <th>Payment Method</th>
+                  <th>Amount Paid</th>
+                  <th>New Balance</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+      
+      customerPaymentHistory.forEach((payment) => {
+        pdfHTML += `
+                <tr>
+                  <td>${formatDate(payment.createdAt)}</td>
+                  <td>${formatDate(payment.sale.createdAt)}</td>
+                  <td>${payment.paymentMethod}</td>
+                  <td class="amount">Rs. ${parseFloat(payment.amount).toFixed(2)}</td>
+                  <td class="amount">Rs. ${parseFloat(payment.newBalance).toFixed(2)}</td>
+                  <td>${payment.notes || '-'}</td>
+                </tr>
+        `;
+      });
+      
+      pdfHTML += `
+              </tbody>
+            </table>
+          </div>
+      `;
+    }
 
+    // Summary Section
     pdfHTML += `
-        <div class="footer">
-          <p>PaintPulse POS System • Customer Statement generated on ${currentDate}</p>
-          <p>This is a system-generated report for ${customer.customerName}</p>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <h3>Total Bills</h3>
+              <p>${customer.bills.length}</p>
+            </div>
+            <div class="summary-card">
+              <h3>Total Amount</h3>
+              <p>Rs. ${customer.totalAmount.toFixed(2)}</p>
+            </div>
+            <div class="summary-card">
+              <h3>Amount Paid</h3>
+              <p>Rs. ${customer.totalPaid.toFixed(2)}</p>
+            </div>
+            <div class="summary-card outstanding">
+              <h3>Outstanding Balance</h3>
+              <p>Rs. ${customer.totalOutstanding.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div class="footer">
+            <p>${receiptSettings.businessName} • ${receiptSettings.address}</p>
+            <p>Customer Statement for ${customer.customerName} • Generated on ${currentDate}</p>
+            <p><strong>${receiptSettings.thankYou}</strong></p>
+          </div>
         </div>
       </body>
       </html>
     `;
 
-    // Create blob and download
+    return pdfHTML;
+  };
+
+  // Download PDF for individual customer
+  const downloadCustomerPDFStatement = (customer: ConsolidatedCustomer) => {
+    const pdfHTML = generateCustomerPDFStatement(customer);
     const blob = new Blob([pdfHTML], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     
-    // Create download link
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Statement_${customer.customerName}_${currentDate.replace(/\//g, '-')}.html`;
+    a.download = `Statement_${customer.customerName}_${formatDate(new Date()).replace(/\//g, '-')}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
     
     toast({ 
-      title: "PDF Statement Downloaded", 
-      description: `Statement for ${customer.customerName} has been downloaded` 
+      title: "Statement Downloaded", 
+      description: `Customer statement for ${customer.customerName} has been downloaded` 
     });
   };
 
-  // View PDF for individual customer (opens in new tab for printing)
+  // View PDF for individual customer
   const viewCustomerPDFStatement = (customer: ConsolidatedCustomer) => {
-    const currentDate = new Date().toLocaleDateString('en-PK');
-    let pdfHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Customer Unpaid Bills Statement - ${customer.customerName}</title>
-        <style>
-          @page { size: A4; margin: 20mm; }
-          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; }
-          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
-          .header h1 { margin: 0; color: #2563eb; font-size: 28px; }
-          .header p { margin: 5px 0; color: #666; font-size: 14px; }
-          .customer-info { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2563eb; }
-          .customer-info h2 { margin: 0 0 10px 0; color: #1e293b; font-size: 18px; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-          .info-item { margin-bottom: 5px; }
-          .info-label { font-weight: 600; color: #475569; }
-          .section { margin-bottom: 30px; page-break-inside: avoid; }
-          .section-title { background: #2563eb; color: white; padding: 10px 15px; font-size: 16px; font-weight: bold; margin-bottom: 15px; border-radius: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th { background: #f3f4f6; text-align: left; padding: 10px; font-size: 12px; border-bottom: 2px solid #ddd; }
-          td { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #eee; }
-          .amount { text-align: right; font-family: monospace; font-weight: 600; }
-          .total-row { background: #fef3c7; font-weight: bold; border-top: 2px solid #2563eb; }
-          .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
-          .badge-danger { background: #fee2e2; color: #991b1b; }
-          .badge-warning { background: #fef3c7; color: #92400e; }
-          .badge-success { background: #d1fae5; color: #065f46; }
-          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
-          .summary-box { display: inline-block; border: 2px solid #e5e7eb; padding: 15px; margin: 10px; border-radius: 8px; min-width: 180px; }
-          .summary-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #666; }
-          .summary-box p { margin: 0; font-size: 20px; font-weight: bold; color: #2563eb; }
-          .notes { background: #f0f9ff; padding: 10px; border-radius: 4px; border-left: 4px solid #0ea5e9; margin: 5px 0; font-size: 11px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>📊 PaintPulse Customer Statement</h1>
-          <p>Generated on ${currentDate}</p>
-        </div>
-
-        <div class="customer-info">
-          <h2>👤 Customer Information</h2>
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="info-label">Name:</span> ${customer.customerName}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Phone:</span> ${customer.customerPhone}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Total Bills:</span> ${customer.bills.length}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Oldest Bill:</span> ${customer.oldestBillDate.toLocaleDateString('en-PK')}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Days Overdue:</span> ${customer.daysOverdue} days
-            </div>
-          </div>
-        </div>
-    `;
-
-    // Bills Summary
-    pdfHTML += `
-      <div class="section">
-        <div class="section-title">💰 Bills Summary</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Bill ID</th>
-              <th>Total Amount</th>
-              <th>Amount Paid</th>
-              <th>Outstanding</th>
-              <th>Status</th>
-              <th>Due Date</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-    
-    customer.bills.forEach((bill, index) => {
-      const billTotal = parseFloat(bill.totalAmount);
-      const billPaid = parseFloat(bill.amountPaid);
-      const billOutstanding = billTotal - billPaid;
-      const billDate = new Date(bill.createdAt);
-      const dueDate = bill.dueDate ? new Date(bill.dueDate) : null;
-      
-      let status = "Unpaid";
-      let statusClass = "badge-danger";
-      
-      if (bill.paymentStatus === "partial") {
-        status = "Partial";
-        statusClass = "badge-warning";
-      } else if (bill.paymentStatus === "paid") {
-        status = "Paid";
-        statusClass = "badge-success";
-      }
-      
-      pdfHTML += `
-            <tr>
-              <td>${billDate.toLocaleDateString('en-PK')}</td>
-              <td>${bill.id.slice(-8)}</td>
-              <td class="amount">Rs. ${billTotal.toFixed(2)}</td>
-              <td class="amount">Rs. ${billPaid.toFixed(2)}</td>
-              <td class="amount">Rs. ${billOutstanding.toFixed(2)}</td>
-              <td><span class="badge ${statusClass}">${status}</span></td>
-              <td>${dueDate ? dueDate.toLocaleDateString('en-PK') : '-'}</td>
-            </tr>
-      `;
-      
-      // Add notes for manual balance bills
-      if (bill.isManualBalance && bill.notes) {
-        pdfHTML += `
-            <tr>
-              <td colspan="7" class="notes">
-                <strong>Note:</strong> ${bill.notes}
-              </td>
-            </tr>
-        `;
-      }
-    });
-    
-    pdfHTML += `
-            <tr class="total-row">
-              <td colspan="2"><strong>Total</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalAmount.toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalPaid.toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${customer.totalOutstanding.toFixed(2)}</strong></td>
-              <td colspan="2"></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    // Summary boxes
-    pdfHTML += `
-      <div class="section" style="text-align: center;">
-        <div class="summary-box">
-          <h3>Total Bills</h3>
-          <p>${customer.bills.length}</p>
-        </div>
-        <div class="summary-box">
-          <h3>Total Amount</h3>
-          <p>Rs. ${customer.totalAmount.toFixed(2)}</p>
-        </div>
-        <div class="summary-box">
-          <h3>Amount Paid</h3>
-          <p>Rs. ${customer.totalPaid.toFixed(2)}</p>
-        </div>
-        <div class="summary-box">
-          <h3>Outstanding</h3>
-          <p style="color: #dc2626;">Rs. ${customer.totalOutstanding.toFixed(2)}</p>
-        </div>
-      </div>
-    `;
-
-    pdfHTML += `
-        <div class="footer">
-          <p>PaintPulse POS System • Customer Statement generated on ${currentDate}</p>
-          <p>This is a system-generated report for ${customer.customerName}</p>
-        </div>
-      </body>
-      </html>
-    `;
-
-    // Create blob and open in new tab for viewing/printing
+    const pdfHTML = generateCustomerPDFStatement(customer);
     const blob = new Blob([pdfHTML], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     const printWindow = window.open(url, '_blank');
+    
     if (printWindow) {
       printWindow.onload = () => {
         printWindow.print();
@@ -787,221 +930,128 @@ export default function UnpaidBills() {
     }
     
     toast({ 
-      title: "PDF Statement Opened", 
-      description: `Statement for ${customer.customerName} is ready for viewing/printing` 
+      title: "Statement Opened", 
+      description: `Customer statement for ${customer.customerName} is ready for viewing/printing` 
     });
   };
 
-  const generatePDFStatement = () => {
-    // Create PDF content
-    const currentDate = new Date().toLocaleDateString('en-PK');
-    let pdfHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Unpaid Bills Statement</title>
-        <style>
-          @page { size: A4; margin: 20mm; }
-          body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 20px; }
-          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
-          .header h1 { margin: 0; color: #2563eb; font-size: 28px; }
-          .header p { margin: 5px 0; color: #666; font-size: 14px; }
-          .section { margin-bottom: 30px; page-break-inside: avoid; }
-          .section-title { background: #2563eb; color: white; padding: 10px 15px; font-size: 16px; font-weight: bold; margin-bottom: 15px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th { background: #f3f4f6; text-align: left; padding: 10px; font-size: 12px; border-bottom: 2px solid #ddd; }
-          td { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid #eee; }
-          .amount { text-align: right; font-family: monospace; font-weight: 600; }
-          .total-row { background: #fef3c7; font-weight: bold; border-top: 2px solid #2563eb; }
-          .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
-          .badge-danger { background: #fee2e2; color: #991b1b; }
-          .badge-warning { background: #fef3c7; color: #92400e; }
-          .badge-success { background: #d1fae5; color: #065f46; }
-          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
-          .summary-box { display: inline-block; border: 2px solid #e5e7eb; padding: 15px; margin: 10px; border-radius: 8px; min-width: 180px; }
-          .summary-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #666; }
-          .summary-box p { margin: 0; font-size: 20px; font-weight: bold; color: #2563eb; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>📊 PaintPulse Unpaid Bills Statement</h1>
-          <p>Generated on ${currentDate}</p>
-        </div>
-    `;
+  // Share customer statement via WhatsApp
+  const shareCustomerStatement = (customer: ConsolidatedCustomer) => {
+    const message = `📊 *${getReceiptSettings().businessName} - Customer Statement*
 
-    // Section 1: Upcoming Dues
-    const upcomingDues = filteredAndSortedCustomers.filter(customer => 
-      customer.bills.some(bill => bill.dueDate)
-    );
+*Customer:* ${customer.customerName}
+*Phone:* ${customer.customerPhone}
+*Statement Date:* ${formatDate(new Date())}
 
-    if (upcomingDues.length > 0) {
-      const totalUpcomingAmount = upcomingDues.reduce((sum, c) => sum + c.totalOutstanding, 0);
-      
-      pdfHTML += `
-        <div class="section">
-          <div class="section-title">🔔 Upcoming & Overdue Payments (${upcomingDues.length} Customers)</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Customer</th>
-                <th>Phone</th>
-                <th>Due Date</th>
-                <th class="amount">Outstanding</th>
-                <th>Days Until/Overdue</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-      `;
-      
-      upcomingDues.forEach(customer => {
-        const bill = customer.bills.find(b => b.dueDate) || customer.bills[0];
-        
-        let daysValue = '';
-        let statusClass = 'badge-success';
-        let status = 'Upcoming';
-        
-        if (bill.dueDate) {
-          const dueDate = new Date(bill.dueDate);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          dueDate.setHours(0, 0, 0, 0);
-          
-          const diffTime = dueDate.getTime() - today.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          
-          if (diffDays < 0) {
-            const overdueDays = Math.abs(diffDays);
-            daysValue = `${overdueDays} days overdue`;
-            statusClass = overdueDays > 30 ? 'badge-danger' : 'badge-warning';
-            status = overdueDays > 30 ? 'Critical' : 'Overdue';
-          } else if (diffDays === 0) {
-            daysValue = 'Due today';
-            statusClass = 'badge-warning';
-            status = 'Due Today';
-          } else {
-            daysValue = `${diffDays} days remaining`;
-            statusClass = 'badge-success';
-            status = 'Upcoming';
-          }
-        }
-        
-        pdfHTML += `
-              <tr>
-                <td>${customer.customerName}</td>
-                <td>${customer.customerPhone}</td>
-                <td>${bill.dueDate ? new Date(bill.dueDate).toLocaleDateString('en-PK') : '-'}</td>
-                <td class="amount">Rs. ${customer.totalOutstanding.toFixed(2)}</td>
-                <td>${daysValue}</td>
-                <td><span class="badge ${statusClass}">${status}</span></td>
-              </tr>
-        `;
-      });
-      
-      pdfHTML += `
-              <tr class="total-row">
-                <td colspan="3"><strong>Subtotal</strong></td>
-                <td class="amount"><strong>Rs. ${totalUpcomingAmount.toFixed(2)}</strong></td>
-                <td colspan="2"></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
+*Outstanding Summary:*
+📋 Total Bills: ${customer.bills.length}
+💰 Total Amount: Rs. ${customer.totalAmount.toFixed(2)}
+💳 Amount Paid: Rs. ${customer.totalPaid.toFixed(2)}
+⚖️ Outstanding: Rs. ${customer.totalOutstanding.toFixed(2)}
+📅 Oldest Bill: ${formatDate(customer.oldestBillDate)}
+⏰ Days Overdue: ${customer.daysOverdue} days
 
-    // Section 2: All Unpaid Bills
-    const allUnpaid = filteredAndSortedCustomers;
-    const totalUnpaidAmount = allUnpaid.reduce((sum, c) => sum + c.totalOutstanding, 0);
+*Contact Information:*
+🏪 ${getReceiptSettings().businessName}
+📍 ${getReceiptSettings().address}
+
+Please clear your outstanding balance at your earliest convenience.
+
+${getReceiptSettings().thankYou}`;
+
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/${customer.customerPhone.replace('+', '')}?text=${encodedMessage}`;
     
-    pdfHTML += `
-      <div class="section">
-        <div class="section-title">💰 All Unpaid Bills (${allUnpaid.length} Customers)</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Phone</th>
-              <th class="amount">Total</th>
-              <th class="amount">Paid</th>
-              <th class="amount">Outstanding</th>
-              <th>Bills</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
+    window.open(whatsappUrl, '_blank');
     
-    allUnpaid.forEach(customer => {
-      pdfHTML += `
-            <tr>
-              <td>${customer.customerName}</td>
-              <td>${customer.customerPhone}</td>
-              <td class="amount">Rs. ${customer.totalAmount.toFixed(2)}</td>
-              <td class="amount">Rs. ${customer.totalPaid.toFixed(2)}</td>
-              <td class="amount">Rs. ${customer.totalOutstanding.toFixed(2)}</td>
-              <td>${customer.bills.length}</td>
-            </tr>
-      `;
+    toast({ 
+      title: "Statement Shared", 
+      description: `Customer statement sent to ${customer.customerName} via WhatsApp` 
     });
-    
-    pdfHTML += `
-            <tr class="total-row">
-              <td colspan="2"><strong>Grand Total</strong></td>
-              <td class="amount"><strong>Rs. ${allUnpaid.reduce((sum, c) => sum + c.totalAmount, 0).toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${allUnpaid.reduce((sum, c) => sum + c.totalPaid, 0).toFixed(2)}</strong></td>
-              <td class="amount"><strong>Rs. ${totalUnpaidAmount.toFixed(2)}</strong></td>
-              <td><strong>${allUnpaid.reduce((sum, c) => sum + c.bills.length, 0)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    // Summary boxes
-    pdfHTML += `
-      <div class="section" style="text-align: center;">
-        <div class="summary-box">
-          <h3>Total Customers</h3>
-          <p>${allUnpaid.length}</p>
-        </div>
-        <div class="summary-box">
-          <h3>Total Outstanding</h3>
-          <p>Rs. ${totalUnpaidAmount.toFixed(2)}</p>
-        </div>
-        <div class="summary-box">
-          <h3>With Due Dates</h3>
-          <p>${upcomingDues.length}</p>
-        </div>
-      </div>
-    `;
-
-    pdfHTML += `
-        <div class="footer">
-          <p>PaintPulse POS System • Statement generated on ${currentDate}</p>
-          <p>This is a system-generated report</p>
-        </div>
-      </body>
-      </html>
-    `;
-
-    // Create blob and download
-    const blob = new Blob([pdfHTML], { type: 'text/html' });
-    const url = window.URL.createObjectURL(blob);
-    const printWindow = window.open(url, '_blank');
-    if (printWindow) {
-      printWindow.onload = () => {
-        printWindow.print();
-      };
-    }
-    
-    toast({ title: "PDF Statement opened for printing" });
   };
+
+  // Update the customer card to use new date format
+  // In the customer cards section, update the date display:
+  <div className="flex items-center gap-2 text-muted-foreground">
+    <Calendar className="h-4 w-4" />
+    <span>{formatDate(customer.oldestBillDate)}</span>
+    <Badge 
+      variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
+      className="ml-auto"
+    >
+      {customer.daysOverdue} days ago
+    </Badge>
+  </div>
+
+  // Update the customer details dialog to use new date format
+  // In the bills list within customer details:
+  <span className="text-sm font-medium">
+    {formatDate(bill.createdAt)} - {formatTime(bill.createdAt)}
+  </span>
+
+  // Update the payment history to use new date format
+  <Badge variant="outline">
+    {formatDate(payment.createdAt)}
+  </Badge>
+
+  // Add PDF actions dropdown to customer cards
+  const CustomerCardActions = ({ customer }: { customer: ConsolidatedCustomer }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+          <FileDown className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => viewCustomerPDFStatement(customer)}>
+          <FileText className="h-4 w-4 mr-2" />
+          View Statement
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => downloadCustomerPDFStatement(customer)}>
+          <Download className="h-4 w-4 mr-2" />
+          Download Statement
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => shareCustomerStatement(customer)}>
+          <Share2 className="h-4 w-4 mr-2" />
+          Share via WhatsApp
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  // Update the customer details dialog actions
+  const CustomerDetailsActions = ({ customer }: { customer: ConsolidatedCustomer }) => (
+    <div className="flex justify-end gap-2">
+      <Button
+        variant="outline"
+        onClick={() => viewCustomerPDFStatement(customer)}
+        className="flex items-center gap-2"
+      >
+        <FileText className="h-4 w-4" />
+        View Statement
+      </Button>
+      <Button
+        variant="outline"
+        onClick={() => downloadCustomerPDFStatement(customer)}
+        className="flex items-center gap-2"
+      >
+        <Download className="h-4 w-4" />
+        Download Statement
+      </Button>
+      <Button
+        variant="outline"
+        onClick={() => shareCustomerStatement(customer)}
+        className="flex items-center gap-2"
+      >
+        <Share2 className="h-4 w-4" />
+        Share via WhatsApp
+      </Button>
+    </div>
+  );
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header with Title */}
+      {/* Header */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -1011,7 +1061,6 @@ export default function UnpaidBills() {
             <p className="text-sm text-muted-foreground">Track and manage outstanding payments</p>
           </div>
           
-          {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
             <Button 
               variant="default" 
@@ -1033,9 +1082,8 @@ export default function UnpaidBills() {
           </div>
         </div>
 
-        {/* Search and Filter Row */}
+        {/* Search and Filter */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Search Input */}
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -1046,7 +1094,6 @@ export default function UnpaidBills() {
             />
           </div>
 
-          {/* Filter Dropdown */}
           <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen}>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="flex items-center gap-2">
@@ -1060,7 +1107,6 @@ export default function UnpaidBills() {
                 <div>
                   <h4 className="font-medium mb-2">Filters</h4>
                   
-                  {/* Amount Range */}
                   <div className="space-y-2">
                     <Label className="text-sm">Amount Range</Label>
                     <div className="flex gap-2">
@@ -1085,7 +1131,6 @@ export default function UnpaidBills() {
                     </div>
                   </div>
 
-                  {/* Days Overdue */}
                   <div className="space-y-2">
                     <Label className="text-sm">Minimum Days Overdue</Label>
                     <Input
@@ -1096,7 +1141,6 @@ export default function UnpaidBills() {
                     />
                   </div>
 
-                  {/* Due Date Range */}
                   <div className="space-y-2">
                     <Label className="text-sm">Due Date Range</Label>
                     <div className="flex gap-2">
@@ -1121,7 +1165,6 @@ export default function UnpaidBills() {
                     </div>
                   </div>
 
-                  {/* Sort By */}
                   <div className="space-y-2">
                     <Label className="text-sm">Sort By</Label>
                     <div className="grid grid-cols-2 gap-2">
@@ -1156,7 +1199,6 @@ export default function UnpaidBills() {
                     </div>
                   </div>
 
-                  {/* Clear Filters */}
                   {hasActiveFilters && (
                     <Button
                       variant="ghost"
@@ -1265,24 +1307,7 @@ export default function UnpaidBills() {
                       {customer.bills.length > 1 && (
                         <Badge variant="secondary">{customer.bills.length} Bills</Badge>
                       )}
-                      {/* PDF Actions Dropdown */}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <FileDown className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => viewCustomerPDFStatement(customer)}>
-                            <FileText className="h-4 w-4 mr-2" />
-                            View Statement
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => generateCustomerPDFStatement(customer)}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download Statement
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <CustomerCardActions customer={customer} />
                     </div>
                   </div>
                 </CardHeader>
@@ -1294,7 +1319,7 @@ export default function UnpaidBills() {
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Calendar className="h-4 w-4" />
-                      <span>{customer.oldestBillDate.toLocaleDateString()}</span>
+                      <span>{formatDate(customer.oldestBillDate)}</span>
                       <Badge 
                         variant={customer.daysOverdue > 30 ? "destructive" : "secondary"} 
                         className="ml-auto"
@@ -1375,29 +1400,12 @@ export default function UnpaidBills() {
                 </div>
                 <div>
                   <p className="text-muted-foreground">Oldest Bill</p>
-                  <p className="font-medium">{selectedCustomer.oldestBillDate.toLocaleDateString()}</p>
+                  <p className="font-medium">{formatDate(selectedCustomer.oldestBillDate)}</p>
                 </div>
               </div>
 
               {/* PDF Actions */}
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => viewCustomerPDFStatement(selectedCustomer)}
-                  className="flex items-center gap-2"
-                >
-                  <FileText className="h-4 w-4" />
-                  View Statement
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => generateCustomerPDFStatement(selectedCustomer)}
-                  className="flex items-center gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  Download Statement
-                </Button>
-              </div>
+              <CustomerDetailsActions customer={selectedCustomer} />
 
               {/* Bills List */}
               <div className="space-y-3">
@@ -1415,7 +1423,7 @@ export default function UnpaidBills() {
                             <div className="flex items-center gap-2">
                               <Receipt className="h-4 w-4 text-muted-foreground" />
                               <span className="text-sm font-medium">
-                                {new Date(bill.createdAt).toLocaleDateString()} - {new Date(bill.createdAt).toLocaleTimeString()}
+                                {formatDate(bill.createdAt)} - {formatTime(bill.createdAt)}
                               </span>
                               {getPaymentStatusBadge(bill.paymentStatus)}
                               {bill.isManualBalance && (
@@ -1440,18 +1448,16 @@ export default function UnpaidBills() {
                                 </div>
                               )}
                             </div>
-                            {/* Show notes for manual balance bills */}
                             {bill.isManualBalance && bill.notes && (
                               <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 p-2 rounded border border-blue-200">
                                 <MessageSquare className="h-3 w-3 mt-0.5 text-blue-500 flex-shrink-0" />
                                 <span className="flex-1">{bill.notes}</span>
                               </div>
                             )}
-                            {/* Show due date if exists */}
                             {bill.dueDate && (
                               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <Calendar className="h-3 w-3" />
-                                <span>Due: {new Date(bill.dueDate).toLocaleDateString()}</span>
+                                <span>Due: {formatDate(bill.dueDate)}</span>
                               </div>
                             )}
                           </div>
@@ -1498,14 +1504,14 @@ export default function UnpaidBills() {
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
                                   <Badge variant="outline">
-                                    {new Date(payment.createdAt).toLocaleDateString()}
+                                    {formatDate(payment.createdAt)}
                                   </Badge>
                                   <Badge variant="secondary">
                                     {payment.paymentMethod}
                                   </Badge>
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                  Bill: {new Date(payment.sale.createdAt).toLocaleDateString()}
+                                  Bill: {formatDate(payment.sale.createdAt)}
                                 </div>
                                 {payment.notes && (
                                   <div className="text-xs text-muted-foreground">
@@ -1701,7 +1707,7 @@ export default function UnpaidBills() {
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
-                                  {new Date(customer.lastSaleDate).toLocaleDateString()}
+                                  {formatDate(customer.lastSaleDate)}
                                 </div>
                               </div>
                             </CommandItem>

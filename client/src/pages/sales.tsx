@@ -1,3 +1,4 @@
+// sales.tsx - Updated with glassy design and dd-mm-yyyy dates
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,9 +20,65 @@ interface Sale {
   createdAt: string;
 }
 
+interface SaleWithItems extends Sale {
+  items?: Array<{
+    productName: string;
+    variantName: string;
+    colorName: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
+}
+
+// Format date to dd-mm-yyyy
+const formatDate = (date: Date | string) => {
+  const d = new Date(date);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+};
+
+// Format time to hh:mm:ss
+const formatTime = (date: Date | string) => {
+  const d = new Date(date);
+  return d.toLocaleTimeString('en-PK', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false 
+  });
+};
+
+// Get receipt settings from localStorage
+const getReceiptSettings = () => {
+  if (typeof window === 'undefined') return null;
+  
+  try {
+    const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+    if (savedReceiptSettings) {
+      return JSON.parse(savedReceiptSettings);
+    }
+  } catch (error) {
+    console.error("Error loading receipt settings:", error);
+  }
+  
+  return {
+    businessName: "ALI MUHAMMAD PAINTS",
+    address: "Basti Malook, Multan. 0300-868-3395",
+    dealerText: "AUTHORIZED DEALER:",
+    dealerBrands: "ICI-DULUX • MOBI PAINTS • WESTER 77",
+    thankYou: "THANKS FOR YOUR BUSINESS",
+    fontSize: "11",
+    itemFontSize: "12",
+    padding: "12"
+  };
+};
+
 export default function Sales() {
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("all"); // "all", "today", "yesterday", "week", "month", "custom"
+  const [dateFilter, setDateFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -38,11 +95,12 @@ export default function Sales() {
     toast({ title: "Sales data refreshed" });
   };
 
-  // Generate PDF for individual sale bill
-  const generateSalePDF = (sale: Sale) => {
+  // Generate detailed sale bill PDF with glassy design
+  const generateDetailedSalePDF = (sale: SaleWithItems) => {
+    const receiptSettings = getReceiptSettings();
     const saleDate = new Date(sale.createdAt);
-    const formattedDate = saleDate.toLocaleDateString('en-PK');
-    const formattedTime = saleDate.toLocaleTimeString('en-PK');
+    const formattedDate = formatDate(saleDate);
+    const formattedTime = formatTime(saleDate);
     
     let pdfHTML = `
       <!DOCTYPE html>
@@ -52,134 +110,378 @@ export default function Sales() {
         <title>Sale Bill - ${sale.id.slice(-8)}</title>
         <style>
           @page { size: A4; margin: 15mm; }
-          body { font-family: 'Arial', sans-serif; color: #333; margin: 0; padding: 0; }
-          .header { text-align: center; border-bottom: 3px solid #2563eb; padding-bottom: 15px; margin-bottom: 25px; }
-          .header h1 { margin: 0; color: #2563eb; font-size: 28px; }
-          .header p { margin: 5px 0; color: #666; font-size: 14px; }
-          .store-info { background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-          .store-info h2 { margin: 0 0 10px 0; color: #1e293b; font-size: 20px; }
-          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
-          .info-card { background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #2563eb; }
-          .info-card h3 { margin: 0 0 10px 0; color: #1e293b; font-size: 16px; }
-          .info-item { margin-bottom: 8px; }
-          .info-label { font-weight: 600; color: #475569; display: inline-block; width: 120px; }
-          .amount-section { background: #fff7ed; padding: 20px; border-radius: 8px; margin: 20px 0; border: 2px solid #fdba74; }
-          .amount-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; text-align: center; }
-          .amount-item { padding: 10px; }
-          .amount-label { font-size: 12px; color: #666; margin-bottom: 5px; }
-          .amount-value { font-size: 18px; font-weight: bold; font-family: monospace; }
-          .payment-status { 
-            display: inline-block; 
-            padding: 8px 16px; 
-            border-radius: 20px; 
-            font-weight: bold; 
-            font-size: 14px; 
-            margin: 10px 0; 
+          body { 
+            font-family: 'Segoe UI', system-ui, sans-serif; 
+            color: #2d3748; 
+            margin: 0; 
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
           }
-          .status-paid { background: #d1fae5; color: #065f46; border: 2px solid #10b981; }
-          .status-partial { background: #fef3c7; color: #92400e; border: 2px solid #f59e0b; }
-          .status-unpaid { background: #fee2e2; color: #991b1b; border: 2px solid #ef4444; }
-          .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #666; border-top: 1px solid #ddd; padding-top: 15px; }
-          .barcode { text-align: center; margin: 20px 0; font-family: monospace; letter-spacing: 2px; }
-          .thank-you { text-align: center; margin: 20px 0; font-style: italic; color: #666; }
+          .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: 
+              0 20px 40px rgba(0, 0, 0, 0.1),
+              0 0 0 1px rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+            margin: 20px;
+          }
+          .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+          }
+          .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            position: relative;
+          }
+          .header p {
+            margin: 8px 0 0 0;
+            font-size: 16px;
+            opacity: 0.9;
+            position: relative;
+          }
+          .store-info {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            margin: 20px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            text-align: center;
+          }
+          .store-info h2 {
+            margin: 0 0 12px 0;
+            color: #1a202c;
+            font-size: 20px;
+            font-weight: 600;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px;
+          }
+          .info-card {
+            background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
+          }
+          .info-card h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+          }
+          .info-label {
+            font-weight: 500;
+            opacity: 0.9;
+          }
+          .info-value {
+            font-weight: 600;
+          }
+          .amount-section {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 24px;
+            margin: 20px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(245, 158, 11, 0.3);
+          }
+          .amount-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            text-align: center;
+          }
+          .amount-item {
+            padding: 16px;
+          }
+          .amount-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+          }
+          .amount-value {
+            font-size: 20px;
+            font-weight: 700;
+            font-family: 'SF Mono', Monaco, monospace;
+          }
+          .payment-status {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 14px;
+            margin: 16px 0 0 0;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+          }
+          .status-paid {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          }
+          .status-partial {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+          }
+          .status-unpaid {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+          }
+          .section {
+            margin: 20px;
+          }
+          .section-title {
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+            color: white;
+            padding: 16px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 16px rgba(107, 114, 128, 0.3);
+          }
+          .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .items-table th {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            text-align: left;
+            padding: 14px 16px;
+            font-size: 12px;
+            font-weight: 600;
+          }
+          .items-table td {
+            padding: 12px 16px;
+            font-size: 11px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+          }
+          .items-table .amount {
+            text-align: right;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-weight: 600;
+          }
+          .total-row {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            font-weight: 700;
+          }
+          .total-row td {
+            border-bottom: none;
+            color: #92400e;
+          }
+          .footer {
+            background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+            margin-top: 30px;
+          }
+          .footer p {
+            margin: 4px 0;
+            font-size: 12px;
+            opacity: 0.8;
+          }
+          .barcode {
+            text-align: center;
+            margin: 20px 0;
+            font-family: monospace;
+            letter-spacing: 2px;
+            color: #6b7280;
+          }
+          .thank-you {
+            text-align: center;
+            margin: 20px 0;
+            font-style: italic;
+            color: #6b7280;
+            font-size: 14px;
+          }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>🛍️ PaintPulse Sale Bill</h1>
-          <p>Your Trusted Paint Partner</p>
-        </div>
-
-        <div class="store-info">
-          <h2>PaintPulse Store</h2>
-          <p>Quality Paints &amp; Solutions</p>
-          <p>📞 Store: +92-XXX-XXXXXXX | 📧 info@paintpulse.com</p>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-card">
-            <h3>Bill Information</h3>
-            <div class="info-item">
-              <span class="info-label">Bill ID:</span> ${sale.id.slice(-8).toUpperCase()}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Date:</span> ${formattedDate}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Time:</span> ${formattedTime}
-            </div>
+        <div class="container">
+          <div class="header">
+            <h1>🛍️ Sale Bill</h1>
+            <p>Professional Invoice • ${formattedDate} at ${formattedTime}</p>
           </div>
 
-          <div class="info-card">
-            <h3>Customer Information</h3>
-            <div class="info-item">
-              <span class="info-label">Name:</span> ${sale.customerName}
-            </div>
-            <div class="info-item">
-              <span class="info-label">Phone:</span> ${sale.customerPhone}
-            </div>
+          <div class="store-info">
+            <h2>${receiptSettings.businessName}</h2>
+            <p>${receiptSettings.address}</p>
+            <p><strong>${receiptSettings.dealerText}</strong> ${receiptSettings.dealerBrands}</p>
           </div>
-        </div>
 
-        <div class="amount-section">
-          <div class="amount-grid">
-            <div class="amount-item">
-              <div class="amount-label">Total Amount</div>
-              <div class="amount-value">Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</div>
+          <div class="info-grid">
+            <div class="info-card">
+              <h3>📄 Bill Information</h3>
+              <div class="info-item">
+                <span class="info-label">Bill ID:</span>
+                <span class="info-value">${sale.id.slice(-8).toUpperCase()}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Date:</span>
+                <span class="info-value">${formattedDate}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Time:</span>
+                <span class="info-value">${formattedTime}</span>
+              </div>
             </div>
-            <div class="amount-item">
-              <div class="amount-label">Amount Paid</div>
-              <div class="amount-value">Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}</div>
-            </div>
-            <div class="amount-item">
-              <div class="amount-label">Balance Due</div>
-              <div class="amount-value" style="color: #dc2626;">
-                Rs. ${Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString()}
+
+            <div class="info-card">
+              <h3>👤 Customer Information</h3>
+              <div class="info-item">
+                <span class="info-label">Name:</span>
+                <span class="info-value">${sale.customerName}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Phone:</span>
+                <span class="info-value">${sale.customerPhone}</span>
               </div>
             </div>
           </div>
-          
-          <div style="text-align: center; margin-top: 15px;">
-            <div class="payment-status ${
-              sale.paymentStatus === 'paid' ? 'status-paid' : 
-              sale.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid'
-            }">
-              ${sale.paymentStatus.toUpperCase()} 
-              ${sale.paymentStatus === 'partial' ? 'PAYMENT' : ''}
+    `;
+
+    // Items Table
+    if (sale.items && sale.items.length > 0) {
+      pdfHTML += `
+        <div class="section">
+          <div class="section-title">🛒 Items Details • ${sale.items.length} Items</div>
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Item Description</th>
+                <th>Variant/Color</th>
+                <th>Quantity</th>
+                <th>Unit Price</th>
+                <th>Total Price</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+      
+      sale.items.forEach((item, index) => {
+        pdfHTML += `
+              <tr>
+                <td>${item.productName}</td>
+                <td>${item.variantName} ${item.colorName ? `- ${item.colorName}` : ''}</td>
+                <td>${item.quantity}</td>
+                <td class="amount">Rs. ${item.unitPrice.toFixed(2)}</td>
+                <td class="amount">Rs. ${item.totalPrice.toFixed(2)}</td>
+              </tr>
+        `;
+      });
+      
+      pdfHTML += `
+              <tr class="total-row">
+                <td colspan="4"><strong>GRAND TOTAL</strong></td>
+                <td class="amount"><strong>Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    // Amount Summary
+    pdfHTML += `
+      <div class="amount-section">
+        <div class="amount-grid">
+          <div class="amount-item">
+            <div class="amount-label">Total Amount</div>
+            <div class="amount-value">Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</div>
+          </div>
+          <div class="amount-item">
+            <div class="amount-label">Amount Paid</div>
+            <div class="amount-value">Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}</div>
+          </div>
+          <div class="amount-item">
+            <div class="amount-label">Balance Due</div>
+            <div class="amount-value">
+              Rs. ${Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString()}
             </div>
           </div>
         </div>
-
-        <div class="barcode">
-          ▮▮ ▮ ▮▮▮ ▮ ▮▮▮ ▮ ▮▮ ▮▮▮<br/>
-          <small>Bill ID: ${sale.id.slice(-8).toUpperCase()}</small>
+        
+        <div style="text-align: center;">
+          <div class="payment-status ${
+            sale.paymentStatus === 'paid' ? 'status-paid' : 
+            sale.paymentStatus === 'partial' ? 'status-partial' : 'status-unpaid'
+          }">
+            ${sale.paymentStatus.toUpperCase()} 
+            ${sale.paymentStatus === 'partial' ? 'PAYMENT' : ''}
+          </div>
         </div>
+      </div>
 
-        <div class="thank-you">
-          Thank you for your business! 🎨<br/>
-          We appreciate your trust in PaintPulse
-        </div>
+      <div class="barcode">
+        ▮▮ ▮ ▮▮▮ ▮ ▮▮▮ ▮ ▮▮ ▮▮▮<br/>
+        <small>Bill ID: ${sale.id.slice(-8).toUpperCase()}</small>
+      </div>
 
-        <div class="footer">
-          <p>PaintPulse POS System • Generated on ${new Date().toLocaleDateString('en-PK')}</p>
-          <p>This is a computer-generated bill • For queries contact: +92-XXX-XXXXXXX</p>
-        </div>
-      </body>
-      </html>
+      <div class="thank-you">
+        ${receiptSettings.thankYou}! 🎨<br/>
+        We appreciate your trust in ${receiptSettings.businessName}
+      </div>
+
+      <div class="footer">
+        <p>${receiptSettings.businessName} • ${receiptSettings.address}</p>
+        <p>Generated on ${formatDate(new Date())} • This is a computer-generated bill</p>
+      </div>
+    </body>
+    </html>
     `;
 
     return pdfHTML;
   };
 
   // Download PDF for individual sale
-  const downloadSalePDF = (sale: Sale) => {
-    const pdfHTML = generateSalePDF(sale);
+  const downloadSalePDF = (sale: SaleWithItems) => {
+    const pdfHTML = generateDetailedSalePDF(sale);
     const blob = new Blob([pdfHTML], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Bill_${sale.customerName}_${sale.id.slice(-8)}_${new Date(sale.createdAt).toLocaleDateString('en-PK').replace(/\//g, '-')}.html`;
+    a.download = `Bill_${sale.customerName}_${sale.id.slice(-8)}_${formatDate(new Date()).replace(/\//g, '-')}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -191,9 +493,9 @@ export default function Sales() {
     });
   };
 
-  // View PDF for individual sale (opens in new tab)
-  const viewSalePDF = (sale: Sale) => {
-    const pdfHTML = generateSalePDF(sale);
+  // View PDF for individual sale
+  const viewSalePDF = (sale: SaleWithItems) => {
+    const pdfHTML = generateDetailedSalePDF(sale);
     const blob = new Blob([pdfHTML], { type: 'text/html' });
     const url = window.URL.createObjectURL(blob);
     const printWindow = window.open(url, '_blank');
@@ -211,18 +513,18 @@ export default function Sales() {
   };
 
   // Share bill via WhatsApp
-  const shareBillViaWhatsApp = (sale: Sale) => {
+  const shareBillViaWhatsApp = (sale: SaleWithItems) => {
     const totalAmount = Math.round(parseFloat(sale.totalAmount));
     const amountPaid = Math.round(parseFloat(sale.amountPaid));
     const amountDue = totalAmount - amountPaid;
     
-    const message = `🛍️ *PaintPulse Sale Bill*
+    const message = `🛍️ *${getReceiptSettings().businessName} - Sale Bill*
 
 *Bill ID:* ${sale.id.slice(-8).toUpperCase()}
 *Customer:* ${sale.customerName}
 *Phone:* ${sale.customerPhone}
-*Date:* ${new Date(sale.createdAt).toLocaleDateString('en-PK')}
-*Time:* ${new Date(sale.createdAt).toLocaleTimeString('en-PK')}
+*Date:* ${formatDate(sale.createdAt)}
+*Time:* ${formatTime(sale.createdAt)}
 
 *Amount Details:*
 💰 Total: Rs. ${totalAmount.toLocaleString()}
@@ -232,7 +534,7 @@ export default function Sales() {
 *Status:* ${sale.paymentStatus.toUpperCase()}
 
 Thank you for your business! 🎨
-_PaintPulse - Your Trusted Paint Partner_`;
+_${getReceiptSettings().businessName} - ${getReceiptSettings().address}_`;
 
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
@@ -302,7 +604,7 @@ _PaintPulse - Your Trusted Paint Partner_`;
           if (startDate && endDate) {
             const start = new Date(startDate);
             const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999); // Include entire end date
+            end.setHours(23, 59, 59, 999);
             
             filtered = filtered.filter(sale => {
               const saleDate = new Date(sale.createdAt);
@@ -492,11 +794,11 @@ _PaintPulse - Your Trusted Paint Partner_`;
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Date: </span>
-                                    <span>{new Date(sale.createdAt).toLocaleDateString()}</span>
+                                    <span>{formatDate(sale.createdAt)}</span>
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Time: </span>
-                                    <span>{new Date(sale.createdAt).toLocaleTimeString()}</span>
+                                    <span>{formatTime(sale.createdAt)}</span>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-4 text-xs font-mono">
@@ -528,7 +830,7 @@ _PaintPulse - Your Trusted Paint Partner_`;
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => viewSalePDF(sale)}
+                                    onClick={() => viewSalePDF(sale as SaleWithItems)}
                                     className="h-8 w-8 p-0"
                                     title="View PDF"
                                   >
@@ -537,7 +839,7 @@ _PaintPulse - Your Trusted Paint Partner_`;
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => downloadSalePDF(sale)}
+                                    onClick={() => downloadSalePDF(sale as SaleWithItems)}
                                     className="h-8 w-8 p-0"
                                     title="Download PDF"
                                   >
@@ -546,7 +848,7 @@ _PaintPulse - Your Trusted Paint Partner_`;
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => shareBillViaWhatsApp(sale)}
+                                    onClick={() => shareBillViaWhatsApp(sale as SaleWithItems)}
                                     className="h-8 w-8 p-0"
                                     title="Share via WhatsApp"
                                   >
