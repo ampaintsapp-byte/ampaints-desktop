@@ -93,6 +93,36 @@ export function migrateDatabase(db: Database.Database): void {
       db.exec("ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'");
     }
     
+    // Add audit PIN columns if missing (added for Audit Reports security)
+    if (!settingsColumnNames.includes('audit_pin_hash')) {
+      console.log('[Migration] Adding audit_pin_hash column to settings table');
+      db.exec("ALTER TABLE settings ADD COLUMN audit_pin_hash TEXT");
+    }
+    
+    if (!settingsColumnNames.includes('audit_pin_salt')) {
+      console.log('[Migration] Adding audit_pin_salt column to settings table');
+      db.exec("ALTER TABLE settings ADD COLUMN audit_pin_salt TEXT");
+    }
+    
+    // Add permission columns if missing (added for Role-Based Access Control)
+    const permissionColumns = [
+      { name: 'perm_stock_delete', default: 1 },
+      { name: 'perm_stock_edit', default: 1 },
+      { name: 'perm_stock_history_delete', default: 1 },
+      { name: 'perm_sales_delete', default: 1 },
+      { name: 'perm_sales_edit', default: 1 },
+      { name: 'perm_payment_edit', default: 1 },
+      { name: 'perm_payment_delete', default: 1 },
+      { name: 'perm_database_access', default: 1 },
+    ];
+    
+    for (const col of permissionColumns) {
+      if (!settingsColumnNames.includes(col.name)) {
+        console.log(`[Migration] Adding ${col.name} column to settings table`);
+        db.exec(`ALTER TABLE settings ADD COLUMN ${col.name} INTEGER NOT NULL DEFAULT ${col.default}`);
+      }
+    }
+    
     // Insert default settings row if not exists
     const settingsExists = db.prepare('SELECT COUNT(*) as count FROM settings WHERE id = ?').get('default') as { count: number };
     if (settingsExists.count === 0) {

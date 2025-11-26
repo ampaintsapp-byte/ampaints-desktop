@@ -20,6 +20,7 @@ import Reports from "@/pages/reports";
 import RateManagement from "@/pages/rate-management";
 import BillPrint from "@/pages/bill-print";
 import Returns from "@/pages/returns";
+import Audit from "@/pages/audit";
 import Settings from "@/pages/settings";
 
 function Router() {
@@ -33,6 +34,7 @@ function Router() {
       <Route path="/customer/:phone" component={CustomerStatement} />
       <Route path="/reports" component={Reports} />
       <Route path="/returns" component={Returns} />
+      <Route path="/audit" component={Audit} />
       <Route path="/rates" component={RateManagement} />
       <Route path="/settings" component={Settings} />
       <Route path="/bill/:id" component={BillPrint} />

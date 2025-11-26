@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useDateFormat } from "@/hooks/use-date-format";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
+import { usePermissions } from "@/hooks/use-permissions";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useState, useMemo, useRef, useEffect } from "react";
 import jsPDF from "jspdf";
@@ -33,6 +34,7 @@ import ThermalReceipt from "@/components/thermal-receipt";
 export default function BillPrint() {
   const { formatDateShort } = useDateFormat();
   const { receiptSettings } = useReceiptSettings();
+  const { canDeleteSales, canEditSales } = usePermissions();
   const [, params] = useRoute("/bill/:id");
   const saleId = params?.id;
   const { toast } = useToast();
@@ -837,7 +839,7 @@ _${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
                     <Save className="h-4 w-4 mr-2" /> Save Changes
                   </Button>
                 </>
-              ) : (
+              ) : (canEditSales || canDeleteSales) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="icon" data-testid="button-bill-menu">
@@ -845,18 +847,24 @@ _${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={startEditMode} data-testid="menu-edit-bill">
-                      <Edit className="h-4 w-4 mr-2" /> Edit Bill
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setAddItemDialogOpen(true)} data-testid="menu-add-item">
-                      <Plus className="h-4 w-4 mr-2" /> Add Item
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-red-600" data-testid="menu-delete-bill">
-                      <Trash2 className="h-4 w-4 mr-2" /> Delete Bill
-                    </DropdownMenuItem>
+                    {canEditSales && (
+                      <DropdownMenuItem onClick={startEditMode} data-testid="menu-edit-bill">
+                        <Edit className="h-4 w-4 mr-2" /> Edit Bill
+                      </DropdownMenuItem>
+                    )}
+                    {canEditSales && (
+                      <DropdownMenuItem onClick={() => setAddItemDialogOpen(true)} data-testid="menu-add-item">
+                        <Plus className="h-4 w-4 mr-2" /> Add Item
+                      </DropdownMenuItem>
+                    )}
+                    {canDeleteSales && (
+                      <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-red-600" data-testid="menu-delete-bill">
+                        <Trash2 className="h-4 w-4 mr-2" /> Delete Bill
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
-              )}
+              ) : null}
             </div>
           </div>
         </div>

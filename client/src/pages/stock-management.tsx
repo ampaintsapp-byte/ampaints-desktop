@@ -63,6 +63,7 @@ import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { useDateFormat } from "@/hooks/use-date-format";
+import { usePermissions } from "@/hooks/use-permissions";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Product, VariantWithProduct, ColorWithVariantAndProduct } from "@shared/schema";
 import { getEffectiveRate, formatDateToDDMMYYYY, parseDDMMYYYYToDate } from "@shared/schema";
@@ -201,6 +202,7 @@ export default function StockManagement() {
   const [expandedSections, setExpandedSections] = useState({ variants: true, colors: true });
 
   const { toast } = useToast();
+  const { canDeleteStock, canEditStock, canDeleteStockHistory } = usePermissions();
 
   /* Search & stock-in state */
   const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -1559,7 +1561,7 @@ export default function StockManagement() {
                   </div>
 
                   {/* Bulk Actions */}
-                  {selectedProducts.size > 0 && (
+                  {selectedProducts.size > 0 && canDeleteStock && (
                     <div className="flex gap-2 items-center p-3 bg-amber-50 rounded-lg border border-amber-200">
                       <span className="text-sm font-medium text-amber-800">{selectedProducts.size} selected</span>
                       <Button 
@@ -1675,18 +1677,20 @@ export default function StockManagement() {
                               <Eye className="h-4 w-4 mr-1" />
                               View
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 glass-card border-white/20 text-slate-700 hover:border-green-300"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingProduct(product);
-                              }}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
+                            {canEditStock && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 glass-card border-white/20 text-slate-700 hover:border-green-300"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingProduct(product);
+                                }}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                            )}
                           </div>
                         </div>
                       );
@@ -1884,7 +1888,7 @@ export default function StockManagement() {
                   </div>
 
                   {/* Bulk Actions */}
-                  {selectedVariants.size > 0 && (
+                  {selectedVariants.size > 0 && canDeleteStock && (
                     <div className="flex gap-2 items-center p-3 bg-amber-50 rounded-lg border border-amber-200">
                       <span className="text-sm font-medium text-amber-800">{selectedVariants.size} selected</span>
                       <Button 
@@ -1991,18 +1995,20 @@ export default function StockManagement() {
                               <Eye className="h-4 w-4 mr-1" />
                               View
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 glass-card border-white/20 text-slate-700 hover:border-blue-300"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingVariant(variant);
-                              }}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
+                            {canEditStock && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 glass-card border-white/20 text-slate-700 hover:border-blue-300"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingVariant(variant);
+                                }}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                            )}
                           </div>
                         </div>
                       );
@@ -2205,7 +2211,7 @@ export default function StockManagement() {
                   </div>
 
                   {/* Bulk Actions */}
-                  {selectedColors.size > 0 && (
+                  {selectedColors.size > 0 && canDeleteStock && (
                     <div className="flex gap-2 items-center p-3 bg-amber-50 rounded-lg border border-amber-200">
                       <span className="text-sm font-medium text-amber-800">{selectedColors.size} selected</span>
                       <Button 
@@ -2313,18 +2319,20 @@ export default function StockManagement() {
                               <Eye className="h-4 w-4 mr-1" />
                               View
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 glass-card border-white/20 text-slate-700 hover:border-blue-300"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingColor(color);
-                              }}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
+                            {canEditStock && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 glass-card border-white/20 text-slate-700 hover:border-blue-300"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingColor(color);
+                                }}
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2830,8 +2838,10 @@ export default function StockManagement() {
                           key={history.id} 
                           className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate group cursor-pointer"
                           onClick={() => {
-                            setEditingStockHistory(history);
-                            setIsEditStockHistoryOpen(true);
+                            if (canDeleteStockHistory) {
+                              setEditingStockHistory(history);
+                              setIsEditStockHistoryOpen(true);
+                            }
                           }}
                         >
                           <div className="flex items-start justify-between mb-3">

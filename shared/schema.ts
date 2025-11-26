@@ -123,6 +123,22 @@ export const settings = sqliteTable("settings", {
   cardButtonColor: text("card_button_color").notNull().default("gray-900"), // gray-900, blue-600, green-600, etc
   cardPriceColor: text("card_price_color").notNull().default("blue-600"), // blue-600, green-600, gray-900, etc
   showStockBadgeBorder: integer("show_stock_badge_border", { mode: 'boolean' }).notNull().default(false),
+  // Audit PIN Settings (stored as hash for security)
+  auditPinHash: text("audit_pin_hash"), // SHA-256 hash of PIN
+  auditPinSalt: text("audit_pin_salt"), // Random salt for hashing
+  // Role-Based Access Control Permissions (require PIN to enable)
+  // Stock Management Permissions
+  permStockDelete: integer("perm_stock_delete", { mode: 'boolean' }).notNull().default(true), // Delete products/variants/colors
+  permStockEdit: integer("perm_stock_edit", { mode: 'boolean' }).notNull().default(true), // Edit products/variants/colors
+  permStockHistoryDelete: integer("perm_stock_history_delete", { mode: 'boolean' }).notNull().default(true), // Delete stock history
+  // Sales Permissions
+  permSalesDelete: integer("perm_sales_delete", { mode: 'boolean' }).notNull().default(true), // Delete bills
+  permSalesEdit: integer("perm_sales_edit", { mode: 'boolean' }).notNull().default(true), // Edit bills
+  // Unpaid Bills Permissions
+  permPaymentEdit: integer("perm_payment_edit", { mode: 'boolean' }).notNull().default(true), // Edit payments
+  permPaymentDelete: integer("perm_payment_delete", { mode: 'boolean' }).notNull().default(true), // Delete payments
+  // Database Access (requires PIN)
+  permDatabaseAccess: integer("perm_database_access", { mode: 'boolean' }).notNull().default(true), // Access database tab
   updatedAt: integer("updated_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
 

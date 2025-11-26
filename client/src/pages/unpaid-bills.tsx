@@ -70,6 +70,7 @@ import {
   MessageCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { usePermissions } from "@/hooks/use-permissions";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Sale } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -182,6 +183,7 @@ export default function UnpaidBills() {
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   
   const { toast } = useToast();
+  const { canEditPayment, canDeletePayment, canEditSales } = usePermissions();
 
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
@@ -948,14 +950,16 @@ ${receiptSettings.address}`;
           </div>
           
           <div className="flex items-center gap-3 flex-wrap">
-            <Button 
-              variant="outline" 
-              onClick={() => setManualBalanceDialogOpen(true)}
-              className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
-            >
-              <Plus className="h-4 w-4" />
-              Add Balance
-            </Button>
+            {canEditSales && (
+              <Button 
+                variant="outline" 
+                onClick={() => setManualBalanceDialogOpen(true)}
+                className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
+              >
+                <Plus className="h-4 w-4" />
+                Add Balance
+              </Button>
+            )}
 
             <Button 
               className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all duration-300"
@@ -1354,7 +1358,7 @@ ${receiptSettings.address}`;
                   </div>
                 </div>
 
-                {/* Action Buttons */}
+                {/* Action Button */}
                 <div className="flex gap-2">
                   <Button
                     className="flex-1 glass-card border-white/20 text-slate-700 hover:border-purple-300 transition-all"
@@ -1367,19 +1371,6 @@ ${receiptSettings.address}`;
                   >
                     <Eye className="h-4 w-4 mr-2" />
                     Details
-                  </Button>
-                  <Button
-                    className="flex-1 gradient-bg text-white hover:shadow-lg transition-all"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedCustomerPhone(customer.customerPhone);
-                      setPaymentDialogOpen(true);
-                      setPaymentAmount(Math.round(customer.totalOutstanding).toString());
-                    }}
-                  >
-                    <Banknote className="h-4 w-4 mr-2" />
-                    Pay
                   </Button>
                 </div>
               </div>
@@ -1541,16 +1532,18 @@ ${receiptSettings.address}`;
                 <Button variant="outline" onClick={() => setSelectedCustomerPhone(null)} className="glass-card border-white/20">
                   Close
                 </Button>
-                <Button
-                  onClick={() => {
-                    setPaymentDialogOpen(true);
-                    setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
-                  }}
-                  className="gradient-bg text-white"
-                >
-                  <Banknote className="h-4 w-4 mr-2" />
-                  Record Payment
-                </Button>
+                {canEditPayment && (
+                  <Button
+                    onClick={() => {
+                      setPaymentDialogOpen(true);
+                      setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
+                    }}
+                    className="gradient-bg text-white"
+                  >
+                    <Banknote className="h-4 w-4 mr-2" />
+                    Record Payment
+                  </Button>
+                )}
               </DialogFooter>
             </div>
           )}

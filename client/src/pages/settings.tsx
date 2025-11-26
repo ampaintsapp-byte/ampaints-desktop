@@ -10,10 +10,18 @@ import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Settings2, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette, CalendarDays, Check } from "lucide-react";
+import { Settings2, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette, CalendarDays, Check, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import type { Settings as UISettings, UpdateSettings } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
 type DateFormatType = "DD-MM-YYYY" | "MM-DD-YYYY" | "YYYY-MM-DD";
 
@@ -98,6 +106,69 @@ export default function Settings() {
   
   const [databasePath, setDatabasePath] = useState<string>("");
   const [isElectron, setIsElectron] = useState(false);
+
+  const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
+  const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
+  const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
+  const [databasePinError, setDatabasePinError] = useState("");
+  const [showDatabasePin, setShowDatabasePin] = useState(false);
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  const handleDatabaseTabClick = () => {
+    if (!uiSettings?.permDatabaseAccess) {
+      toast({
+        title: "Access Denied",
+        description: "Database access is disabled in Audit Settings.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!isDatabaseUnlocked) {
+      setShowDatabasePinDialog(true);
+    }
+  };
+
+  const handleDatabasePinInput = (index: number, value: string) => {
+    if (value.length > 1) return;
+    if (value && !/^\d$/.test(value)) return;
+
+    const newPin = [...databasePinInput];
+    newPin[index] = value;
+    setDatabasePinInput(newPin);
+    setDatabasePinError("");
+
+    if (value && index < 3) {
+      const nextInput = document.querySelector(`[data-testid="input-db-pin-${index + 1}"]`) as HTMLInputElement;
+      nextInput?.focus();
+    }
+
+    if (newPin.every(d => d !== "") && index === 3) {
+      verifyDatabasePin(newPin.join(""));
+    }
+  };
+
+  const verifyDatabasePin = async (pin: string) => {
+    setIsVerifyingPin(true);
+    try {
+      const response = await apiRequest("POST", "/api/audit/verify", { pin });
+      if (response.ok) {
+        setIsDatabaseUnlocked(true);
+        setShowDatabasePinDialog(false);
+        setDatabasePinInput(["", "", "", ""]);
+        toast({
+          title: "Database Unlocked",
+          description: "You can now access database management.",
+        });
+      }
+    } catch (error) {
+      setDatabasePinError("Invalid PIN. Please try again.");
+      setDatabasePinInput(["", "", "", ""]);
+      const firstInput = document.querySelector('[data-testid="input-db-pin-0"]') as HTMLInputElement;
+      firstInput?.focus();
+    } finally {
+      setIsVerifyingPin(false);
+    }
+  };
   
   useEffect(() => {
     if (typeof window !== 'undefined' && (window as any).electron) {
@@ -351,11 +422,80 @@ export default function Settings() {
             <Printer className="h-4 w-4 mr-2" />
             Printer
           </TabsTrigger>
-          <TabsTrigger value="database" data-testid="tab-database-settings">
+          <TabsTrigger 
+            value="database" 
+            data-testid="tab-database-settings"
+            onClick={handleDatabaseTabClick}
+            disabled={!uiSettings?.permDatabaseAccess}
+          >
             <Database className="h-4 w-4 mr-2" />
             Database
+            {!isDatabaseUnlocked && uiSettings?.permDatabaseAccess && (
+              <Lock className="h-3 w-3 ml-1 text-muted-foreground" />
+            )}
           </TabsTrigger>
         </TabsList>
+
+        {/* Database PIN Verification Dialog */}
+        <Dialog open={showDatabasePinDialog} onOpenChange={setShowDatabasePinDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                Enter Audit PIN
+              </DialogTitle>
+              <DialogDescription>
+                Database access requires verification. Enter your 4-digit audit PIN.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex justify-center gap-3">
+                {[0, 1, 2, 3].map((index) => (
+                  <Input
+                    key={index}
+                    type={showDatabasePin ? "text" : "password"}
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={databasePinInput[index]}
+                    onChange={(e) => handleDatabasePinInput(index, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Backspace" && !databasePinInput[index] && index > 0) {
+                        const prevInput = document.querySelector(`[data-testid="input-db-pin-${index - 1}"]`) as HTMLInputElement;
+                        prevInput?.focus();
+                      }
+                    }}
+                    className="w-14 h-14 text-center text-2xl font-bold"
+                    data-testid={`input-db-pin-${index}`}
+                    disabled={isVerifyingPin}
+                    autoFocus={index === 0}
+                  />
+                ))}
+              </div>
+
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDatabasePin(!showDatabasePin)}
+                  className="flex items-center gap-2"
+                >
+                  {showDatabasePin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showDatabasePin ? "Hide PIN" : "Show PIN"}
+                </Button>
+              </div>
+
+              {databasePinError && (
+                <p className="text-sm text-destructive text-center">{databasePinError}</p>
+              )}
+
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <ShieldCheck className="h-4 w-4" />
+                <span>Default PIN is 0000</span>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* General Settings - UI + Date Format */}
         <TabsContent value="general" className="space-y-4">
@@ -822,11 +962,33 @@ export default function Settings() {
         
         {/* Database Settings */}
         <TabsContent value="database" className="space-y-4">
+          {!isDatabaseUnlocked ? (
+            <Card data-testid="card-database-locked">
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center justify-center space-y-4 text-center">
+                  <div className="p-4 rounded-full bg-muted">
+                    <Lock className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold">Database Access Locked</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Enter your Audit PIN to access database management
+                    </p>
+                  </div>
+                  <Button onClick={() => setShowDatabasePinDialog(true)}>
+                    <Lock className="h-4 w-4 mr-2" />
+                    Unlock Access
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
           <Card data-testid="card-database-settings">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
                 Database Management
+                <Badge variant="secondary" className="ml-2">Unlocked</Badge>
               </CardTitle>
               <CardDescription>
                 Manage your database backups and restore data
@@ -890,6 +1052,7 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

@@ -128,6 +128,9 @@ export interface IStorage {
   // Settings
   getSettings(): Promise<Settings>;
   updateSettings(data: UpdateSettings): Promise<Settings>;
+
+  // Audit
+  getStockOutHistory(): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1121,6 +1124,31 @@ export class DatabaseStorage implements IStorage {
       .where(eq(sales.id, saleId));
   }
 
+  // Delete entire sale (with all items and restore stock)
+  async deleteSale(saleId: string): Promise<void> {
+    // Get all sale items first to restore stock
+    const items = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
+    
+    // Restore stock for each item
+    for (const item of items) {
+      await db
+        .update(colors)
+        .set({
+          stockQuantity: sql`${colors.stockQuantity} + ${item.quantity}`,
+        })
+        .where(eq(colors.id, item.colorId));
+    }
+    
+    // Delete all sale items
+    await db.delete(saleItems).where(eq(saleItems.saleId, saleId));
+    
+    // Delete payment history for this sale
+    await db.delete(paymentHistory).where(eq(paymentHistory.saleId, saleId));
+    
+    // Delete the sale
+    await db.delete(sales).where(eq(sales.id, saleId));
+  }
+
   // Dashboard Stats
   async getDashboardStats() {
     const now = new Date();
@@ -1372,6 +1400,8 @@ export class DatabaseStorage implements IStorage {
         cardButtonColor: 'gray-900',
         cardPriceColor: 'blue-600',
         showStockBadgeBorder: false,
+        auditPinHash: null,
+        auditPinSalt: null,
         updatedAt: new Date(),
       };
       await db.insert(settings).values(defaultSettings);

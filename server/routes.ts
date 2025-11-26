@@ -2,6 +2,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { requirePerm, invalidatePermCache } from "./permissions";
 import { 
   insertProductSchema, 
   insertVariantSchema, 
@@ -16,6 +17,7 @@ import {
   parseDDMMYYYYToDate 
 } from "@shared/schema";
 import { z } from "zod";
+import crypto from "crypto";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Products
@@ -29,7 +31,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/products", async (req, res) => {
+  app.post("/api/products", requirePerm('stock:edit'), async (req, res) => {
     try {
       const validated = insertProductSchema.parse(req.body);
       const product = await storage.createProduct(validated);
@@ -44,7 +46,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/products/:id", async (req, res) => {
+  app.patch("/api/products/:id", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { company, productName } = req.body;
       if (!company || !productName) {
@@ -59,7 +61,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/products/:id", async (req, res) => {
+  app.delete("/api/products/:id", requirePerm('stock:delete'), async (req, res) => {
     try {
       await storage.deleteProduct(req.params.id);
       res.json({ success: true });
@@ -80,7 +82,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/variants", async (req, res) => {
+  app.post("/api/variants", requirePerm('stock:edit'), async (req, res) => {
     try {
       const validated = insertVariantSchema.parse(req.body);
       const variant = await storage.createVariant(validated);
@@ -95,7 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/variants/:id", async (req, res) => {
+  app.patch("/api/variants/:id", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { productId, packingSize, rate } = req.body;
       if (!productId || !packingSize || rate === undefined) {
@@ -114,7 +116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/variants/:id/rate", async (req, res) => {
+  app.patch("/api/variants/:id/rate", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { rate } = req.body;
       if (typeof rate !== "number" || rate <= 0) {
@@ -129,7 +131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/variants/:id", async (req, res) => {
+  app.delete("/api/variants/:id", requirePerm('stock:delete'), async (req, res) => {
     try {
       await storage.deleteVariant(req.params.id);
       res.json({ success: true });
@@ -150,10 +152,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/colors", async (req, res) => {
+  app.post("/api/colors", requirePerm('stock:edit'), async (req, res) => {
     try {
       const validated = insertColorSchema.parse(req.body);
-      // Normalize color code (uppercase and trim)
       validated.colorCode = validated.colorCode.trim().toUpperCase();
       const color = await storage.createColor(validated);
       res.json(color);
@@ -167,14 +168,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/colors/:id", async (req, res) => {
+  app.patch("/api/colors/:id", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { colorName, colorCode, stockQuantity } = req.body;
       if (!colorName || !colorCode || stockQuantity === undefined) {
         res.status(400).json({ error: "Color name, code, and stock quantity are required" });
         return;
       }
-      // Normalize color code (uppercase and trim)
       const normalizedCode = colorCode.trim().toUpperCase();
       const color = await storage.updateColor(req.params.id, { 
         colorName: colorName.trim(), 
@@ -188,7 +188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/colors/:id/stock", async (req, res) => {
+  app.patch("/api/colors/:id/stock", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { stockQuantity } = req.body;
       if (typeof stockQuantity !== "number" || stockQuantity < 0) {
@@ -203,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/colors/:id/rate-override", async (req, res) => {
+  app.patch("/api/colors/:id/rate-override", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { rateOverride } = req.body;
       if (rateOverride !== null && (typeof rateOverride !== "number" || rateOverride < 0)) {
@@ -219,7 +219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FIXED: Stock In endpoint with proper stockInDate handling
-  app.post("/api/colors/:id/stock-in", async (req, res) => {
+  app.post("/api/colors/:id/stock-in", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { quantity, notes, stockInDate } = req.body;
       const colorId = req.params.id;
@@ -289,7 +289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/colors/:id", async (req, res) => {
+  app.delete("/api/colors/:id", requirePerm('stock:delete'), async (req, res) => {
     try {
       await storage.deleteColor(req.params.id);
       res.json({ success: true });
@@ -360,7 +360,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete Stock In History Record
-  app.delete("/api/stock-in/history/:id", async (req, res) => {
+  app.delete("/api/stock-in/history/:id", requirePerm('stockHistory:delete'), async (req, res) => {
     try {
       const { id } = req.params;
       console.log(`[API] Deleting stock history record: ${id}`);
@@ -374,7 +374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FIXED: Update Stock In History Record with proper new stock calculation
-  app.patch("/api/stock-in/history/:id", async (req, res) => {
+  app.patch("/api/stock-in/history/:id", requirePerm('stock:edit'), async (req, res) => {
     try {
       const { id } = req.params;
       const { quantity, notes, stockInDate } = req.body;
@@ -473,7 +473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update Payment History
-  app.patch("/api/payment-history/:id", async (req, res) => {
+  app.patch("/api/payment-history/:id", requirePerm('payment:edit'), async (req, res) => {
     try {
       const { id } = req.params;
       const { amount, paymentMethod, notes } = req.body;
@@ -497,7 +497,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete Payment History
-  app.delete("/api/payment-history/:id", async (req, res) => {
+  app.delete("/api/payment-history/:id", requirePerm('payment:delete'), async (req, res) => {
     try {
       const { id } = req.params;
       const deleted = await storage.deletePaymentHistory(id);
@@ -672,7 +672,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/sales", async (req, res) => {
+  app.post("/api/sales", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { items, ...saleData } = req.body;
 
@@ -681,7 +681,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedSale = insertSaleSchema.parse(saleData);
       const validatedItems = z.array(insertSaleItemSchema).parse(items);
 
-      // Always create a new sale - don't add to existing unpaid sale
       const sale = await storage.createSale(validatedSale, validatedItems);
       
       console.log("Sale created successfully:", JSON.stringify(sale, null, 2));
@@ -698,7 +697,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/sales/:id/payment", async (req, res) => {
+  app.post("/api/sales/:id/payment", requirePerm('payment:edit'), async (req, res) => {
     try {
       const { amount, paymentMethod, notes } = req.body;
       if (typeof amount !== "number" || amount <= 0) {
@@ -713,7 +712,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/sales/:id/items", async (req, res) => {
+  app.post("/api/sales/:id/items", requirePerm('sales:edit'), async (req, res) => {
     try {
       const validated = insertSaleItemSchema.parse(req.body);
       const saleItem = await storage.addSaleItem(req.params.id, validated);
@@ -729,7 +728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // UPDATE SALE ITEM ENDPOINT
-  app.patch("/api/sale-items/:id", async (req, res) => {
+  app.patch("/api/sale-items/:id", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { quantity, rate, subtotal } = req.body;
       
@@ -756,7 +755,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/sale-items/:id", async (req, res) => {
+  app.delete("/api/sale-items/:id", requirePerm('sales:delete'), async (req, res) => {
     try {
       await storage.deleteSaleItem(req.params.id);
       res.json({ success: true });
@@ -767,7 +766,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create manual pending balance (no items, just a balance record)
-  app.post("/api/sales/manual-balance", async (req, res) => {
+  app.post("/api/sales/manual-balance", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { customerName, customerPhone, totalAmount, dueDate, notes } = req.body;
       
@@ -797,7 +796,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update due date for a sale
-  app.patch("/api/sales/:id/due-date", async (req, res) => {
+  app.patch("/api/sales/:id/due-date", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { dueDate, notes } = req.body;
       
@@ -810,6 +809,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating due date:", error);
       res.status(500).json({ error: "Failed to update due date" });
+    }
+  });
+
+  // Delete entire sale
+  app.delete("/api/sales/:id", requirePerm('sales:delete'), async (req, res) => {
+    try {
+      await storage.deleteSale(req.params.id);
+      res.json({ success: true, message: "Sale deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting sale:", error);
+      res.status(500).json({ error: "Failed to delete sale" });
     }
   });
 
@@ -925,6 +935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/settings", async (req, res) => {
     try {
       const updated = await storage.updateSettings(req.body);
+      invalidatePermCache();
       res.json(updated);
     } catch (error) {
       console.error("Error updating settings:", error);
@@ -1065,7 +1076,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/returns", async (req, res) => {
+  app.post("/api/returns", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { returnData, items } = req.body;
       
@@ -1096,6 +1107,187 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching customer returns:", error);
       res.status(500).json({ error: "Failed to fetch customer returns" });
+    }
+  });
+
+  // Audit PIN Routes
+  // Helper function to hash PIN with salt
+  function hashPin(pin: string, salt: string): string {
+    return crypto.createHash('sha256').update(pin + salt).digest('hex');
+  }
+
+  // In-memory audit token store with TTL (1 hour)
+  const auditTokens = new Map<string, { createdAt: number }>();
+  const AUDIT_TOKEN_TTL = 60 * 60 * 1000; // 1 hour
+
+  // Clean up expired tokens periodically
+  setInterval(() => {
+    const now = Date.now();
+    const tokensToDelete: string[] = [];
+    auditTokens.forEach((data, token) => {
+      if (now - data.createdAt > AUDIT_TOKEN_TTL) {
+        tokensToDelete.push(token);
+      }
+    });
+    tokensToDelete.forEach(token => auditTokens.delete(token));
+  }, 5 * 60 * 1000); // Clean every 5 minutes
+
+  // Middleware to verify audit token
+  function verifyAuditToken(req: any, res: any, next: any) {
+    const token = req.headers['x-audit-token'];
+    if (!token || !auditTokens.has(token as string)) {
+      res.status(401).json({ error: "Unauthorized. Please verify audit PIN first." });
+      return;
+    }
+    const tokenData = auditTokens.get(token as string);
+    if (tokenData && Date.now() - tokenData.createdAt > AUDIT_TOKEN_TTL) {
+      auditTokens.delete(token as string);
+      res.status(401).json({ error: "Session expired. Please verify audit PIN again." });
+      return;
+    }
+    next();
+  }
+
+  // Check if audit PIN is set
+  app.get("/api/audit/has-pin", async (_req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      res.json({ hasPin: !!settings.auditPinHash && !!settings.auditPinSalt });
+    } catch (error) {
+      console.error("Error checking audit PIN:", error);
+      res.status(500).json({ error: "Failed to check audit PIN" });
+    }
+  });
+
+  // Verify audit PIN
+  app.post("/api/audit/verify", async (req, res) => {
+    try {
+      const { pin } = req.body;
+      
+      if (!pin || typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
+        res.status(400).json({ error: "PIN must be exactly 4 digits" });
+        return;
+      }
+
+      const settings = await storage.getSettings();
+      
+      // If no PIN is set, default PIN is "0000"
+      if (!settings.auditPinHash || !settings.auditPinSalt) {
+        if (pin === "0000") {
+          const token = crypto.randomBytes(24).toString('hex');
+          auditTokens.set(token, { createdAt: Date.now() });
+          res.json({ ok: true, isDefault: true, auditToken: token });
+          return;
+        } else {
+          res.status(401).json({ error: "Invalid PIN", ok: false });
+          return;
+        }
+      }
+
+      const hashedInput = hashPin(pin, settings.auditPinSalt);
+      if (hashedInput === settings.auditPinHash) {
+        const token = crypto.randomBytes(24).toString('hex');
+        auditTokens.set(token, { createdAt: Date.now() });
+        res.json({ ok: true, isDefault: false, auditToken: token });
+      } else {
+        res.status(401).json({ error: "Invalid PIN", ok: false });
+      }
+    } catch (error) {
+      console.error("Error verifying audit PIN:", error);
+      res.status(500).json({ error: "Failed to verify audit PIN" });
+    }
+  });
+
+  // Set or change audit PIN
+  app.patch("/api/audit/pin", async (req, res) => {
+    try {
+      const { currentPin, newPin } = req.body;
+      
+      if (!newPin || typeof newPin !== 'string' || newPin.length !== 4) {
+        res.status(400).json({ error: "New PIN must be 4 digits" });
+        return;
+      }
+
+      const settings = await storage.getSettings();
+      
+      // Verify current PIN
+      if (!settings.auditPinHash || !settings.auditPinSalt) {
+        // No PIN set, current PIN must be "0000" (default)
+        if (currentPin !== "0000") {
+          res.status(401).json({ error: "Current PIN is incorrect" });
+          return;
+        }
+      } else {
+        // PIN is set, verify it
+        if (!currentPin || typeof currentPin !== 'string' || currentPin.length !== 4) {
+          res.status(400).json({ error: "Current PIN must be 4 digits" });
+          return;
+        }
+        const hashedCurrent = hashPin(currentPin, settings.auditPinSalt);
+        if (hashedCurrent !== settings.auditPinHash) {
+          res.status(401).json({ error: "Current PIN is incorrect" });
+          return;
+        }
+      }
+
+      // Generate new salt and hash
+      const newSalt = crypto.randomBytes(16).toString('hex');
+      const newHash = hashPin(newPin, newSalt);
+
+      // Update settings
+      await storage.updateSettings({
+        auditPinSalt: newSalt,
+        auditPinHash: newHash,
+      });
+
+      res.json({ success: true, message: "PIN changed successfully" });
+    } catch (error) {
+      console.error("Error changing audit PIN:", error);
+      res.status(500).json({ error: "Failed to change audit PIN" });
+    }
+  });
+
+  // Stock Out History for Audit (protected)
+  app.get("/api/audit/stock-out", verifyAuditToken, async (_req, res) => {
+    try {
+      const stockOut = await storage.getStockOutHistory();
+      res.json(stockOut);
+    } catch (error) {
+      console.error("Error fetching stock out history:", error);
+      res.status(500).json({ error: "Failed to fetch stock out history" });
+    }
+  });
+
+  // Unpaid Bills for Audit (protected)
+  app.get("/api/audit/unpaid-bills", verifyAuditToken, async (_req, res) => {
+    try {
+      const unpaidSales = await storage.getUnpaidSales();
+      res.json(unpaidSales);
+    } catch (error) {
+      console.error("Error fetching unpaid bills:", error);
+      res.status(500).json({ error: "Failed to fetch unpaid bills" });
+    }
+  });
+
+  // Payment History for Audit (protected)
+  app.get("/api/audit/payments", verifyAuditToken, async (_req, res) => {
+    try {
+      const payments = await storage.getAllPaymentHistory();
+      res.json(payments);
+    } catch (error) {
+      console.error("Error fetching payment history:", error);
+      res.status(500).json({ error: "Failed to fetch payment history" });
+    }
+  });
+
+  // Returns for Audit (protected)
+  app.get("/api/audit/returns", verifyAuditToken, async (_req, res) => {
+    try {
+      const returns = await storage.getReturns();
+      res.json(returns);
+    } catch (error) {
+      console.error("Error fetching returns:", error);
+      res.status(500).json({ error: "Failed to fetch returns" });
     }
   });
 

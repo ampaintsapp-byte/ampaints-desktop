@@ -1,14 +1,33 @@
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Receipt, Calendar, RefreshCw } from "lucide-react";
+import { Search, Receipt, RefreshCw, MoreVertical, Trash2, Eye, Printer } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useDateFormat } from "@/hooks/use-date-format";
+import { usePermissions } from "@/hooks/use-permissions";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Sale {
   id: string;
@@ -23,27 +42,60 @@ interface Sale {
 export default function Sales() {
   const { formatDateShort } = useDateFormat();
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("all"); // "all", "today", "yesterday", "week", "month", "custom"
+  const [dateFilter, setDateFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { canDeleteSales } = usePermissions();
 
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
   });
 
-  // Add refresh function
+  const deleteSaleMutation = useMutation({
+    mutationFn: async (saleId: string) => {
+      return await apiRequest("DELETE", `/api/sales/${saleId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      toast({ title: "Sale deleted successfully" });
+      setDeleteDialogOpen(false);
+      setSaleToDelete(null);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to delete sale", 
+        description: error.message || "Permission denied or sale not found",
+        variant: "destructive" 
+      });
+    },
+  });
+
   const refreshSales = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
     toast({ title: "Sales data refreshed" });
   };
 
+  const handleDeleteClick = (sale: Sale) => {
+    setSaleToDelete(sale);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (saleToDelete) {
+      deleteSaleMutation.mutate(saleToDelete.id);
+    }
+  };
+
   const filteredSales = useMemo(() => {
     let filtered = sales;
 
-    // Customer search filter
     if (customerSearchQuery) {
       const query = customerSearchQuery.toLowerCase().trim();
       filtered = filtered.filter((sale) => {
@@ -53,7 +105,6 @@ export default function Sales() {
       });
     }
 
-    // Date filter
     if (dateFilter !== "all") {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -97,7 +148,7 @@ export default function Sales() {
           if (startDate && endDate) {
             const start = new Date(startDate);
             const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999); // Include entire end date
+            end.setHours(23, 59, 59, 999);
             
             filtered = filtered.filter(sale => {
               const saleDate = new Date(sale.createdAt);
@@ -114,7 +165,6 @@ export default function Sales() {
     return filtered;
   }, [sales, customerSearchQuery, dateFilter, startDate, endDate]);
 
-  // Calculate totals
   const totals = useMemo(() => {
     return filteredSales.reduce((acc, sale) => {
       const total = parseFloat(sale.totalAmount) || 0;
@@ -174,7 +224,6 @@ export default function Sales() {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Search and Filter Section */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -223,7 +272,6 @@ export default function Sales() {
                 </div>
               </div>
 
-              {/* Summary Cards */}
               {filteredSales.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                   <Card className="bg-muted/50">
@@ -255,7 +303,6 @@ export default function Sales() {
                 </div>
               )}
 
-              {/* Sales List */}
               {filteredSales.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   {customerSearchQuery || dateFilter !== "all" ? "No sales found matching your filters." : "No sales yet."}
@@ -311,13 +358,49 @@ export default function Sales() {
                                   )}
                                 </div>
                               </div>
-                              <Link
-                                href={`/bill/${sale.id}`}
-                                className="text-sm text-primary hover:underline whitespace-nowrap"
-                                data-testid={`link-view-bill-${sale.id}`}
-                              >
-                                View Bill
-                              </Link>
+                              <div className="flex items-center gap-2">
+                                <Link
+                                  href={`/bill/${sale.id}`}
+                                  className="text-sm text-primary hover:underline whitespace-nowrap"
+                                  data-testid={`link-view-bill-${sale.id}`}
+                                >
+                                  View Bill
+                                </Link>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" data-testid={`button-sale-menu-${sale.id}`}>
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem asChild>
+                                      <Link href={`/bill/${sale.id}`} className="flex items-center gap-2 cursor-pointer">
+                                        <Eye className="h-4 w-4" />
+                                        View Details
+                                      </Link>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem asChild>
+                                      <Link href={`/bill/${sale.id}`} className="flex items-center gap-2 cursor-pointer">
+                                        <Printer className="h-4 w-4" />
+                                        Print Bill
+                                      </Link>
+                                    </DropdownMenuItem>
+                                    {canDeleteSales && (
+                                      <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                          className="text-destructive focus:text-destructive flex items-center gap-2 cursor-pointer"
+                                          onClick={() => handleDeleteClick(sale)}
+                                          data-testid={`button-delete-sale-${sale.id}`}
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                          Delete Sale
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -325,14 +408,12 @@ export default function Sales() {
                     })}
                   </div>
 
-                  {/* Results Summary */}
                   <div className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-4 border-t">
                     <p className="text-xs text-muted-foreground">
                       Showing {filteredSales.length} of {sales.length} sales
                       {dateFilter !== "all" && ` • Filtered by ${dateFilter}`}
                     </p>
                     
-                    {/* Grand Totals */}
                     <div className="flex items-center gap-4 text-xs font-mono font-semibold">
                       <div>
                         <span className="text-muted-foreground">Grand Total: </span>
@@ -356,6 +437,36 @@ export default function Sales() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Sale</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this sale for <strong>{saleToDelete?.customerName}</strong>?
+              <br /><br />
+              This will:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>Delete all items from this sale</li>
+                <li>Restore stock quantities to inventory</li>
+                <li>Delete all payment history for this sale</li>
+              </ul>
+              <br />
+              <strong className="text-destructive">This action cannot be undone.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteSaleMutation.isPending}
+            >
+              {deleteSaleMutation.isPending ? "Deleting..." : "Delete Sale"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
