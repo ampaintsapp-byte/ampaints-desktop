@@ -102,6 +102,72 @@ export default function BillPrint() {
     setTimeout(() => window.print(), 200);
   };
 
+  // Direct Print - Check for Electron API, otherwise show message
+  const directPrint = () => {
+    if (!sale) return;
+    
+    // Check if running in Electron with silent print support
+    const electronAPI = (window as any).electronAPI;
+    
+    if (electronAPI?.printReceipt) {
+      // Electron silent print available - use it
+      const itemsHTML = sale.saleItems.map((item: any) => `
+        <tr>
+          <td style="padding:3px 0;font-size:11px;">${item.productName} ${item.variantName} ${item.colorCode || item.colorName}</td>
+          <td style="padding:3px 0;font-size:11px;text-align:center;">${item.quantity}</td>
+          <td style="padding:3px 0;font-size:11px;text-align:right;">Rs.${Math.round(item.subtotal).toLocaleString()}</td>
+        </tr>
+      `).join('');
+
+      const receiptHTML = `<!DOCTYPE html>
+<html><head><title>Receipt</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Courier New', monospace; font-size: 12px; padding: 8px; width: 80mm; }
+  .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 8px; }
+  .header h1 { font-size: 14px; font-weight: bold; }
+  .info-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
+  .items-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  .items-table th { text-align: left; border-bottom: 1px dashed #000; padding: 4px 0; font-size: 10px; }
+  .totals { border-top: 1px dashed #000; padding-top: 8px; }
+  .total-row { display: flex; justify-content: space-between; font-size: 12px; margin: 3px 0; }
+  .total-row.main { font-weight: bold; font-size: 14px; }
+  .footer { text-align: center; border-top: 1px dashed #000; padding-top: 8px; margin-top: 10px; }
+</style></head>
+<body>
+  <div class="header"><h1>${receiptSettings.businessName}</h1><p>${receiptSettings.address}</p></div>
+  <div><div class="info-row"><span>Invoice:</span><span>${sale.id.slice(0, 8).toUpperCase()}</span></div>
+  <div class="info-row"><span>Date:</span><span>${formatDateShort(sale.createdAt)}</span></div>
+  <div class="info-row"><span>Customer:</span><span>${sale.customerName}</span></div></div>
+  <table class="items-table"><thead><tr><th>Item</th><th>Qty</th><th>Amt</th></tr></thead><tbody>${itemsHTML}</tbody></table>
+  <div class="totals"><div class="total-row main"><span>TOTAL:</span><span>Rs.${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</span></div></div>
+  <div class="footer"><p>${receiptSettings.thankYou}</p></div>
+</body></html>`;
+
+      electronAPI.printReceipt(receiptHTML)
+        .then(() => {
+          toast({
+            title: "Print Successful",
+            description: `Receipt #${sale.id.slice(0, 8).toUpperCase()} printed successfully`,
+          });
+        })
+        .catch(() => {
+          toast({
+            title: "Print Failed",
+            description: "Could not print receipt. Check printer connection.",
+            variant: "destructive"
+          });
+        });
+    } else {
+      // Web browser - silent print not available
+      toast({
+        title: "Direct Print Not Available",
+        description: "Silent printing only works in Desktop App. Use 'Print' button instead.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Handle Back Navigation
   const handleGoBack = () => {
     if (referrer && sale?.customerPhone) {
@@ -756,6 +822,10 @@ _${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
               <Receipt className="h-4 w-4 mr-2" />
               Print
             </Button>
+            <Button onClick={directPrint} variant="secondary" className="font-bold" data-testid="button-direct-print">
+              <Printer className="h-4 w-4 mr-2" />
+              DP
+            </Button>
 
             <div className="flex gap-2">
               {editMode ? (
@@ -775,9 +845,6 @@ _${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => window.print()} data-testid="menu-direct-print">
-                      <Printer className="h-4 w-4 mr-2" /> Direct Print
-                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={startEditMode} data-testid="menu-edit-bill">
                       <Edit className="h-4 w-4 mr-2" /> Edit Bill
                     </DropdownMenuItem>
