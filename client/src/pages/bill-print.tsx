@@ -3,7 +3,7 @@ import { useRoute, useLocation, useSearch } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Receipt, MoreVertical, Edit, Plus, Trash2, Save, X, Download, MessageCircle, Share2 } from "lucide-react";
+import { ArrowLeft, Receipt, MoreVertical, Edit, Plus, Trash2, Save, X, Download, MessageCircle, Share2, Printer } from "lucide-react";
 import { Link } from "wouter";
 import type { SaleWithItems, ColorWithVariantAndProduct, SaleItem } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -300,8 +300,171 @@ export default function BillPrint() {
     });
   };
 
-  // Share Bill via WhatsApp
-  const shareToWhatsApp = () => {
+  // Generate Bill PDF as Blob for sharing
+  const generateBillPDFBlob = (): Blob | null => {
+    if (!sale) return null;
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 15;
+    let yPos = margin;
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 40, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(22);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 18, { align: 'center' });
+
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(receiptSettings.address, pageWidth / 2, 26, { align: 'center' });
+
+    pdf.setFontSize(8);
+    pdf.text(receiptSettings.dealerText + ' ' + receiptSettings.dealerBrands, pageWidth / 2, 33, { align: 'center' });
+
+    pdf.setTextColor(0, 0, 0);
+    yPos = 50;
+
+    pdf.setFillColor(240, 240, 240);
+    pdf.roundedRect(margin, yPos, (pageWidth - 2 * margin) / 2 - 5, 28, 3, 3, 'F');
+    pdf.roundedRect(pageWidth / 2 + 5, yPos, (pageWidth - 2 * margin) / 2 - 5, 28, 3, 3, 'F');
+
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('INVOICE NUMBER', margin + 5, yPos + 6);
+    pdf.text('DATE', margin + 5, yPos + 18);
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`#${sale.id.slice(0, 8).toUpperCase()}`, margin + 5, yPos + 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(formatDateShort(sale.createdAt), margin + 5, yPos + 24);
+
+    const rightBoxX = pageWidth / 2 + 10;
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('BILL TO', rightBoxX, yPos + 6);
+
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(sale.customerName, rightBoxX, yPos + 13);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(sale.customerPhone, rightBoxX, yPos + 20);
+
+    yPos += 38;
+
+    pdf.setFillColor(50, 50, 50);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+
+    const colX = {
+      item: margin + 3,
+      packing: margin + 80,
+      qty: margin + 110,
+      rate: margin + 130,
+      amount: pageWidth - margin - 3
+    };
+
+    pdf.text('ITEM DESCRIPTION', colX.item, yPos + 5.5);
+    pdf.text('SIZE', colX.packing, yPos + 5.5);
+    pdf.text('QTY', colX.qty, yPos + 5.5);
+    pdf.text('RATE', colX.rate, yPos + 5.5);
+    pdf.text('AMOUNT', colX.amount, yPos + 5.5, { align: 'right' });
+
+    yPos += 10;
+    pdf.setTextColor(0, 0, 0);
+
+    sale.saleItems.forEach((item, index) => {
+      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
+      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+      pdf.rect(margin, yPos, pageWidth - 2 * margin, 10, 'F');
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(item.color.variant.product.productName, colX.item, yPos + 4);
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(80, 80, 80);
+      pdf.text(`${item.color.colorName} (${item.color.colorCode})`, colX.item, yPos + 8);
+      pdf.setTextColor(0, 0, 0);
+
+      pdf.text(item.color.variant.packingSize, colX.packing, yPos + 6);
+      pdf.text(item.quantity.toString(), colX.qty, yPos + 6);
+      pdf.text(`Rs.${Math.round(parseFloat(item.rate)).toLocaleString()}`, colX.rate, yPos + 6);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Rs.${Math.round(parseFloat(item.subtotal)).toLocaleString()}`, colX.amount, yPos + 6, { align: 'right' });
+
+      yPos += 12;
+    });
+
+    yPos += 5;
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(margin, yPos, pageWidth - margin, yPos);
+    yPos += 8;
+
+    const summaryX = pageWidth - margin - 60;
+    const valueX = pageWidth - margin;
+
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Subtotal:', summaryX, yPos);
+    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    yPos += 7;
+
+    pdf.setTextColor(34, 139, 34);
+    pdf.text('Amount Paid:', summaryX, yPos);
+    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    yPos += 7;
+
+    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    
+    if (outstanding > 0) {
+      pdf.text('BALANCE DUE:', summaryX, yPos + 4);
+      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+    } else {
+      pdf.text('STATUS:', summaryX, yPos + 4);
+      pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
+    }
+
+    yPos += 25;
+
+    pdf.setTextColor(100, 100, 100);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(receiptSettings.thankYou, pageWidth / 2, yPos, { align: 'center' });
+
+    yPos += 8;
+    pdf.setFontSize(8);
+    pdf.text('This is a computer-generated invoice.', pageWidth / 2, yPos, { align: 'center' });
+
+    return pdf.output('blob');
+  };
+
+  // Share Bill via WhatsApp (PDF file sharing)
+  const shareToWhatsApp = async () => {
     if (!sale) return;
 
     const whatsappPhone = formatPhoneForWhatsApp(sale.customerPhone);
@@ -315,6 +478,35 @@ export default function BillPrint() {
       return;
     }
 
+    const pdfBlob = generateBillPDFBlob();
+    if (!pdfBlob) return;
+
+    const fileName = `Invoice-${sale.id.slice(0, 8).toUpperCase()}-${formatDateShort(sale.createdAt).replace(/\//g, '-')}.pdf`;
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    // Try Web Share API for PDF file sharing (works on mobile)
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      try {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Invoice - ${sale.customerName}`,
+          text: `Invoice from ${receiptSettings.businessName} - Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`
+        });
+        toast({
+          title: "Shared Successfully",
+          description: "Invoice PDF shared via WhatsApp.",
+        });
+        return;
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          console.log('Share failed, falling back to text share');
+        } else {
+          return;
+        }
+      }
+    }
+
+    // Fallback to text-based sharing for desktop
     const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
     const itemsList = sale.saleItems.map(item => 
       `- ${item.color.variant.product.productName} ${item.color.colorName} (${item.color.colorCode}) x${item.quantity} = Rs.${Math.round(parseFloat(item.subtotal))}`
@@ -341,7 +533,7 @@ _${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
     
     toast({
       title: "WhatsApp Opening",
-      description: "Bill details sent to WhatsApp.",
+      description: "Bill details sent to WhatsApp (PDF sharing not supported on desktop).",
     });
   };
 
@@ -583,6 +775,9 @@ _${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => window.print()} data-testid="menu-direct-print">
+                      <Printer className="h-4 w-4 mr-2" /> Direct Print
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={startEditMode} data-testid="menu-edit-bill">
                       <Edit className="h-4 w-4 mr-2" /> Edit Bill
                     </DropdownMenuItem>

@@ -283,8 +283,8 @@ export default function CustomerStatement() {
       setCashLoanNotes("");
       setCashLoanDueDate("");
       toast({
-        title: "Cash Loan Added",
-        description: "Cash loan has been added to customer account.",
+        title: "Manual Balance Added",
+        description: "Manual balance has been added to customer account.",
       });
     },
     onError: (error: Error) => {
@@ -342,16 +342,19 @@ export default function CustomerStatement() {
       const paidAmt = parseFloat(sale.amountPaid);
       const outstandingAmt = Math.max(0, totalAmt - paidAmt);
 
+      const recordedPayments = paymentsBySale.get(sale.id) || 0;
+      const paidAtSale = Math.max(0, paidAmt - recordedPayments);
+
       txns.push({
         id: `bill-${sale.id}`,
         date: new Date(sale.createdAt),
         type: sale.isManualBalance ? 'cash_loan' : 'bill',
-        description: sale.isManualBalance ? 'Cash Loan (Udhar)' : `Bill #${sale.id.slice(0, 8)}`,
+        description: sale.isManualBalance ? 'Manual Balance' : `Bill #${sale.id.slice(0, 8)}`,
         reference: sale.id.slice(0, 8).toUpperCase(),
         debit: totalAmt,
         credit: 0,
         balance: 0,
-        paid: paidAmt,
+        paid: paidAtSale,
         totalAmount: totalAmt,
         outstanding: outstandingAmt,
         notes: sale.notes || undefined,
@@ -360,27 +363,6 @@ export default function CustomerStatement() {
         saleId: sale.id,
         items: saleItems.length > 0 ? saleItems : undefined,
       });
-
-      const recordedPayments = paymentsBySale.get(sale.id) || 0;
-      const unrecordedPayment = Math.max(0, paidAmt - recordedPayments);
-      
-      if (unrecordedPayment > 0) {
-        txns.push({
-          id: `initial-payment-${sale.id}`,
-          date: new Date(sale.createdAt),
-          type: 'payment',
-          description: 'Payment at Sale (CASH)',
-          reference: sale.id.slice(0, 8).toUpperCase(),
-          debit: 0,
-          credit: unrecordedPayment,
-          balance: 0,
-          paid: 0,
-          totalAmount: 0,
-          outstanding: 0,
-          notes: 'Paid at time of sale',
-          saleId: sale.id,
-        });
-      }
     });
 
     paymentHistory.forEach(payment => {
@@ -408,7 +390,7 @@ export default function CustomerStatement() {
       if (txn.type === 'payment') {
         runningBalance -= txn.credit;
       } else {
-        runningBalance += txn.debit;
+        runningBalance += txn.debit - txn.paid;
       }
       txn.balance = runningBalance;
     });
@@ -1010,7 +992,7 @@ Thank you for your business!`;
               data-testid="button-add-cash-loan"
             >
               <Plus className="h-4 w-4" />
-              Add Udhar
+              Add Balance
             </Button>
             <Button
               onClick={generateBankStatement}
@@ -1342,7 +1324,7 @@ Thank you for your business!`;
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="font-semibold">
-                                {sale.isManualBalance ? 'Cash Loan (Cleared)' : `Bill #${sale.id.slice(0, 8)}`}
+                                {sale.isManualBalance ? 'Manual Balance (Cleared)' : `Bill #${sale.id.slice(0, 8)}`}
                               </p>
                               <Badge className="bg-emerald-500 text-white">PAID</Badge>
                             </div>
@@ -1420,7 +1402,7 @@ Thank you for your business!`;
                             </div>
                             <div>
                               <p className="font-semibold">
-                                {payment.isManualBalance ? 'Cash Loan' : `Bill #${payment.id.slice(0, 8)}`}
+                                {payment.isManualBalance ? 'Manual Balance' : `Bill #${payment.id.slice(0, 8)}`}
                               </p>
                               <p className="text-sm text-slate-500">
                                 Due: {formatDateShort(payment.dueDate)}
@@ -1499,7 +1481,7 @@ Thank you for your business!`;
                             <div>
                               <div className="flex items-center gap-2">
                                 <p className="font-semibold">
-                                  {sale.isManualBalance ? 'Cash Loan' : `Bill #${sale.id.slice(0, 8)}`}
+                                  {sale.isManualBalance ? 'Manual Balance' : `Bill #${sale.id.slice(0, 8)}`}
                                 </p>
                                 <Badge variant={sale.paymentStatus === 'partial' ? 'secondary' : 'destructive'}>
                                   {sale.paymentStatus.toUpperCase()}
@@ -1721,7 +1703,7 @@ Thank you for your business!`;
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Landmark className="h-5 w-5" />
-              Add Cash Loan (Udhar)
+              Add Manual Balance
             </DialogTitle>
             <DialogDescription>
               Add a manual balance entry to the customer's account
@@ -1732,7 +1714,7 @@ Thank you for your business!`;
               <Label>Amount</Label>
               <Input
                 type="number"
-                placeholder="Enter loan amount"
+                placeholder="Enter amount"
                 value={cashLoanAmount}
                 onChange={(e) => setCashLoanAmount(e.target.value)}
                 data-testid="input-loan-amount"
@@ -1750,7 +1732,7 @@ Thank you for your business!`;
             <div className="space-y-2">
               <Label>Notes (Optional)</Label>
               <Textarea
-                placeholder="Add notes about this loan..."
+                placeholder="Add notes..."
                 value={cashLoanNotes}
                 onChange={(e) => setCashLoanNotes(e.target.value)}
                 data-testid="input-loan-notes"
@@ -1764,7 +1746,7 @@ Thank you for your business!`;
               disabled={addCashLoanMutation.isPending}
               data-testid="button-add-loan"
             >
-              {addCashLoanMutation.isPending ? "Adding..." : "Add Loan"}
+              {addCashLoanMutation.isPending ? "Adding..." : "Add Balance"}
             </Button>
           </DialogFooter>
         </DialogContent>

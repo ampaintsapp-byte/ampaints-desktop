@@ -66,7 +66,8 @@ import {
   Wallet,
   IndianRupee,
   SortAsc,
-  SortDesc
+  SortDesc,
+  MessageCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -82,6 +83,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDateFormat } from "@/hooks/use-date-format";
+import { useReceiptSettings } from "@/hooks/use-receipt-settings";
+import jsPDF from "jspdf";
 
 interface CustomerSuggestion {
   customerName: string;
@@ -138,6 +141,7 @@ type FilterType = {
 
 export default function UnpaidBills() {
   const { formatDateShort } = useDateFormat();
+  const { receiptSettings } = useReceiptSettings();
   const [, setLocation] = useLocation();
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -590,173 +594,263 @@ export default function UnpaidBills() {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
   const selectedCustomer = consolidatedCustomers.find(c => c.customerPhone === selectedCustomerPhone);
 
-  // Generate PDF Statement with Download functionality
-  const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
-    const currentDate = new Date();
-    const formattedDate = `${String(currentDate.getDate()).padStart(2, '0')}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${currentDate.getFullYear()}`;
-    
-    let pdfHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Customer Account Statement - ${customer.customerName}</title>
-        <style>
-          @page { size: A4; margin: 15mm; }
-          body { font-family: 'Segoe UI', system-ui, sans-serif; color: #1f2937; margin: 0; padding: 0; line-height: 1.6; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-          .container { background: white; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.1); overflow: hidden; }
-          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; }
-          .header h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.5px; }
-          .header p { margin: 8px 0 0; opacity: 0.9; font-size: 14px; }
-          .customer-info { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 30px; padding: 24px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; }
-          .section { margin: 30px; page-break-inside: avoid; }
-          .section-title { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 20px; font-size: 16px; font-weight: 600; margin-bottom: 20px; border-radius: 8px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-          th { background: #f8fafc; text-align: left; padding: 14px 16px; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #475569; }
-          td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
-          .amount { text-align: right; font-family: 'SF Mono', monospace; font-weight: 600; }
-          .total-row { background: #fff7ed; font-weight: 600; border-top: 2px solid #fdba74; }
-          .badge { display: inline-block; padding: 4px 10px; border-radius: 16px; font-size: 11px; font-weight: 600; }
-          .badge-danger { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-          .badge-warning { background: #fffbeb; color: #d97706; border: 1px solid #fed7aa; }
-          .badge-success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
-          .badge-info { background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; }
-          .footer { margin: 30px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 20px; }
-          .summary-box { display: inline-block; background: white; border: 1px solid #e2e8f0; padding: 20px; margin: 8px; border-radius: 12px; min-width: 160px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-          .summary-box h3 { margin: 0 0 8px 0; font-size: 12px; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
-          .summary-box p { margin: 0; font-size: 20px; font-weight: 700; color: #1e40af; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🏪 PaintPulse - Customer Account Statement</h1>
-            <p>Generated on ${formattedDate}</p>
-          </div>
-          
-          <div class="customer-info">
-            <div>
-              <strong>Customer Name:</strong> ${customer.customerName}<br>
-              <strong>Phone:</strong> ${customer.customerPhone}<br>
-              <strong>Total Bills:</strong> ${customer.bills.length}
-            </div>
-            <div>
-              <strong>Statement Period:</strong> ${formatDateShort(customer.oldestBillDate)} to ${formattedDate}<br>
-              <strong>Days Outstanding:</strong> ${customer.daysOverdue} days<br>
-              <strong>Status:</strong> ${customer.totalOutstanding > 0 ? 'Pending' : 'Cleared'}
-            </div>
-          </div>
+  // Format phone for WhatsApp
+  const formatPhoneForWhatsApp = (phone: string): string | null => {
+    if (!phone || phone.trim().length < 10) return null;
+    let cleaned = phone.replace(/[^\d+]/g, '');
+    if (cleaned.length < 10) return null;
+    if (cleaned.startsWith('0')) {
+      cleaned = '92' + cleaned.slice(1);
+    } else if (!cleaned.startsWith('92') && !cleaned.startsWith('+92')) {
+      cleaned = '92' + cleaned;
+    }
+    cleaned = cleaned.replace(/^\+/, '');
+    if (cleaned.length < 12) return null;
+    return cleaned;
+  };
 
-          <div class="section">
-            <div class="section-title">💰 Account Summary</div>
-            <div style="text-align: center;">
-              <div class="summary-box">
-                <h3>Total Amount</h3>
-                <p>Rs. ${customer.totalAmount.toFixed(2)}</p>
-              </div>
-              <div class="summary-box">
-                <h3>Amount Paid</h3>
-                <p>Rs. ${customer.totalPaid.toFixed(2)}</p>
-              </div>
-              <div class="summary-box">
-                <h3>Outstanding</h3>
-                <p style="color: ${customer.totalOutstanding > 0 ? '#dc2626' : '#16a34a'};">Rs. ${customer.totalOutstanding.toFixed(2)}</p>
-              </div>
-            </div>
-          </div>
+  // Generate PDF Statement as Blob
+  const generateStatementPDFBlob = (customer: ConsolidatedCustomer): Blob => {
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
 
-          <div class="section">
-            <div class="section-title">🧾 Bill Details</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Bill Date</th>
-                  <th>Bill No</th>
-                  <th>Due Date</th>
-                  <th class="amount">Total</th>
-                  <th class="amount">Paid</th>
-                  <th class="amount">Due</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-    `;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 15;
+    let yPos = margin;
+
+    // Header
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 35, 'F');
     
-    customer.bills.forEach((bill) => {
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('ACCOUNT STATEMENT', pageWidth / 2, 15, { align: 'center' });
+    
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: 'center' });
+    pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: 'center' });
+    
+    pdf.setTextColor(0, 0, 0);
+    yPos = 45;
+
+    // Customer Info
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Customer:', margin, yPos);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(customer.customerName, margin + 25, yPos);
+    yPos += 6;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Phone:', margin, yPos);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(customer.customerPhone, margin + 25, yPos);
+    yPos += 6;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Date:', margin, yPos);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(formatDateShort(new Date()), margin + 25, yPos);
+    yPos += 10;
+
+    // Summary Box
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
+    yPos += 5;
+    
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    const colWidth = (pageWidth - 2 * margin) / 3;
+    pdf.text('Total Amount', margin + colWidth / 2, yPos, { align: 'center' });
+    pdf.text('Amount Paid', margin + colWidth + colWidth / 2, yPos, { align: 'center' });
+    pdf.text('Outstanding', margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
+    yPos += 6;
+    
+    pdf.setFontSize(11);
+    pdf.text(`Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, margin + colWidth / 2, yPos, { align: 'center' });
+    pdf.text(`Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: 'center' });
+    pdf.setTextColor(220, 38, 38);
+    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
+    pdf.setTextColor(0, 0, 0);
+    yPos += 15;
+
+    // Table Header
+    pdf.setFillColor(50, 50, 50);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('DATE', margin + 3, yPos + 5.5);
+    pdf.text('BILL NO', margin + 30, yPos + 5.5);
+    pdf.text('TOTAL', margin + 70, yPos + 5.5);
+    pdf.text('PAID', margin + 100, yPos + 5.5);
+    pdf.text('DUE', margin + 130, yPos + 5.5);
+    pdf.text('STATUS', pageWidth - margin - 20, yPos + 5.5);
+    yPos += 10;
+    pdf.setTextColor(0, 0, 0);
+
+    // Bill Rows
+    customer.bills.forEach((bill, index) => {
+      if (yPos > pageHeight - 30) {
+        pdf.addPage();
+        yPos = margin;
+      }
+
       const billTotal = parseFloat(bill.totalAmount);
       const billPaid = parseFloat(bill.amountPaid);
       const billDue = billTotal - billPaid;
       const dueDateStatus = getDueDateStatus(bill.dueDate);
       
-      let statusBadge = '';
-      switch (dueDateStatus) {
-        case 'overdue':
-          statusBadge = '<span class="badge badge-danger">Overdue</span>';
-          break;
-        case 'due_soon':
-          statusBadge = '<span class="badge badge-warning">Due Soon</span>';
-          break;
-        case 'future':
-          statusBadge = '<span class="badge badge-info">Upcoming</span>';
-          break;
-        default:
-          statusBadge = '<span class="badge">No Due Date</span>';
-      }
+      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
+      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+      pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, 'F');
       
-      const billDate = new Date(bill.createdAt);
-      const formattedBillDate = `${String(billDate.getDate()).padStart(2, '0')}-${String(billDate.getMonth() + 1).padStart(2, '0')}-${billDate.getFullYear()}`;
-      const formattedDueDate = bill.dueDate ? 
-        `${String(new Date(bill.dueDate).getDate()).padStart(2, '0')}-${String(new Date(bill.dueDate).getMonth() + 1).padStart(2, '0')}-${new Date(bill.dueDate).getFullYear()}` : 
-        '-';
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2);
+      pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2);
+      pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2);
+      pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2);
+      pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2);
       
-      pdfHTML += `
-                <tr>
-                  <td>${formattedBillDate}</td>
-                  <td>${bill.id.slice(-8)}</td>
-                  <td>${formattedDueDate}</td>
-                  <td class="amount">Rs. ${billTotal.toFixed(2)}</td>
-                  <td class="amount">Rs. ${billPaid.toFixed(2)}</td>
-                  <td class="amount">Rs. ${billDue.toFixed(2)}</td>
-                  <td>${statusBadge}</td>
-                </tr>
-      `;
+      const statusText = dueDateStatus === 'overdue' ? 'Overdue' : 
+                        dueDateStatus === 'due_soon' ? 'Due Soon' : 
+                        dueDateStatus === 'future' ? 'Upcoming' : 'Pending';
+      pdf.text(statusText, pageWidth - margin - 20, yPos + 2);
+      
+      yPos += 8;
     });
-    
-    pdfHTML += `
-                <tr class="total-row">
-                  <td colspan="3"><strong>Totals</strong></td>
-                  <td class="amount"><strong>Rs. ${customer.totalAmount.toFixed(2)}</strong></td>
-                  <td class="amount"><strong>Rs. ${customer.totalPaid.toFixed(2)}</strong></td>
-                  <td class="amount"><strong>Rs. ${customer.totalOutstanding.toFixed(2)}</strong></td>
-                  <td></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
 
-          <div class="footer">
-            <p>PaintPulse POS System • Customer Account Statement • ${formattedDate}</p>
-            <p>This is a system-generated report. For any queries, contact support.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+    // Footer
+    yPos += 10;
+    pdf.setFillColor(102, 126, 234);
+    pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('BALANCE DUE:', pageWidth - margin - 65, yPos + 3);
+    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: 'right' });
 
-    // Create blob and download without opening print dialog
-    const blob = new Blob([pdfHTML], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
+    return pdf.output('blob');
+  };
+
+  // Generate PDF Statement with Download functionality
+  const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
+    const pdfBlob = generateStatementPDFBlob(customer);
+    const url = URL.createObjectURL(pdfBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `statement-${customer.customerName}-${formattedDate}.html`;
+    a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
     toast({ 
-      title: "Statement downloaded successfully",
-      description: `Statement for ${customer.customerName} has been downloaded`
+      title: "Statement Downloaded",
+      description: `PDF Statement for ${customer.customerName} has been downloaded`
+    });
+  };
+
+  // Share Statement via WhatsApp (PDF file sharing)
+  const shareStatementToWhatsApp = async (customer: ConsolidatedCustomer) => {
+    const whatsappPhone = formatPhoneForWhatsApp(customer.customerPhone);
+    
+    if (!whatsappPhone) {
+      toast({
+        title: "Invalid Phone Number",
+        description: "Customer phone number is invalid for WhatsApp.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const pdfBlob = generateStatementPDFBlob(customer);
+    const fileName = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    // Try Web Share API for PDF file sharing (works on mobile)
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      try {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Statement - ${customer.customerName}`,
+          text: `Account Statement from ${receiptSettings.businessName} - Balance: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`
+        });
+        toast({
+          title: "Shared Successfully",
+          description: "Statement PDF shared via WhatsApp.",
+        });
+        return;
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          console.log('Share failed, falling back to text share');
+        } else {
+          return;
+        }
+      }
+    }
+
+    // Fallback to text-based sharing for desktop - matching PDF statement format
+    const separator = '─'.repeat(40);
+    
+    // Build detailed ledger-style bill list
+    const billsLedger = customer.bills.map(bill => {
+      const billDate = formatDateShort(bill.createdAt);
+      const billNo = bill.id.slice(-8).toUpperCase();
+      const amount = Math.round(parseFloat(bill.totalAmount));
+      const paid = Math.round(parseFloat(bill.amountPaid));
+      const balance = amount - paid;
+      const status = balance === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID';
+      return `${billDate} | #${billNo}
+   Amount: Rs.${amount.toLocaleString()}
+   Paid: Rs.${paid.toLocaleString()}
+   Balance: Rs.${balance.toLocaleString()} [${status}]`;
+    }).join('\n\n');
+
+    const message = `${separator}
+*${receiptSettings.businessName}*
+*ACCOUNT STATEMENT*
+${separator}
+
+*Customer Details*
+Name: ${customer.customerName}
+Phone: ${customer.customerPhone}
+Statement Date: ${formatDateShort(new Date())}
+
+${separator}
+*SUMMARY*
+${separator}
+Total Amount: Rs. ${Math.round(customer.totalAmount).toLocaleString()}
+Total Paid: Rs. ${Math.round(customer.totalPaid).toLocaleString()}
+*Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}*
+
+${separator}
+*TRANSACTION DETAILS*
+${separator}
+
+${billsLedger}
+
+${separator}
+*BALANCE DUE: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}*
+${separator}
+
+${receiptSettings.thankYou}
+${receiptSettings.businessName}
+${receiptSettings.address}`;
+
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/${whatsappPhone}?text=${encodedMessage}`, '_blank');
+    
+    toast({
+      title: "WhatsApp Opening",
+      description: "Statement sent to WhatsApp (PDF sharing not supported on desktop).",
     });
   };
 
@@ -1183,6 +1277,13 @@ export default function UnpaidBills() {
                         }}>
                           <Download className="h-4 w-4 mr-2" />
                           Download Statement
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => {
+                          e.stopPropagation();
+                          shareStatementToWhatsApp(customer);
+                        }} className="text-green-600">
+                          <MessageCircle className="h-4 w-4 mr-2" />
+                          WhatsApp Share
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
