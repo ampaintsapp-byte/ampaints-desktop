@@ -1291,6 +1291,557 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============ CLOUD DATABASE SYNC ENDPOINTS ============
+  
+  // Test cloud database connection
+  app.post("/api/cloud/test-connection", verifyAuditToken, async (req, res) => {
+    try {
+      const { connectionUrl } = req.body;
+      if (!connectionUrl) {
+        res.status(400).json({ error: "Connection URL is required" });
+        return;
+      }
+
+      // Try to connect using @neondatabase/serverless
+      const { neon } = await import("@neondatabase/serverless");
+      const sql = neon(connectionUrl);
+      
+      // Test with a simple query
+      await sql`SELECT 1 as test`;
+      
+      res.json({ ok: true, message: "Connection successful" });
+    } catch (error: any) {
+      console.error("Cloud connection test failed:", error);
+      res.status(400).json({ 
+        ok: false, 
+        error: error.message || "Connection failed. Please check your connection URL." 
+      });
+    }
+  });
+
+  // Save cloud database settings
+  app.post("/api/cloud/save-settings", verifyAuditToken, async (req, res) => {
+    try {
+      const { connectionUrl, syncEnabled } = req.body;
+      
+      await storage.updateSettings({
+        cloudDatabaseUrl: connectionUrl || null,
+        cloudSyncEnabled: syncEnabled ?? false,
+      });
+      
+      res.json({ ok: true, message: "Cloud settings saved" });
+    } catch (error: any) {
+      console.error("Error saving cloud settings:", error);
+      res.status(500).json({ error: "Failed to save cloud settings" });
+    }
+  });
+
+  // Get cloud sync status
+  app.get("/api/cloud/status", verifyAuditToken, async (_req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      res.json({
+        hasConnection: !!settings.cloudDatabaseUrl,
+        syncEnabled: settings.cloudSyncEnabled,
+        lastSyncTime: settings.lastSyncTime,
+      });
+    } catch (error) {
+      console.error("Error getting cloud status:", error);
+      res.status(500).json({ error: "Failed to get cloud status" });
+    }
+  });
+
+  // Export data to cloud PostgreSQL
+  app.post("/api/cloud/export", verifyAuditToken, async (_req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      if (!settings.cloudDatabaseUrl) {
+        res.status(400).json({ error: "Cloud database not configured" });
+        return;
+      }
+
+      const { neon } = await import("@neondatabase/serverless");
+      const sql = neon(settings.cloudDatabaseUrl);
+
+      // Create tables if they don't exist
+      await sql`
+        CREATE TABLE IF NOT EXISTS products (
+          id TEXT PRIMARY KEY,
+          company TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS variants (
+          id TEXT PRIMARY KEY,
+          product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          packing_size TEXT NOT NULL,
+          rate TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS colors (
+          id TEXT PRIMARY KEY,
+          variant_id TEXT NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
+          color_name TEXT NOT NULL,
+          color_code TEXT NOT NULL,
+          stock_quantity INTEGER DEFAULT 0,
+          rate_override TEXT,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS sales (
+          id TEXT PRIMARY KEY,
+          customer_name TEXT NOT NULL,
+          customer_phone TEXT NOT NULL,
+          total_amount TEXT NOT NULL,
+          amount_paid TEXT DEFAULT '0',
+          payment_status TEXT DEFAULT 'unpaid',
+          due_date TIMESTAMP,
+          is_manual_balance BOOLEAN DEFAULT FALSE,
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS sale_items (
+          id TEXT PRIMARY KEY,
+          sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+          color_id TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          rate TEXT NOT NULL,
+          subtotal TEXT NOT NULL
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS stock_in_history (
+          id TEXT PRIMARY KEY,
+          color_id TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          previous_stock INTEGER NOT NULL,
+          new_stock INTEGER NOT NULL,
+          stock_in_date TEXT NOT NULL,
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS payment_history (
+          id TEXT PRIMARY KEY,
+          sale_id TEXT NOT NULL,
+          customer_phone TEXT NOT NULL,
+          amount TEXT NOT NULL,
+          previous_balance TEXT NOT NULL,
+          new_balance TEXT NOT NULL,
+          payment_method TEXT DEFAULT 'cash',
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS returns (
+          id TEXT PRIMARY KEY,
+          sale_id TEXT,
+          customer_name TEXT NOT NULL,
+          customer_phone TEXT NOT NULL,
+          return_type TEXT DEFAULT 'item',
+          total_refund TEXT DEFAULT '0',
+          reason TEXT,
+          status TEXT DEFAULT 'completed',
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `;
+      
+      await sql`
+        CREATE TABLE IF NOT EXISTS return_items (
+          id TEXT PRIMARY KEY,
+          return_id TEXT NOT NULL,
+          color_id TEXT NOT NULL,
+          sale_item_id TEXT,
+          quantity INTEGER NOT NULL,
+          rate TEXT NOT NULL,
+          subtotal TEXT NOT NULL,
+          stock_restored BOOLEAN DEFAULT TRUE
+        )
+      `;
+
+      // Get all data from local storage
+      const products = await storage.getProducts();
+      const variants = await storage.getVariants();
+      const colorsData = await storage.getColors();
+      const sales = await storage.getSales();
+      const saleItems = await storage.getSaleItems();
+      const stockInHistory = await storage.getStockInHistory();
+      const paymentHistory = await storage.getAllPaymentHistory();
+      const returns = await storage.getReturns();
+      const returnItems = await storage.getReturnItems();
+
+      // Clear existing cloud data and insert new (using UPSERT pattern)
+      let exportedCounts = {
+        products: 0,
+        variants: 0,
+        colors: 0,
+        sales: 0,
+        saleItems: 0,
+        stockInHistory: 0,
+        paymentHistory: 0,
+        returns: 0,
+        returnItems: 0,
+      };
+
+      // Export products
+      for (const p of products) {
+        await sql`
+          INSERT INTO products (id, company, product_name, created_at)
+          VALUES (${p.id}, ${p.company}, ${p.productName}, ${p.createdAt})
+          ON CONFLICT (id) DO UPDATE SET
+            company = EXCLUDED.company,
+            product_name = EXCLUDED.product_name
+        `;
+        exportedCounts.products++;
+      }
+
+      // Export variants
+      for (const v of variants) {
+        await sql`
+          INSERT INTO variants (id, product_id, packing_size, rate, created_at)
+          VALUES (${v.id}, ${v.productId}, ${v.packingSize}, ${v.rate}, ${v.createdAt})
+          ON CONFLICT (id) DO UPDATE SET
+            product_id = EXCLUDED.product_id,
+            packing_size = EXCLUDED.packing_size,
+            rate = EXCLUDED.rate
+        `;
+        exportedCounts.variants++;
+      }
+
+      // Export colors
+      for (const c of colorsData) {
+        await sql`
+          INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
+          VALUES (${c.id}, ${c.variantId}, ${c.colorName}, ${c.colorCode}, ${c.stockQuantity}, ${c.rateOverride}, ${c.createdAt})
+          ON CONFLICT (id) DO UPDATE SET
+            variant_id = EXCLUDED.variant_id,
+            color_name = EXCLUDED.color_name,
+            color_code = EXCLUDED.color_code,
+            stock_quantity = EXCLUDED.stock_quantity,
+            rate_override = EXCLUDED.rate_override
+        `;
+        exportedCounts.colors++;
+      }
+
+      // Export sales
+      for (const s of sales) {
+        await sql`
+          INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
+          VALUES (${s.id}, ${s.customerName}, ${s.customerPhone}, ${s.totalAmount}, ${s.amountPaid}, ${s.paymentStatus}, ${s.dueDate}, ${s.isManualBalance}, ${s.notes}, ${s.createdAt})
+          ON CONFLICT (id) DO UPDATE SET
+            customer_name = EXCLUDED.customer_name,
+            customer_phone = EXCLUDED.customer_phone,
+            total_amount = EXCLUDED.total_amount,
+            amount_paid = EXCLUDED.amount_paid,
+            payment_status = EXCLUDED.payment_status,
+            due_date = EXCLUDED.due_date,
+            is_manual_balance = EXCLUDED.is_manual_balance,
+            notes = EXCLUDED.notes
+        `;
+        exportedCounts.sales++;
+      }
+
+      // Export sale items
+      for (const si of saleItems) {
+        await sql`
+          INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
+          VALUES (${si.id}, ${si.saleId}, ${si.colorId}, ${si.quantity}, ${si.rate}, ${si.subtotal})
+          ON CONFLICT (id) DO UPDATE SET
+            sale_id = EXCLUDED.sale_id,
+            color_id = EXCLUDED.color_id,
+            quantity = EXCLUDED.quantity,
+            rate = EXCLUDED.rate,
+            subtotal = EXCLUDED.subtotal
+        `;
+        exportedCounts.saleItems++;
+      }
+
+      // Export stock in history
+      for (const sih of stockInHistory) {
+        await sql`
+          INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
+          VALUES (${sih.id}, ${sih.colorId}, ${sih.quantity}, ${sih.previousStock}, ${sih.newStock}, ${sih.stockInDate}, ${sih.notes}, ${sih.createdAt})
+          ON CONFLICT (id) DO UPDATE SET
+            color_id = EXCLUDED.color_id,
+            quantity = EXCLUDED.quantity,
+            previous_stock = EXCLUDED.previous_stock,
+            new_stock = EXCLUDED.new_stock,
+            stock_in_date = EXCLUDED.stock_in_date,
+            notes = EXCLUDED.notes
+        `;
+        exportedCounts.stockInHistory++;
+      }
+
+      // Export payment history
+      for (const ph of paymentHistory) {
+        await sql`
+          INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
+          VALUES (${ph.id}, ${ph.saleId}, ${ph.customerPhone}, ${ph.amount}, ${ph.previousBalance}, ${ph.newBalance}, ${ph.paymentMethod}, ${ph.notes}, ${ph.createdAt})
+          ON CONFLICT (id) DO UPDATE SET
+            sale_id = EXCLUDED.sale_id,
+            customer_phone = EXCLUDED.customer_phone,
+            amount = EXCLUDED.amount,
+            previous_balance = EXCLUDED.previous_balance,
+            new_balance = EXCLUDED.new_balance,
+            payment_method = EXCLUDED.payment_method,
+            notes = EXCLUDED.notes
+        `;
+        exportedCounts.paymentHistory++;
+      }
+
+      // Export returns
+      for (const r of returns) {
+        await sql`
+          INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
+          VALUES (${r.id}, ${r.saleId}, ${r.customerName}, ${r.customerPhone}, ${r.returnType}, ${r.totalRefund}, ${r.reason}, ${r.status}, ${r.createdAt})
+          ON CONFLICT (id) DO UPDATE SET
+            sale_id = EXCLUDED.sale_id,
+            customer_name = EXCLUDED.customer_name,
+            customer_phone = EXCLUDED.customer_phone,
+            return_type = EXCLUDED.return_type,
+            total_refund = EXCLUDED.total_refund,
+            reason = EXCLUDED.reason,
+            status = EXCLUDED.status
+        `;
+        exportedCounts.returns++;
+      }
+
+      // Export return items
+      for (const ri of returnItems) {
+        await sql`
+          INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
+          VALUES (${ri.id}, ${ri.returnId}, ${ri.colorId}, ${ri.saleItemId}, ${ri.quantity}, ${ri.rate}, ${ri.subtotal}, ${ri.stockRestored})
+          ON CONFLICT (id) DO UPDATE SET
+            return_id = EXCLUDED.return_id,
+            color_id = EXCLUDED.color_id,
+            sale_item_id = EXCLUDED.sale_item_id,
+            quantity = EXCLUDED.quantity,
+            rate = EXCLUDED.rate,
+            subtotal = EXCLUDED.subtotal,
+            stock_restored = EXCLUDED.stock_restored
+        `;
+        exportedCounts.returnItems++;
+      }
+
+      // Update last sync time
+      await storage.updateSettings({ lastSyncTime: new Date() });
+
+      res.json({ 
+        ok: true, 
+        message: "Export successful",
+        counts: exportedCounts
+      });
+    } catch (error: any) {
+      console.error("Cloud export failed:", error);
+      res.status(500).json({ error: error.message || "Export failed" });
+    }
+  });
+
+  // Import data from cloud PostgreSQL
+  app.post("/api/cloud/import", verifyAuditToken, async (_req, res) => {
+    try {
+      const settings = await storage.getSettings();
+      if (!settings.cloudDatabaseUrl) {
+        res.status(400).json({ error: "Cloud database not configured" });
+        return;
+      }
+
+      const { neon } = await import("@neondatabase/serverless");
+      const sql = neon(settings.cloudDatabaseUrl);
+
+      // Check if tables exist
+      const tablesCheck = await sql`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'products'
+      `;
+      
+      if (tablesCheck.length === 0) {
+        res.status(400).json({ error: "No data found in cloud database. Please export first." });
+        return;
+      }
+
+      // Fetch all data from cloud
+      const cloudProducts = await sql`SELECT * FROM products ORDER BY created_at`;
+      const cloudVariants = await sql`SELECT * FROM variants ORDER BY created_at`;
+      const cloudColors = await sql`SELECT * FROM colors ORDER BY created_at`;
+      const cloudSales = await sql`SELECT * FROM sales ORDER BY created_at`;
+      const cloudSaleItems = await sql`SELECT * FROM sale_items`;
+      const cloudStockInHistory = await sql`SELECT * FROM stock_in_history ORDER BY created_at`;
+      const cloudPaymentHistory = await sql`SELECT * FROM payment_history ORDER BY created_at`;
+      const cloudReturns = await sql`SELECT * FROM returns ORDER BY created_at`;
+      const cloudReturnItems = await sql`SELECT * FROM return_items`;
+
+      let importedCounts = {
+        products: 0,
+        variants: 0,
+        colors: 0,
+        sales: 0,
+        saleItems: 0,
+        stockInHistory: 0,
+        paymentHistory: 0,
+        returns: 0,
+        returnItems: 0,
+      };
+
+      // Import products
+      for (const p of cloudProducts) {
+        await storage.upsertProduct({
+          id: p.id,
+          company: p.company,
+          productName: p.product_name,
+          createdAt: new Date(p.created_at),
+        });
+        importedCounts.products++;
+      }
+
+      // Import variants
+      for (const v of cloudVariants) {
+        await storage.upsertVariant({
+          id: v.id,
+          productId: v.product_id,
+          packingSize: v.packing_size,
+          rate: v.rate,
+          createdAt: new Date(v.created_at),
+        });
+        importedCounts.variants++;
+      }
+
+      // Import colors
+      for (const c of cloudColors) {
+        await storage.upsertColor({
+          id: c.id,
+          variantId: c.variant_id,
+          colorName: c.color_name,
+          colorCode: c.color_code,
+          stockQuantity: c.stock_quantity,
+          rateOverride: c.rate_override,
+          createdAt: new Date(c.created_at),
+        });
+        importedCounts.colors++;
+      }
+
+      // Import sales
+      for (const s of cloudSales) {
+        await storage.upsertSale({
+          id: s.id,
+          customerName: s.customer_name,
+          customerPhone: s.customer_phone,
+          totalAmount: s.total_amount,
+          amountPaid: s.amount_paid,
+          paymentStatus: s.payment_status,
+          dueDate: s.due_date ? new Date(s.due_date) : null,
+          isManualBalance: s.is_manual_balance,
+          notes: s.notes,
+          createdAt: new Date(s.created_at),
+        });
+        importedCounts.sales++;
+      }
+
+      // Import sale items
+      for (const si of cloudSaleItems) {
+        await storage.upsertSaleItem({
+          id: si.id,
+          saleId: si.sale_id,
+          colorId: si.color_id,
+          quantity: si.quantity,
+          rate: si.rate,
+          subtotal: si.subtotal,
+        });
+        importedCounts.saleItems++;
+      }
+
+      // Import stock in history
+      for (const sih of cloudStockInHistory) {
+        await storage.upsertStockInHistory({
+          id: sih.id,
+          colorId: sih.color_id,
+          quantity: sih.quantity,
+          previousStock: sih.previous_stock,
+          newStock: sih.new_stock,
+          stockInDate: sih.stock_in_date,
+          notes: sih.notes,
+          createdAt: new Date(sih.created_at),
+        });
+        importedCounts.stockInHistory++;
+      }
+
+      // Import payment history
+      for (const ph of cloudPaymentHistory) {
+        await storage.upsertPaymentHistory({
+          id: ph.id,
+          saleId: ph.sale_id,
+          customerPhone: ph.customer_phone,
+          amount: ph.amount,
+          previousBalance: ph.previous_balance,
+          newBalance: ph.new_balance,
+          paymentMethod: ph.payment_method,
+          notes: ph.notes,
+          createdAt: new Date(ph.created_at),
+        });
+        importedCounts.paymentHistory++;
+      }
+
+      // Import returns
+      for (const r of cloudReturns) {
+        await storage.upsertReturn({
+          id: r.id,
+          saleId: r.sale_id,
+          customerName: r.customer_name,
+          customerPhone: r.customer_phone,
+          returnType: r.return_type,
+          totalRefund: r.total_refund,
+          reason: r.reason,
+          status: r.status,
+          createdAt: new Date(r.created_at),
+        });
+        importedCounts.returns++;
+      }
+
+      // Import return items
+      for (const ri of cloudReturnItems) {
+        await storage.upsertReturnItem({
+          id: ri.id,
+          returnId: ri.return_id,
+          colorId: ri.color_id,
+          saleItemId: ri.sale_item_id,
+          quantity: ri.quantity,
+          rate: ri.rate,
+          subtotal: ri.subtotal,
+          stockRestored: ri.stock_restored,
+        });
+        importedCounts.returnItems++;
+      }
+
+      // Update last sync time
+      await storage.updateSettings({ lastSyncTime: new Date() });
+
+      res.json({ 
+        ok: true, 
+        message: "Import successful",
+        counts: importedCounts
+      });
+    } catch (error: any) {
+      console.error("Cloud import failed:", error);
+      res.status(500).json({ error: error.message || "Import failed" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

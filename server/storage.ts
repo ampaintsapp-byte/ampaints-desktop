@@ -34,6 +34,7 @@ import {
   type ReturnItem,
   type InsertReturnItem,
   type ReturnWithItems,
+  type StockInHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, gte, sql, and } from "drizzle-orm";
@@ -131,6 +132,17 @@ export interface IStorage {
 
   // Audit
   getStockOutHistory(): Promise<any[]>;
+
+  // Cloud Sync Upserts (for import/export with preserved IDs)
+  upsertProduct(data: Product): Promise<void>;
+  upsertVariant(data: Variant): Promise<void>;
+  upsertColor(data: Color): Promise<void>;
+  upsertSale(data: Sale): Promise<void>;
+  upsertSaleItem(data: SaleItem): Promise<void>;
+  upsertStockInHistory(data: StockInHistory): Promise<void>;
+  upsertPaymentHistory(data: PaymentHistory): Promise<void>;
+  upsertReturn(data: Return): Promise<void>;
+  upsertReturnItem(data: ReturnItem): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1402,6 +1414,19 @@ export class DatabaseStorage implements IStorage {
         showStockBadgeBorder: false,
         auditPinHash: null,
         auditPinSalt: null,
+        // Permissions - all enabled by default
+        permStockDelete: true,
+        permStockEdit: true,
+        permStockHistoryDelete: true,
+        permSalesDelete: true,
+        permSalesEdit: true,
+        permPaymentEdit: true,
+        permPaymentDelete: true,
+        permDatabaseAccess: true,
+        // Cloud sync settings
+        cloudDatabaseUrl: null,
+        cloudSyncEnabled: false,
+        lastSyncTime: null,
         updatedAt: new Date(),
       };
       await db.insert(settings).values(defaultSettings);
@@ -1449,6 +1474,159 @@ export class DatabaseStorage implements IStorage {
       customerName: item.sale?.customerName,
       customerPhone: item.sale?.customerPhone,
     })).sort((a, b) => new Date(b.soldAt || 0).getTime() - new Date(a.soldAt || 0).getTime());
+  }
+
+  // ============ CLOUD SYNC HELPER METHODS ============
+  
+  // Get all sale items (for cloud export)
+  async getSaleItems(): Promise<SaleItem[]> {
+    return await db.select().from(saleItems);
+  }
+
+  // Get all return items (for cloud export)
+  async getReturnItems(): Promise<ReturnItem[]> {
+    return await db.select().from(returnItems);
+  }
+
+  // Upsert methods for cloud import
+  async upsertProduct(data: Product): Promise<void> {
+    const existing = await db.select().from(products).where(eq(products.id, data.id));
+    if (existing.length > 0) {
+      await db.update(products).set({
+        company: data.company,
+        productName: data.productName,
+      }).where(eq(products.id, data.id));
+    } else {
+      await db.insert(products).values(data);
+    }
+  }
+
+  async upsertVariant(data: Variant): Promise<void> {
+    const existing = await db.select().from(variants).where(eq(variants.id, data.id));
+    if (existing.length > 0) {
+      await db.update(variants).set({
+        productId: data.productId,
+        packingSize: data.packingSize,
+        rate: data.rate,
+      }).where(eq(variants.id, data.id));
+    } else {
+      await db.insert(variants).values(data);
+    }
+  }
+
+  async upsertColor(data: Color): Promise<void> {
+    const existing = await db.select().from(colors).where(eq(colors.id, data.id));
+    if (existing.length > 0) {
+      await db.update(colors).set({
+        variantId: data.variantId,
+        colorName: data.colorName,
+        colorCode: data.colorCode,
+        stockQuantity: data.stockQuantity,
+        rateOverride: data.rateOverride,
+      }).where(eq(colors.id, data.id));
+    } else {
+      await db.insert(colors).values(data);
+    }
+  }
+
+  async upsertSale(data: Sale): Promise<void> {
+    const existing = await db.select().from(sales).where(eq(sales.id, data.id));
+    if (existing.length > 0) {
+      await db.update(sales).set({
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        totalAmount: data.totalAmount,
+        amountPaid: data.amountPaid,
+        paymentStatus: data.paymentStatus,
+        dueDate: data.dueDate,
+        isManualBalance: data.isManualBalance,
+        notes: data.notes,
+      }).where(eq(sales.id, data.id));
+    } else {
+      await db.insert(sales).values(data);
+    }
+  }
+
+  async upsertSaleItem(data: SaleItem): Promise<void> {
+    const existing = await db.select().from(saleItems).where(eq(saleItems.id, data.id));
+    if (existing.length > 0) {
+      await db.update(saleItems).set({
+        saleId: data.saleId,
+        colorId: data.colorId,
+        quantity: data.quantity,
+        rate: data.rate,
+        subtotal: data.subtotal,
+      }).where(eq(saleItems.id, data.id));
+    } else {
+      await db.insert(saleItems).values(data);
+    }
+  }
+
+  async upsertStockInHistory(data: StockInHistory): Promise<void> {
+    const existing = await db.select().from(stockInHistory).where(eq(stockInHistory.id, data.id));
+    if (existing.length > 0) {
+      await db.update(stockInHistory).set({
+        colorId: data.colorId,
+        quantity: data.quantity,
+        previousStock: data.previousStock,
+        newStock: data.newStock,
+        stockInDate: data.stockInDate,
+        notes: data.notes,
+      }).where(eq(stockInHistory.id, data.id));
+    } else {
+      await db.insert(stockInHistory).values(data);
+    }
+  }
+
+  async upsertPaymentHistory(data: PaymentHistory): Promise<void> {
+    const existing = await db.select().from(paymentHistory).where(eq(paymentHistory.id, data.id));
+    if (existing.length > 0) {
+      await db.update(paymentHistory).set({
+        saleId: data.saleId,
+        customerPhone: data.customerPhone,
+        amount: data.amount,
+        previousBalance: data.previousBalance,
+        newBalance: data.newBalance,
+        paymentMethod: data.paymentMethod,
+        notes: data.notes,
+      }).where(eq(paymentHistory.id, data.id));
+    } else {
+      await db.insert(paymentHistory).values(data);
+    }
+  }
+
+  async upsertReturn(data: Return): Promise<void> {
+    const existing = await db.select().from(returns).where(eq(returns.id, data.id));
+    if (existing.length > 0) {
+      await db.update(returns).set({
+        saleId: data.saleId,
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        returnType: data.returnType,
+        totalRefund: data.totalRefund,
+        reason: data.reason,
+        status: data.status,
+      }).where(eq(returns.id, data.id));
+    } else {
+      await db.insert(returns).values(data);
+    }
+  }
+
+  async upsertReturnItem(data: ReturnItem): Promise<void> {
+    const existing = await db.select().from(returnItems).where(eq(returnItems.id, data.id));
+    if (existing.length > 0) {
+      await db.update(returnItems).set({
+        returnId: data.returnId,
+        colorId: data.colorId,
+        saleItemId: data.saleItemId,
+        quantity: data.quantity,
+        rate: data.rate,
+        subtotal: data.subtotal,
+        stockRestored: data.stockRestored,
+      }).where(eq(returnItems.id, data.id));
+    } else {
+      await db.insert(returnItems).values(data);
+    }
   }
 }
 

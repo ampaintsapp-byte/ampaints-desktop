@@ -57,6 +57,11 @@ import {
   Database,
   Trash2,
   Edit,
+  Cloud,
+  Upload,
+  Check,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -114,6 +119,14 @@ export default function Audit() {
   const [showCurrentPin, setShowCurrentPin] = useState(false);
   const [showNewPin, setShowNewPin] = useState(false);
   const [showConfirmPin, setShowConfirmPin] = useState(false);
+
+  // Cloud Sync State
+  const [cloudUrl, setCloudUrl] = useState("");
+  const [showCloudUrl, setShowCloudUrl] = useState(false);
+  const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle");
+  const [lastExportCounts, setLastExportCounts] = useState<any>(null);
+  const [lastImportCounts, setLastImportCounts] = useState<any>(null);
 
   const { data: hasPin } = useQuery<{ hasPin: boolean }>({
     queryKey: ["/api/audit/has-pin"],
@@ -283,6 +296,179 @@ export default function Audit() {
     },
   });
 
+  // Cloud Sync Functions
+  const handleTestConnection = async () => {
+    if (!cloudUrl.trim()) {
+      toast({
+        title: "Connection URL Required",
+        description: "Please enter a PostgreSQL connection URL.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCloudConnectionStatus("testing");
+    try {
+      const response = await fetch("/api/cloud/test-connection", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Audit-Token": auditToken || "",
+        },
+        body: JSON.stringify({ connectionUrl: cloudUrl }),
+      });
+      const data = await response.json();
+      if (data.ok) {
+        setCloudConnectionStatus("success");
+        toast({
+          title: "Connection Successful",
+          description: "Successfully connected to cloud database.",
+        });
+      } else {
+        setCloudConnectionStatus("error");
+        toast({
+          title: "Connection Failed",
+          description: data.error || "Could not connect to cloud database.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      setCloudConnectionStatus("error");
+      toast({
+        title: "Connection Failed",
+        description: error.message || "Could not connect to cloud database.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveCloudSettings = async () => {
+    try {
+      const response = await fetch("/api/cloud/save-settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Audit-Token": auditToken || "",
+        },
+        body: JSON.stringify({ connectionUrl: cloudUrl, syncEnabled: true }),
+      });
+      const data = await response.json();
+      if (data.ok) {
+        toast({
+          title: "Settings Saved",
+          description: "Cloud database settings saved successfully.",
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Failed to Save",
+        description: error.message || "Could not save cloud settings.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExportToCloud = async () => {
+    if (!cloudUrl.trim()) {
+      toast({
+        title: "Connection URL Required",
+        description: "Please enter and save a PostgreSQL connection URL first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // First save settings if not already saved
+    await handleSaveCloudSettings();
+
+    setCloudSyncStatus("exporting");
+    try {
+      const response = await fetch("/api/cloud/export", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Audit-Token": auditToken || "",
+        },
+      });
+      const data = await response.json();
+      if (data.ok) {
+        setLastExportCounts(data.counts);
+        toast({
+          title: "Export Successful",
+          description: `Exported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales to cloud.`,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      } else {
+        toast({
+          title: "Export Failed",
+          description: data.error || "Could not export to cloud database.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Export Failed",
+        description: error.message || "Could not export to cloud database.",
+        variant: "destructive",
+      });
+    } finally {
+      setCloudSyncStatus("idle");
+    }
+  };
+
+  const handleImportFromCloud = async () => {
+    if (!cloudUrl.trim()) {
+      toast({
+        title: "Connection URL Required",
+        description: "Please enter and save a PostgreSQL connection URL first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // First save settings if not already saved
+    await handleSaveCloudSettings();
+
+    setCloudSyncStatus("importing");
+    try {
+      const response = await fetch("/api/cloud/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Audit-Token": auditToken || "",
+        },
+      });
+      const data = await response.json();
+      if (data.ok) {
+        setLastImportCounts(data.counts);
+        toast({
+          title: "Import Successful",
+          description: `Imported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales from cloud.`,
+        });
+        // Invalidate all data queries to refresh
+        queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      } else {
+        toast({
+          title: "Import Failed",
+          description: data.error || "Could not import from cloud database.",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Import Failed",
+        description: error.message || "Could not import from cloud database.",
+        variant: "destructive",
+      });
+    } finally {
+      setCloudSyncStatus("idle");
+    }
+  };
+
   useEffect(() => {
     const storedToken = sessionStorage.getItem("auditToken");
     if (sessionStorage.getItem("auditVerified") === "true" && storedToken) {
@@ -291,6 +477,16 @@ export default function Audit() {
       setShowPinDialog(false);
     }
   }, []);
+
+  // Initialize cloud URL from settings when they load
+  useEffect(() => {
+    if (appSettings?.cloudDatabaseUrl && !cloudUrl) {
+      setCloudUrl(appSettings.cloudDatabaseUrl);
+      if (appSettings.cloudSyncEnabled) {
+        setCloudConnectionStatus("success");
+      }
+    }
+  }, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled]);
 
   const handlePinInput = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
@@ -2127,6 +2323,162 @@ export default function Audit() {
                         />
                       </div>
                     </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cloud className="h-5 w-5 text-blue-500" />
+                  Cloud Database Sync
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <p className="text-sm text-muted-foreground">
+                  Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="cloudUrl" className="flex items-center gap-2">
+                      <Database className="h-4 w-4" />
+                      PostgreSQL Connection URL
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="cloudUrl"
+                        type={showCloudUrl ? "text" : "password"}
+                        value={cloudUrl}
+                        onChange={(e) => {
+                          setCloudUrl(e.target.value);
+                          setCloudConnectionStatus("idle");
+                        }}
+                        placeholder="postgresql://user:password@host/database"
+                        className="pr-20"
+                        data-testid="input-cloud-url"
+                      />
+                      <div className="absolute right-0 top-0 flex">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setShowCloudUrl(!showCloudUrl)}
+                        >
+                          {showCloudUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                        {cloudConnectionStatus === "success" && (
+                          <div className="flex items-center text-green-500 pr-2">
+                            <Check className="h-4 w-4" />
+                          </div>
+                        )}
+                        {cloudConnectionStatus === "error" && (
+                          <div className="flex items-center text-red-500 pr-2">
+                            <XCircle className="h-4 w-4" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Get your connection URL from Neon (neon.tech) or Supabase (supabase.com)
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={handleTestConnection}
+                    variant="outline"
+                    className="w-full"
+                    disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
+                    data-testid="button-test-connection"
+                  >
+                    {cloudConnectionStatus === "testing" ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : cloudConnectionStatus === "success" ? (
+                      <Check className="h-4 w-4 mr-2 text-green-500" />
+                    ) : cloudConnectionStatus === "error" ? (
+                      <XCircle className="h-4 w-4 mr-2 text-red-500" />
+                    ) : (
+                      <Database className="h-4 w-4 mr-2" />
+                    )}
+                    {cloudConnectionStatus === "testing" ? "Testing..." : 
+                     cloudConnectionStatus === "success" ? "Connected" :
+                     cloudConnectionStatus === "error" ? "Connection Failed - Retry" :
+                     "Test Connection"}
+                  </Button>
+
+                  <div className="border-t pt-4">
+                    <h4 className="font-medium mb-3 flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4" />
+                      Sync Actions
+                    </h4>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button
+                        onClick={handleExportToCloud}
+                        variant="default"
+                        disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
+                        className="flex items-center gap-2"
+                        data-testid="button-export-cloud"
+                      >
+                        {cloudSyncStatus === "exporting" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4" />
+                        )}
+                        {cloudSyncStatus === "exporting" ? "Exporting..." : "Export to Cloud"}
+                      </Button>
+
+                      <Button
+                        onClick={handleImportFromCloud}
+                        variant="outline"
+                        disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
+                        className="flex items-center gap-2"
+                        data-testid="button-import-cloud"
+                      >
+                        {cloudSyncStatus === "importing" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4" />
+                        )}
+                        {cloudSyncStatus === "importing" ? "Importing..." : "Import from Cloud"}
+                      </Button>
+                    </div>
+
+                    <div className="mt-4 space-y-2 text-xs text-muted-foreground">
+                      <p className="flex items-center gap-2">
+                        <Upload className="h-3 w-3" />
+                        <strong>Export:</strong> Sends your local data to cloud (overwrites cloud data)
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <Download className="h-3 w-3" />
+                        <strong>Import:</strong> Downloads cloud data to local (overwrites local data)
+                      </p>
+                    </div>
+
+                    {lastExportCounts && (
+                      <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
+                        <p className="text-xs text-green-700 dark:text-green-300">
+                          Last Export: {lastExportCounts.products} products, {lastExportCounts.variants} variants, 
+                          {lastExportCounts.colors} colors, {lastExportCounts.sales} sales
+                        </p>
+                      </div>
+                    )}
+
+                    {lastImportCounts && (
+                      <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          Last Import: {lastImportCounts.products} products, {lastImportCounts.variants} variants, 
+                          {lastImportCounts.colors} colors, {lastImportCounts.sales} sales
+                        </p>
+                      </div>
+                    )}
+
+                    {appSettings?.lastSyncTime && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Last sync: {format(new Date(appSettings.lastSyncTime), "dd/MM/yyyy HH:mm")}
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>

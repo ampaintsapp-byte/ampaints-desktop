@@ -36,6 +36,7 @@ None specified yet.
 - **Shared Receipt Settings**: Centralized hook (`use-receipt-settings.ts`) for consistent store header information across customer statements and bill prints.
 - **Navigation Refresh**: Clicking the same menu item refreshes page content, resetting local state and refetching data.
 - **Database Management**: Web-based export/import functionality, performance-optimized SQLite with composite indexes, and an automatic schema migration system for backward compatibility.
+- **Cloud Database Sync**: Multi-device data synchronization via cloud PostgreSQL (Neon/Supabase). Features include connection URL testing, full data export to cloud, import from cloud to local, and last sync time tracking. All cloud operations protected by audit PIN verification. Enables installing software on multiple laptops with shared data access.
 - **Activation System**: Uses a one-time activation code.
 - **Desktop Application**: Features include a maximized (not fullscreen) windowed desktop mode with saved size and position, and solutions for Windows SmartScreen warnings.
 

@@ -139,6 +139,10 @@ export const settings = sqliteTable("settings", {
   permPaymentDelete: integer("perm_payment_delete", { mode: 'boolean' }).notNull().default(true), // Delete payments
   // Database Access (requires PIN)
   permDatabaseAccess: integer("perm_database_access", { mode: 'boolean' }).notNull().default(true), // Access database tab
+  // Cloud Database Sync Settings
+  cloudDatabaseUrl: text("cloud_database_url"), // Neon/Supabase PostgreSQL connection URL
+  cloudSyncEnabled: integer("cloud_sync_enabled", { mode: 'boolean' }).notNull().default(false), // Auto-sync enabled
+  lastSyncTime: integer("last_sync_time", { mode: 'timestamp' }), // Last successful sync timestamp
   updatedAt: integer("updated_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
 });
 
