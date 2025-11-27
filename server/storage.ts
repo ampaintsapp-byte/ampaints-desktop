@@ -256,8 +256,8 @@ export class DatabaseStorage implements IStorage {
           cardButtonColor: data.cardButtonColor || 'gray-900',
           cardPriceColor: data.cardPriceColor || 'blue-600',
           showStockBadgeBorder: data.showStockBadgeBorder ?? false,
-          auditPinHash: data.auditPinHash ?? null,
-          auditPinSalt: data.auditPinSalt ?? null,
+          auditPinHash: data.auditPinHash || null,
+          auditPinSalt: data.auditPinSalt || null,
           permStockDelete: data.permStockDelete ?? true,
           permStockEdit: data.permStockEdit ?? true,
           permStockHistoryDelete: data.permStockHistoryDelete ?? true,
@@ -266,7 +266,7 @@ export class DatabaseStorage implements IStorage {
           permPaymentEdit: data.permPaymentEdit ?? true,
           permPaymentDelete: data.permPaymentDelete ?? true,
           permDatabaseAccess: data.permDatabaseAccess ?? true,
-          cloudDatabaseUrl: data.cloudDatabaseUrl ?? null,
+          cloudDatabaseUrl: data.cloudDatabaseUrl || null,
           cloudSyncEnabled: data.cloudSyncEnabled ?? false,
           lastSyncTime: data.lastSyncTime ?? null,
           updatedAt: new Date(),
@@ -275,13 +275,44 @@ export class DatabaseStorage implements IStorage {
         return defaultSettings;
       }
 
+      // Prepare update data - only include fields that are provided
+      const updateData: any = {
+        updatedAt: new Date(),
+      };
+
+      // Add all provided fields to update
+      if (data.storeName !== undefined) updateData.storeName = data.storeName;
+      if (data.dateFormat !== undefined) updateData.dateFormat = data.dateFormat;
+      if (data.cardBorderStyle !== undefined) updateData.cardBorderStyle = data.cardBorderStyle;
+      if (data.cardShadowSize !== undefined) updateData.cardShadowSize = data.cardShadowSize;
+      if (data.cardButtonColor !== undefined) updateData.cardButtonColor = data.cardButtonColor;
+      if (data.cardPriceColor !== undefined) updateData.cardPriceColor = data.cardPriceColor;
+      if (data.showStockBadgeBorder !== undefined) updateData.showStockBadgeBorder = data.showStockBadgeBorder;
+      
+      // IMPORTANT: Audit PIN hash and salt must be explicitly set
+      if (data.auditPinHash !== undefined) updateData.auditPinHash = data.auditPinHash;
+      if (data.auditPinSalt !== undefined) updateData.auditPinSalt = data.auditPinSalt;
+      
+      if (data.permStockDelete !== undefined) updateData.permStockDelete = data.permStockDelete;
+      if (data.permStockEdit !== undefined) updateData.permStockEdit = data.permStockEdit;
+      if (data.permStockHistoryDelete !== undefined) updateData.permStockHistoryDelete = data.permStockHistoryDelete;
+      if (data.permSalesDelete !== undefined) updateData.permSalesDelete = data.permSalesDelete;
+      if (data.permSalesEdit !== undefined) updateData.permSalesEdit = data.permSalesEdit;
+      if (data.permPaymentEdit !== undefined) updateData.permPaymentEdit = data.permPaymentEdit;
+      if (data.permPaymentDelete !== undefined) updateData.permPaymentDelete = data.permPaymentDelete;
+      if (data.permDatabaseAccess !== undefined) updateData.permDatabaseAccess = data.permDatabaseAccess;
+      if (data.cloudDatabaseUrl !== undefined) updateData.cloudDatabaseUrl = data.cloudDatabaseUrl;
+      if (data.cloudSyncEnabled !== undefined) updateData.cloudSyncEnabled = data.cloudSyncEnabled;
+      if (data.lastSyncTime !== undefined) updateData.lastSyncTime = data.lastSyncTime;
+
       // Update existing settings
       await db
         .update(settings)
-        .set({ ...data, updatedAt: new Date() })
+        .set(updateData)
         .where(eq(settings.id, 'default'));
-      
+    
       const updated = await this.getSettings();
+      console.log('[Storage] Settings updated:', { hasPin: !!updated.auditPinHash });
       return updated;
     } catch (error) {
       console.error('[Storage] Error updating settings:', error);

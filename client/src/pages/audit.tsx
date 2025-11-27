@@ -1133,6 +1133,79 @@ export default function Audit() {
     toast({ title: "PDF Downloaded", description: "Returns Audit Report has been downloaded." });
   };
 
+  // Share Statement via WhatsApp (PDF file sharing)
+  const shareStatementToWhatsApp = async (customer: ConsolidatedCustomer) => {
+    const whatsappPhone = formatPhoneForWhatsApp(customer.customerPhone);
+    
+    if (!whatsappPhone) {
+      toast({
+        title: "Invalid Phone Number",
+        description: "Customer phone number is invalid for WhatsApp.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const pdfBlob = generateStatementPDFBlob(customer);
+    const fileName = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    // Check Electron API
+    const electronAPI = (window as any).electronAPI;
+    
+    if (electronAPI?.shareToWhatsApp) {
+      try {
+        await electronAPI.shareToWhatsApp(customer.customerPhone, {
+          fileName: fileName,
+          pdfData: await pdfBlob.arrayBuffer(),
+          businessName: receiptSettings.businessName,
+          totalAmount: Math.round(customer.totalOutstanding),
+          customerName: customer.customerName,
+        });
+        toast({
+          title: "Shared Successfully",
+          description: "Statement sent to WhatsApp",
+        });
+        return;
+      } catch (error) {
+        console.log('Electron share failed, trying fallback');
+      }
+    }
+
+    // Try Web Share API
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      try {
+        await navigator.share({
+          files: [pdfFile],
+          title: `Statement - ${customer.customerName}`,
+          text: `Account Statement from ${receiptSettings.businessName}`
+        });
+        toast({
+          title: "Shared Successfully",
+          description: "Statement shared via WhatsApp",
+        });
+        return;
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          console.log('Web share failed, using text fallback');
+        } else {
+          return;
+        }
+      }
+    }
+
+    // Fallback: Text message
+    const message = `*${receiptSettings.businessName}*\n*ACCOUNT STATEMENT*\n\n${customer.customerName}\n\n*Total:* Rs.${Math.round(customer.totalAmount).toLocaleString()}\n*Paid:* Rs.${Math.round(customer.totalPaid).toLocaleString()}\n*Outstanding:* Rs.${Math.round(customer.totalOutstanding).toLocaleString()}\n\n${receiptSettings.thankYou}`;
+
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/${whatsappPhone}?text=${encodedMessage}`, '_blank');
+    
+    toast({
+      title: "WhatsApp Opening",
+      description: "Statement details sent. Send PDF from your device.",
+    });
+  };
+
   if (showPinDialog) {
     return (
       <Dialog open={showPinDialog} onOpenChange={() => {}}>
@@ -1594,80 +1667,7 @@ export default function Audit() {
                             }>
                               {sale.paymentStatus.toUpperCase()}
                             </Badge>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Unpaid Bills Tab */}
-        <TabsContent value="unpaid" className="flex-1 overflow-auto p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-red-100 dark:bg-red-900/30">
-                    <CreditCard className="h-5 w-5 text-red-600 dark:text-red-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Total Unpaid</p>
-                    {unpaidLoading ? (
-                      <Skeleton className="h-8 w-24" />
-                    ) : (
-                      <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-                        Rs. {unpaidBills.reduce((sum, bill) => sum + parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid), 0).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-orange-100 dark:bg-orange-900/30">
-                    <FileText className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Unpaid Bills</p>
-                    {unpaidLoading ? (
-                      <Skeleton className="h-8 w-20" />
-                    ) : (
-                      <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{unpaidBills.length}</p>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
-                    <DollarSign className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Bill Amount</p>
-                    {unpaidLoading ? (
-                      <Skeleton className="h-8 w-24" />
-                    ) : (
-                      <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                        Rs. {unpaidBills.reduce((sum, bill) => sum + parseFloat(bill.totalAmount), 0).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="pt-4">
+                          </Table
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-full bg-green-100 dark:bg-green-900/30">
                     <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />

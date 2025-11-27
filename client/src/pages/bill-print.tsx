@@ -104,69 +104,37 @@ export default function BillPrint() {
     setTimeout(() => window.print(), 200);
   };
 
-  // Direct Print - Check for Electron API, otherwise show message
+  // Direct Print - Simplified for Electron
   const directPrint = () => {
     if (!sale) return;
     
-    // Check if running in Electron with silent print support
+    // Check if running in Electron
     const electronAPI = (window as any).electronAPI;
     
-    if (electronAPI?.printReceipt) {
-      // Electron silent print available - use it
-      const itemsHTML = sale.saleItems.map((item: any) => `
-        <tr>
-          <td style="padding:3px 0;font-size:11px;">${item.productName} ${item.variantName} ${item.colorCode || item.colorName}</td>
-          <td style="padding:3px 0;font-size:11px;text-align:center;">${item.quantity}</td>
-          <td style="padding:3px 0;font-size:11px;text-align:right;">Rs.${Math.round(item.subtotal).toLocaleString()}</td>
-        </tr>
-      `).join('');
-
-      const receiptHTML = `<!DOCTYPE html>
-<html><head><title>Receipt</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Courier New', monospace; font-size: 12px; padding: 8px; width: 80mm; }
-  .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 8px; }
-  .header h1 { font-size: 14px; font-weight: bold; }
-  .info-row { display: flex; justify-content: space-between; font-size: 11px; margin: 2px 0; }
-  .items-table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-  .items-table th { text-align: left; border-bottom: 1px dashed #000; padding: 4px 0; font-size: 10px; }
-  .totals { border-top: 1px dashed #000; padding-top: 8px; }
-  .total-row { display: flex; justify-content: space-between; font-size: 12px; margin: 3px 0; }
-  .total-row.main { font-weight: bold; font-size: 14px; }
-  .footer { text-align: center; border-top: 1px dashed #000; padding-top: 8px; margin-top: 10px; }
-</style></head>
-<body>
-  <div class="header"><h1>${receiptSettings.businessName}</h1><p>${receiptSettings.address}</p></div>
-  <div><div class="info-row"><span>Invoice:</span><span>${sale.id.slice(0, 8).toUpperCase()}</span></div>
-  <div class="info-row"><span>Date:</span><span>${formatDateShort(sale.createdAt)}</span></div>
-  <div class="info-row"><span>Customer:</span><span>${sale.customerName}</span></div></div>
-  <table class="items-table"><thead><tr><th>Item</th><th>Qty</th><th>Amt</th></tr></thead><tbody>${itemsHTML}</tbody></table>
-  <div class="totals"><div class="total-row main"><span>TOTAL:</span><span>Rs.${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</span></div></div>
-  <div class="footer"><p>${receiptSettings.thankYou}</p></div>
-</body></html>`;
-
-      electronAPI.printReceipt(receiptHTML)
+    if (electronAPI?.printSilent) {
+      // Use Electron silent print
+      electronAPI.printSilent()
         .then(() => {
           toast({
             title: "Print Successful",
-            description: `Receipt #${sale.id.slice(0, 8).toUpperCase()} printed successfully`,
+            description: `Receipt #${sale.id.slice(0, 8).toUpperCase()} sent to printer`,
           });
         })
-        .catch(() => {
+        .catch((error: any) => {
+          console.error("Print error:", error);
           toast({
             title: "Print Failed",
-            description: "Could not print receipt. Check printer connection.",
+            description: "Check printer connection or use Print button instead",
             variant: "destructive"
           });
         });
     } else {
-      // Web browser - silent print not available
+      // Fallback: use browser print
       toast({
-        title: "Direct Print Not Available",
-        description: "Silent printing only works in Desktop App. Use 'Print' button instead.",
-        variant: "destructive"
+        title: "Using Browser Print",
+        description: "Direct print not available. Using standard print dialog.",
       });
+      setTimeout(() => window.print(), 200);
     }
   };
 
@@ -531,7 +499,7 @@ export default function BillPrint() {
     return pdf.output('blob');
   };
 
-  // Share Bill via WhatsApp (PDF file sharing)
+  // Share Bill via WhatsApp - WITH PDF FILE SUPPORT
   const shareToWhatsApp = async () => {
     if (!sale) return;
 
@@ -540,7 +508,7 @@ export default function BillPrint() {
     if (!whatsappPhone) {
       toast({
         title: "Invalid Phone Number",
-        description: "Customer phone number is invalid for WhatsApp. Please check the number.",
+        description: "Customer phone number is invalid for WhatsApp.",
         variant: "destructive",
       });
       return;
@@ -552,56 +520,65 @@ export default function BillPrint() {
     const fileName = `Invoice-${sale.id.slice(0, 8).toUpperCase()}-${formatDateShort(sale.createdAt).replace(/\//g, '-')}.pdf`;
     const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
-    // Try Web Share API for PDF file sharing (works on mobile)
+    // Check if Electron API available for direct share
+    const electronAPI = (window as any).electronAPI;
+    
+    if (electronAPI?.shareToWhatsApp) {
+      try {
+        // Try Electron native share
+        await electronAPI.shareToWhatsApp(whatsappPhone, {
+          fileName: fileName,
+          pdfData: await pdfBlob.arrayBuffer(),
+          businessName: receiptSettings.businessName,
+          totalAmount: Math.round(parseFloat(sale.totalAmount)),
+          customerName: sale.customerName,
+        });
+        toast({
+          title: "Shared Successfully",
+          description: "Invoice sent to WhatsApp",
+        });
+        return;
+      } catch (error) {
+        console.log('Electron share failed, trying fallback');
+      }
+    }
+
+    // Try Web Share API (works on some mobile browsers)
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
         await navigator.share({
           files: [pdfFile],
           title: `Invoice - ${sale.customerName}`,
-          text: `Invoice from ${receiptSettings.businessName} - Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`
+          text: `Invoice from ${receiptSettings.businessName}`
         });
         toast({
           title: "Shared Successfully",
-          description: "Invoice PDF shared via WhatsApp.",
+          description: "Invoice shared via WhatsApp",
         });
         return;
       } catch (error) {
         if ((error as Error).name !== 'AbortError') {
-          console.log('Share failed, falling back to text share');
+          console.log('Web share failed, using text fallback');
         } else {
           return;
         }
       }
     }
 
-    // Fallback to text-based sharing for desktop
+    // Fallback: Text message with WhatsApp link
     const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
     const itemsList = sale.saleItems.map(item => 
-      `- ${item.color.variant.product.productName} ${item.color.colorName} (${item.color.colorCode}) x${item.quantity} = Rs.${Math.round(parseFloat(item.subtotal))}`
+      `${item.color.variant.product.productName} x${item.quantity} Rs.${Math.round(parseFloat(item.subtotal))}`
     ).join('\n');
 
-    const message = `*${receiptSettings.businessName}*
-Bill #${sale.id.slice(0, 8)}
-Date: ${formatDateShort(sale.createdAt)}
-
-*Customer:* ${sale.customerName}
-
-*Items:*
-${itemsList}
-
-*Total:* Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}
-*Paid:* Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}
-${outstanding > 0 ? `*Outstanding:* Rs. ${Math.round(outstanding).toLocaleString()}` : '*Status:* PAID'}
-
-${receiptSettings.thankYou}
-_${receiptSettings.dealerText} ${receiptSettings.dealerBrands}_`;
+    const message = `*${receiptSettings.businessName}*\n*Bill #${sale.id.slice(0, 8).toUpperCase()}*\n\n${sale.customerName}\n\n*Items:*\n${itemsList}\n\n*Total:* Rs.${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}\n*Paid:* Rs.${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}\n${outstanding > 0 ? `*Due:* Rs.${Math.round(outstanding).toLocaleString()}` : '*Status: PAID*'}\n\n${receiptSettings.thankYou}`;
 
     const encodedMessage = encodeURIComponent(message);
     window.open(`https://wa.me/${whatsappPhone}?text=${encodedMessage}`, '_blank');
     
     toast({
       title: "WhatsApp Opening",
-      description: "Bill details sent to WhatsApp (PDF sharing not supported on desktop).",
+      description: "Bill details sent to WhatsApp. Send PDF separately from your device.",
     });
   };
 
