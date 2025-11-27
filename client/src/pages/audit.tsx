@@ -1,3 +1,4 @@
+// audit.tsx - FIXED VERSION
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -173,7 +174,7 @@ export default function Audit() {
   const [lastExportCounts, setLastExportCounts] = useState<any>(null);
   const [lastImportCounts, setLastImportCounts] = useState<any>(null);
 
-  const { data: hasPin } = useQuery<{ hasPin: boolean }>({
+  const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
     queryKey: ["/api/audit/has-pin"],
     enabled: !isVerified,
   });
@@ -189,12 +190,12 @@ export default function Audit() {
   });
 
   const { data: stockInHistory = [], isLoading: stockInLoading } = useQuery<StockInHistoryWithColor[]>({
-    queryKey: ["/api/stock-in-history"],
+    queryKey: ["/api/stock-in/history"],
     enabled: isVerified,
   });
 
   const { data: stockOutHistory = [], isLoading: stockOutLoading } = useQuery<StockOutItem[]>({
-    queryKey: ["/api/audit/stock-out", auditToken],
+    queryKey: ["/api/audit/stock-out"],
     enabled: isVerified && !!auditToken,
     queryFn: async () => {
       if (!auditToken) throw new Error("No audit token");
@@ -217,7 +218,7 @@ export default function Audit() {
   });
 
   const { data: unpaidBills = [], isLoading: unpaidLoading } = useQuery<Sale[]>({
-    queryKey: ["/api/audit/unpaid-bills", auditToken],
+    queryKey: ["/api/audit/unpaid-bills"],
     enabled: isVerified && !!auditToken,
     queryFn: async () => {
       if (!auditToken) throw new Error("No audit token");
@@ -230,7 +231,7 @@ export default function Audit() {
   });
 
   const { data: auditPayments = [], isLoading: auditPaymentsLoading } = useQuery<PaymentHistoryWithSale[]>({
-    queryKey: ["/api/audit/payments", auditToken],
+    queryKey: ["/api/audit/payments"],
     enabled: isVerified && !!auditToken,
     queryFn: async () => {
       if (!auditToken) throw new Error("No audit token");
@@ -243,7 +244,7 @@ export default function Audit() {
   });
 
   const { data: auditReturns = [], isLoading: returnsLoading } = useQuery<Return[]>({
-    queryKey: ["/api/audit/returns", auditToken],
+    queryKey: ["/api/audit/returns"],
     enabled: isVerified && !!auditToken,
     queryFn: async () => {
       if (!auditToken) throw new Error("No audit token");
@@ -287,9 +288,16 @@ export default function Audit() {
 
   const verifyPinMutation = useMutation({
     mutationFn: async (pin: string) => {
-      const response = await apiRequest("POST", "/api/audit/verify", { pin });
-      const data = await response.json();
-      return data;
+      const response = await fetch("/api/audit/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "PIN verification failed");
+      }
+      return response.json();
     },
     onSuccess: (data: { ok: boolean; isDefault?: boolean; auditToken?: string }) => {
       if (data.ok && data.auditToken) {
@@ -309,17 +317,24 @@ export default function Audit() {
         sessionStorage.setItem("auditToken", data.auditToken);
       }
     },
-    onError: () => {
-      setPinError("Invalid PIN. Please try again.");
+    onError: (error: Error) => {
+      setPinError(error.message || "Invalid PIN. Please try again.");
       setPinInput(["", "", "", ""]);
     },
   });
 
   const changePinMutation = useMutation({
     mutationFn: async ({ currentPin, newPin }: { currentPin: string; newPin: string }) => {
-      const response = await apiRequest("PATCH", "/api/audit/pin", { currentPin, newPin });
-      const data = await response.json();
-      return data;
+      const response = await fetch("/api/audit/pin", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPin, newPin }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to change PIN");
+      }
+      return response.json();
     },
     onSuccess: () => {
       toast({
@@ -516,7 +531,9 @@ export default function Audit() {
 
   useEffect(() => {
     const storedToken = sessionStorage.getItem("auditToken");
-    if (sessionStorage.getItem("auditVerified") === "true" && storedToken) {
+    const storedVerified = sessionStorage.getItem("auditVerified");
+    
+    if (storedVerified === "true" && storedToken) {
       setIsVerified(true);
       setAuditToken(storedToken);
       setShowPinDialog(false);
@@ -1266,7 +1283,7 @@ export default function Audit() {
           </DialogHeader>
           <div className="space-y-6 py-4">
             
-            {!hasPin?.hasPin && (
+            {hasPin && !hasPin.hasPin && (
               <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
                 <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
                 <p className="text-sm text-yellow-700 dark:text-yellow-300">

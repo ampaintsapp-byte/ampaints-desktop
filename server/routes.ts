@@ -1,4 +1,4 @@
-// routes.ts - Complete Updated Version
+// routes.ts - Complete Updated Version with Fixed Audit
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -18,7 +18,49 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import crypto from "crypto";
-import { verifyAuditToken } from "./auth";
+
+// Audit token storage (in-memory for session management)
+const auditTokens = new Map<string, { createdAt: number }>();
+
+// Helper function to hash PIN
+function hashPin(pin: string, salt: string): string {
+  return crypto
+    .pbkdf2Sync(pin, salt, 100000, 64, "sha512")
+    .toString("hex");
+}
+
+// Middleware to verify audit token
+export function verifyAuditToken(req: any, res: any, next: any) {
+  const token = req.headers["x-audit-token"];
+  
+  if (!token) {
+    return res.status(401).json({ error: "Audit token required" });
+  }
+
+  const tokenData = auditTokens.get(token as string);
+  if (!tokenData) {
+    return res.status(401).json({ error: "Invalid or expired audit token" });
+  }
+
+  // Check if token is expired (24 hours)
+  const tokenAge = Date.now() - tokenData.createdAt;
+  if (tokenAge > 24 * 60 * 60 * 1000) {
+    auditTokens.delete(token as string);
+    return res.status(401).json({ error: "Audit token expired" });
+  }
+
+  next();
+}
+
+// Clean up expired tokens periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of auditTokens.entries()) {
+    if (now - data.createdAt > 24 * 60 * 60 * 1000) {
+      auditTokens.delete(token);
+    }
+  }
+}, 60 * 60 * 1000); // Run every hour
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Products
@@ -969,182 +1011,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // AUDIT ROUTES
-  app.post("/api/audit/has-pin", async (req, res) => {
+  // ============ FIXED AUDIT ROUTES ============
+  app.get("/api/audit/has-pin", async (req, res) => {
     try {
       const settings = await storage.getSettings();
       res.json({ 
-        hasPin: !!settings.auditPinHash,
+        hasPin: !!(settings.auditPinHash && settings.auditPinSalt),
         isDefault: !settings.auditPinHash // If no hash, default PIN is active
       });
     } catch (error) {
       console.error("[API] Error checking PIN:", error);
-      res.status(500).json({ error: "Failed to check PIN" });
+      res.status(200).json({ hasPin: false, isDefault: true });
     }
   });
 
-  app.post("/api/audit/verify", async (req, res) => {
-    try {
-      const { pin } = req.body;
-      
-      if (!pin || pin.length !== 4) {
-        return res.status(400).json({ error: "Invalid PIN format" });
-      }
-
-      const settings = await storage.getSettings();
-      
-      // If no PIN hash exists, check against default PIN "0000"
-      if (!settings.auditPinHash) {
-        console.log("[API] Checking default PIN");
-        if (pin === "0000") {
-          const token = crypto.randomBytes(32).toString('hex');
-          return res.json({ 
-            ok: true, 
-            isDefault: true,
-            auditToken: token 
-          });
-        } else {
-          return res.status(401).json({ error: "Invalid PIN" });
-        }
-      }
-
-      // Verify against stored hash
-      console.log("[API] Verifying PIN against hash");
-      const hash = crypto
-        .pbkdf2Sync(pin, settings.auditPinSalt!, 100000, 64, "sha512")
-        .toString("hex");
-
-      if (hash === settings.auditPinHash) {
-        const token = crypto.randomBytes(32).toString('hex');
-        return res.json({ 
-          ok: true, 
-          isDefault: false,
-          auditToken: token 
-        });
-      } else {
-        return res.status(401).json({ error: "Invalid PIN" });
-      }
-    } catch (error) {
-      console.error("[API] Error verifying PIN:", error);
-      res.status(500).json({ error: "PIN verification failed" });
-    }
-  });
-
-  app.patch("/api/audit/pin", async (req, res) => {
-    try {
-      const { currentPin, newPin } = req.body;
-
-      if (!currentPin || !newPin || newPin.length !== 4) {
-        return res.status(400).json({ error: "Invalid PIN format" });
-      }
-
-      const settings = await storage.getSettings();
-
-      // Verify current PIN
-      let isValid = false;
-      
-      if (!settings.auditPinHash) {
-        // No hash set yet, check against default
-        isValid = currentPin === "0000";
-      } else {
-        // Check against stored hash
-        const hash = crypto
-          .pbkdf2Sync(currentPin, settings.auditPinSalt!, 100000, 64, "sha512")
-          .toString("hex");
-        isValid = hash === settings.auditPinHash;
-      }
-
-      if (!isValid) {
-        return res.status(401).json({ error: "Current PIN is incorrect" });
-      }
-
-      // Hash new PIN
-      const salt = crypto.randomBytes(32).toString("hex");
-      const newHash = crypto
-        .pbkdf2Sync(newPin, salt, 100000, 64, "sha512")
-        .toString("hex");
-
-      // Save new PIN
-      await storage.updateSettings({
-        auditPinHash: newHash,
-        auditPinSalt: salt,
-      });
-
-      console.log("[API] PIN changed successfully");
-      res.json({ 
-        ok: true, 
-        message: "PIN changed successfully" 
-      });
-    } catch (error) {
-      console.error("[API] Error changing PIN:", error);
-      res.status(500).json({ error: "Failed to change PIN" });
-    }
-  });
-
-  // Returns
-  app.get("/api/returns", async (req, res) => {
-    try {
-      const returns = await storage.getReturns();
-      res.json(returns);
-    } catch (error) {
-      console.error("[API] Error fetching returns:", error);
-      // Return empty array if table doesn't exist
-      if (error instanceof Error && error.message.includes("no such table")) {
-        res.json([]);
-      } else {
-        res.status(500).json({ 
-          error: "Failed to fetch returns",
-          message: error instanceof Error ? error.message : "Unknown error"
-        });
-      }
-    }
-  });
-
-  app.get("/api/returns/:id", async (req, res) => {
-    try {
-      const returnRecord = await storage.getReturn(req.params.id);
-      res.json(returnRecord);
-    } catch (error) {
-      console.error("[API] Error fetching return:", error);
-      res.status(500).json({ 
-        error: "Failed to fetch return",
-        message: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  app.post("/api/returns", requirePerm('sales:edit'), async (req, res) => {
-    try {
-      const result = await storage.createReturn(req.body.returnData, req.body.items);
-      res.json(result);
-    } catch (error) {
-      console.error("[API] Error creating return:", error);
-      res.status(500).json({ 
-        error: "Failed to create return",
-        message: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Audit
-  app.get("/api/audit/has-pin", async (req, res) => {
-    try {
-      const settings = await storage.getSettings();
-      res.json({ hasPin: !!settings.auditPinHash });
-    } catch (error) {
-      console.error("[API] Error checking PIN:", error);
-      res.status(200).json({ hasPin: false });
-    }
-  });
-
-  // Verify audit PIN
   app.post("/api/audit/verify", async (req, res) => {
     try {
       const { pin } = req.body;
       
       if (!pin || typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
-        res.status(400).json({ error: "PIN must be exactly 4 digits" });
-        return;
+        return res.status(400).json({ error: "PIN must be exactly 4 digits" });
       }
 
       const settings = await storage.getSettings();
@@ -1152,23 +1038,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If no PIN is set, default PIN is "0000"
       if (!settings.auditPinHash || !settings.auditPinSalt) {
         if (pin === "0000") {
-          const token = crypto.randomBytes(24).toString('hex');
+          const token = crypto.randomBytes(32).toString('hex');
           auditTokens.set(token, { createdAt: Date.now() });
-          res.json({ ok: true, isDefault: true, auditToken: token });
-          return;
+          return res.json({ 
+            ok: true, 
+            isDefault: true, 
+            auditToken: token 
+          });
         } else {
-          res.status(401).json({ error: "Invalid PIN", ok: false });
-          return;
+          return res.status(401).json({ error: "Invalid PIN", ok: false });
         }
       }
 
+      // Verify against stored hash
       const hashedInput = hashPin(pin, settings.auditPinSalt);
       if (hashedInput === settings.auditPinHash) {
-        const token = crypto.randomBytes(24).toString('hex');
+        const token = crypto.randomBytes(32).toString('hex');
         auditTokens.set(token, { createdAt: Date.now() });
-        res.json({ ok: true, isDefault: false, auditToken: token });
+        return res.json({ 
+          ok: true, 
+          isDefault: false, 
+          auditToken: token 
+        });
       } else {
-        res.status(401).json({ error: "Invalid PIN", ok: false });
+        return res.status(401).json({ error: "Invalid PIN", ok: false });
       }
     } catch (error) {
       console.error("Error verifying audit PIN:", error);
@@ -1176,36 +1069,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Set or change audit PIN
   app.patch("/api/audit/pin", async (req, res) => {
     try {
       const { currentPin, newPin } = req.body;
       
       if (!newPin || typeof newPin !== 'string' || newPin.length !== 4) {
-        res.status(400).json({ error: "New PIN must be 4 digits" });
-        return;
+        return res.status(400).json({ error: "New PIN must be 4 digits" });
       }
 
       const settings = await storage.getSettings();
       
       // Verify current PIN
+      let isValid = false;
+      
       if (!settings.auditPinHash || !settings.auditPinSalt) {
-        // No PIN set, current PIN must be "0000" (default)
-        if (currentPin !== "0000") {
-          res.status(401).json({ error: "Current PIN is incorrect" });
-          return;
-        }
+        // No PIN set yet, check against default
+        isValid = currentPin === "0000";
       } else {
-        // PIN is set, verify it
+        // Check against stored hash
         if (!currentPin || typeof currentPin !== 'string' || currentPin.length !== 4) {
-          res.status(400).json({ error: "Current PIN must be 4 digits" });
-          return;
+          return res.status(400).json({ error: "Current PIN must be 4 digits" });
         }
         const hashedCurrent = hashPin(currentPin, settings.auditPinSalt);
-        if (hashedCurrent !== settings.auditPinHash) {
-          res.status(401).json({ error: "Current PIN is incorrect" });
-          return;
-        }
+        isValid = hashedCurrent === settings.auditPinHash;
+      }
+
+      if (!isValid) {
+        return res.status(401).json({ error: "Current PIN is incorrect" });
       }
 
       // Generate new salt and hash
@@ -1217,6 +1107,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         auditPinSalt: newSalt,
         auditPinHash: newHash,
       });
+
+      // Invalidate all existing audit tokens
+      auditTokens.clear();
 
       res.json({ success: true, message: "PIN changed successfully" });
     } catch (error) {
@@ -1822,37 +1715,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const httpServer = createServer(app);
   return httpServer;
-}
-
-// Helper function to generate PDF content for stock history
-function generateStockHistoryPDF(history: any[], filters: any): string {
-  // Create a simple text-based PDF content
-  let pdfContent = `Stock In History Report\n`;
-  pdfContent += `Generated on: ${new Date().toLocaleDateString()}\n`;
-  pdfContent += `Total Records: ${history.length}\n\n`;
-  
-  if (filters.startDate && filters.endDate) {
-    pdfContent += `Date Range: ${filters.startDate} to ${filters.endDate}\n`;
-  }
-  if (filters.company && filters.company !== 'all') {
-    pdfContent += `Company: ${filters.company}\n`;
-  }
-  if (filters.product && filters.product !== 'all') {
-    pdfContent += `Product: ${filters.product}\n`;
-  }
-  
-  pdfContent += `\n`;
-  pdfContent += `Stock In Date | Date | Time | Company | Product | Size | Color Code | Color Name | Previous Stock | Quantity Added | New Stock | Notes\n`;
-  pdfContent += `--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---\n`;
-  
-  history.forEach((record, index) => {
-    const date = new Date(record.createdAt).toLocaleDateString();
-    const time = new Date(record.createdAt).toLocaleTimeString();
-    
-    pdfContent += `${record.stockInDate} | ${date} | ${time} | ${record.color.variant.product.company} | ${record.color.variant.product.productName} | ${record.color.variant.packingSize} | ${record.color.colorCode} | ${record.color.colorName} | ${record.previousStock} | +${record.quantity} | ${record.newStock} | ${record.notes || '-'}\n`;
-  });
-
-  // Convert to base64 for PDF (simplified approach)
-  const buffer = Buffer.from(pdfContent, 'utf-8');
-  return buffer.toString('base64');
 }
