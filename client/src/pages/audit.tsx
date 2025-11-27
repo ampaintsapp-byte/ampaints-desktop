@@ -139,13 +139,59 @@ function generateStatementPDFBlob(customer: ConsolidatedCustomer): Blob {
   return pdfBlob;
 }
 
+// Custom hook for authenticated API calls
+function useAuditApiRequest() {
+  const [auditToken, setAuditToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const storedToken = sessionStorage.getItem("auditToken");
+    if (storedToken) {
+      setAuditToken(storedToken);
+    }
+  }, []);
+
+  const authenticatedRequest = async (url: string, options: RequestInit = {}) => {
+    const token = auditToken || sessionStorage.getItem("auditToken");
+    if (!token) {
+      throw new Error("No audit token available");
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Audit-Token": token,
+      ...options.headers,
+    };
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    if (response.status === 401) {
+      // Clear invalid token
+      sessionStorage.removeItem("auditToken");
+      sessionStorage.removeItem("auditVerified");
+      setAuditToken(null);
+      throw new Error("Authentication failed. Please re-enter your PIN.");
+    }
+
+    if (!response.ok) {
+      throw new Error(`Request failed with status ${response.status}`);
+    }
+
+    return response.json();
+  };
+
+  return { authenticatedRequest, auditToken, setAuditToken };
+}
+
 export default function Audit() {
   const { formatDateShort } = useDateFormat();
   const { receiptSettings } = useReceiptSettings();
   const { toast } = useToast();
+  const { authenticatedRequest, auditToken, setAuditToken } = useAuditApiRequest();
 
   const [isVerified, setIsVerified] = useState(false);
-  const [auditToken, setAuditToken] = useState<string | null>(null);
   const [pinInput, setPinInput] = useState(["", "", "", ""]);
   const [pinError, setPinError] = useState("");
   const [isDefaultPin, setIsDefaultPin] = useState(false);
@@ -194,17 +240,11 @@ export default function Audit() {
     enabled: isVerified,
   });
 
+  // Fixed stock out query with proper authentication
   const { data: stockOutHistory = [], isLoading: stockOutLoading } = useQuery<StockOutItem[]>({
-    queryKey: ["/api/audit/stock-out"],
+    queryKey: ["/api/audit/stock-out", auditToken],
     enabled: isVerified && !!auditToken,
-    queryFn: async () => {
-      if (!auditToken) throw new Error("No audit token");
-      const response = await fetch("/api/audit/stock-out", {
-        headers: { "X-Audit-Token": auditToken },
-      });
-      if (!response.ok) throw new Error("Failed to fetch stock out history");
-      return response.json();
-    },
+    queryFn: () => authenticatedRequest("/api/audit/stock-out"),
   });
 
   const { data: allSales = [], isLoading: salesLoading } = useQuery<Sale[]>({
@@ -217,43 +257,25 @@ export default function Audit() {
     enabled: isVerified,
   });
 
+  // Fixed unpaid bills query with proper authentication
   const { data: unpaidBills = [], isLoading: unpaidLoading } = useQuery<Sale[]>({
-    queryKey: ["/api/audit/unpaid-bills"],
+    queryKey: ["/api/audit/unpaid-bills", auditToken],
     enabled: isVerified && !!auditToken,
-    queryFn: async () => {
-      if (!auditToken) throw new Error("No audit token");
-      const response = await fetch("/api/audit/unpaid-bills", {
-        headers: { "X-Audit-Token": auditToken },
-      });
-      if (!response.ok) throw new Error("Failed to fetch unpaid bills");
-      return response.json();
-    },
+    queryFn: () => authenticatedRequest("/api/audit/unpaid-bills"),
   });
 
+  // Fixed payments query with proper authentication
   const { data: auditPayments = [], isLoading: auditPaymentsLoading } = useQuery<PaymentHistoryWithSale[]>({
-    queryKey: ["/api/audit/payments"],
+    queryKey: ["/api/audit/payments", auditToken],
     enabled: isVerified && !!auditToken,
-    queryFn: async () => {
-      if (!auditToken) throw new Error("No audit token");
-      const response = await fetch("/api/audit/payments", {
-        headers: { "X-Audit-Token": auditToken },
-      });
-      if (!response.ok) throw new Error("Failed to fetch payments");
-      return response.json();
-    },
+    queryFn: () => authenticatedRequest("/api/audit/payments"),
   });
 
+  // Fixed returns query with proper authentication
   const { data: auditReturns = [], isLoading: returnsLoading } = useQuery<Return[]>({
-    queryKey: ["/api/audit/returns"],
+    queryKey: ["/api/audit/returns", auditToken],
     enabled: isVerified && !!auditToken,
-    queryFn: async () => {
-      if (!auditToken) throw new Error("No audit token");
-      const response = await fetch("/api/audit/returns", {
-        headers: { "X-Audit-Token": auditToken },
-      });
-      if (!response.ok) throw new Error("Failed to fetch returns");
-      return response.json();
-    },
+    queryFn: () => authenticatedRequest("/api/audit/returns"),
   });
 
   const { data: appSettings } = useQuery<AppSettings>({
@@ -356,7 +378,7 @@ export default function Audit() {
     },
   });
 
-  // Cloud Sync Functions
+  // Cloud Sync Functions - Fixed with proper authentication
   const handleTestConnection = async () => {
     if (!cloudUrl.trim()) {
       toast({
@@ -369,15 +391,11 @@ export default function Audit() {
 
     setCloudConnectionStatus("testing");
     try {
-      const response = await fetch("/api/cloud/test-connection", {
+      const data = await authenticatedRequest("/api/cloud/test-connection", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Audit-Token": auditToken || "",
-        },
         body: JSON.stringify({ connectionUrl: cloudUrl }),
       });
-      const data = await response.json();
+      
       if (data.ok) {
         setCloudConnectionStatus("success");
         toast({
@@ -404,15 +422,11 @@ export default function Audit() {
 
   const handleSaveCloudSettings = async () => {
     try {
-      const response = await fetch("/api/cloud/save-settings", {
+      const data = await authenticatedRequest("/api/cloud/save-settings", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Audit-Token": auditToken || "",
-        },
         body: JSON.stringify({ connectionUrl: cloudUrl, syncEnabled: true }),
       });
-      const data = await response.json();
+      
       if (data.ok) {
         toast({
           title: "Settings Saved",
@@ -444,14 +458,10 @@ export default function Audit() {
 
     setCloudSyncStatus("exporting");
     try {
-      const response = await fetch("/api/cloud/export", {
+      const data = await authenticatedRequest("/api/cloud/export", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Audit-Token": auditToken || "",
-        },
       });
-      const data = await response.json();
+      
       if (data.ok) {
         setLastExportCounts(data.counts);
         toast({
@@ -492,14 +502,10 @@ export default function Audit() {
 
     setCloudSyncStatus("importing");
     try {
-      const response = await fetch("/api/cloud/import", {
+      const data = await authenticatedRequest("/api/cloud/import", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Audit-Token": auditToken || "",
-        },
       });
-      const data = await response.json();
+      
       if (data.ok) {
         setLastImportCounts(data.counts);
         toast({
