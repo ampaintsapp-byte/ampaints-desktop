@@ -1,5 +1,5 @@
-// unpaid-bills.tsx - Complete Premium Version
-import { useState, useMemo } from "react";
+// unpaid-bills.tsx - Fixed Calculation Version
+import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,8 +66,7 @@ import {
   Wallet,
   IndianRupee,
   SortAsc,
-  SortDesc,
-  MessageCircle
+  SortDesc
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -204,23 +203,36 @@ export default function UnpaidBills() {
     paymentStatus: "all"
   });
 
-  const { data: unpaidSales = [], isLoading } = useQuery<Sale[]>({
+  const { data: unpaidSales = [], isLoading, refetch: refetchUnpaidSales } = useQuery<Sale[]>({
     queryKey: ["/api/sales/unpaid"],
     refetchInterval: 30000, // Auto-refresh every 30 seconds
     refetchOnWindowFocus: true, // Refresh when tab becomes active
   });
 
   // Fetch payment history for a specific customer
-  const { data: paymentHistory = [] } = useQuery<PaymentRecord[]>({
+  const { data: paymentHistory = [], refetch: refetchPaymentHistory } = useQuery<PaymentRecord[]>({
     queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`],
     enabled: !!viewingPaymentHistoryCustomerPhone,
   });
 
   // Fetch balance notes for all sales of a customer
-  const { data: balanceNotes = [] } = useQuery<BalanceNote[]>({
+  const { data: balanceNotes = [], refetch: refetchBalanceNotes } = useQuery<BalanceNote[]>({
     queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`],
     enabled: !!viewingNotesCustomerPhone,
   });
+
+  // Auto-refresh data when dialogs open
+  useEffect(() => {
+    if (paymentHistoryDialogOpen && viewingPaymentHistoryCustomerPhone) {
+      refetchPaymentHistory();
+    }
+  }, [paymentHistoryDialogOpen, viewingPaymentHistoryCustomerPhone]);
+
+  useEffect(() => {
+    if (notesDialogOpen && viewingNotesCustomerPhone) {
+      refetchBalanceNotes();
+    }
+  }, [notesDialogOpen, viewingNotesCustomerPhone]);
 
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
@@ -239,6 +251,7 @@ export default function UnpaidBills() {
         queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      refetchUnpaidSales();
       toast({ 
         title: "Payment recorded successfully",
         description: `Payment of Rs. ${parseFloat(paymentAmount).toLocaleString()} has been recorded.`
@@ -269,6 +282,8 @@ export default function UnpaidBills() {
       if (viewingNotesCustomerPhone) {
         queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
       }
+      refetchUnpaidSales();
+      refetchBalanceNotes();
       toast({ title: "Note added successfully" });
       setNotesDialogOpen(false);
       setNewNote("");
@@ -286,6 +301,7 @@ export default function UnpaidBills() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      refetchUnpaidSales();
       toast({ 
         title: "New pending balance added successfully",
         description: "A new separate bill has been created for this customer"
@@ -317,6 +333,7 @@ export default function UnpaidBills() {
       if (selectedSaleId) {
         queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
       }
+      refetchUnpaidSales();
       toast({ title: "Due date updated successfully" });
       setDueDateDialogOpen(false);
       setEditingSaleId(null);
@@ -387,6 +404,8 @@ export default function UnpaidBills() {
       if (viewingPaymentHistoryCustomerPhone) {
         queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
       }
+      refetchUnpaidSales();
+      refetchPaymentHistory();
       toast({ 
         title: `Payment recorded successfully`,
         description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
@@ -461,11 +480,11 @@ export default function UnpaidBills() {
       const phone = sale.customerPhone;
       const existing = customerMap.get(phone);
       
-      const totalAmount = parseFloat(sale.totalAmount);
-      const totalPaid = parseFloat(sale.amountPaid);
+      const totalAmount = parseFloat(sale.totalAmount || "0");
+      const totalPaid = parseFloat(sale.amountPaid || "0");
       const outstanding = totalAmount - totalPaid;
       const billDate = new Date(sale.createdAt);
-      const daysOverdue = Math.ceil((new Date().getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24));
+      const daysOverdue = Math.max(0, Math.ceil((new Date().getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24)));
       
       if (existing) {
         existing.bills.push(sale);
@@ -596,20 +615,12 @@ export default function UnpaidBills() {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
   const selectedCustomer = consolidatedCustomers.find(c => c.customerPhone === selectedCustomerPhone);
 
-  // Format phone for WhatsApp
-  const formatPhoneForWhatsApp = (phone: string): string | null => {
-    if (!phone || phone.trim().length < 10) return null;
-    let cleaned = phone.replace(/[^\d+]/g, '');
-    if (cleaned.length < 10) return null;
-    if (cleaned.startsWith('0')) {
-      cleaned = '92' + cleaned.slice(1);
-    } else if (!cleaned.startsWith('92') && !cleaned.startsWith('+92')) {
-      cleaned = '92' + cleaned;
+  // Refresh data when customer details dialog opens
+  useEffect(() => {
+    if (selectedCustomerPhone) {
+      refetchUnpaidSales();
     }
-    cleaned = cleaned.replace(/^\+/, '');
-    if (cleaned.length < 12) return null;
-    return cleaned;
-  };
+  }, [selectedCustomerPhone]);
 
   // Generate PDF Statement as Blob
   const generateStatementPDFBlob = (customer: ConsolidatedCustomer): Blob => {
@@ -704,8 +715,8 @@ export default function UnpaidBills() {
         yPos = margin;
       }
 
-      const billTotal = parseFloat(bill.totalAmount);
-      const billPaid = parseFloat(bill.amountPaid);
+      const billTotal = parseFloat(bill.totalAmount || "0");
+      const billPaid = parseFloat(bill.amountPaid || "0");
       const billDue = billTotal - billPaid;
       const dueDateStatus = getDueDateStatus(bill.dueDate);
       
@@ -760,103 +771,6 @@ export default function UnpaidBills() {
     });
   };
 
-  // Share Statement via WhatsApp (PDF file sharing)
-  const shareStatementToWhatsApp = async (customer: ConsolidatedCustomer) => {
-    const whatsappPhone = formatPhoneForWhatsApp(customer.customerPhone);
-    
-    if (!whatsappPhone) {
-      toast({
-        title: "Invalid Phone Number",
-        description: "Customer phone number is invalid for WhatsApp.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const pdfBlob = generateStatementPDFBlob(customer);
-    const fileName = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
-    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-
-    // Try Web Share API for PDF file sharing (works on mobile)
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-      try {
-        await navigator.share({
-          files: [pdfFile],
-          title: `Statement - ${customer.customerName}`,
-          text: `Account Statement from ${receiptSettings.businessName} - Balance: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`
-        });
-        toast({
-          title: "Shared Successfully",
-          description: "Statement PDF shared via WhatsApp.",
-        });
-        return;
-      } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          console.log('Share failed, falling back to text share');
-        } else {
-          return;
-        }
-      }
-    }
-
-    // Fallback to text-based sharing for desktop - matching PDF statement format
-    const separator = '─'.repeat(40);
-    
-    // Build detailed ledger-style bill list
-    const billsLedger = customer.bills.map(bill => {
-      const billDate = formatDateShort(bill.createdAt);
-      const billNo = bill.id.slice(-8).toUpperCase();
-      const amount = Math.round(parseFloat(bill.totalAmount));
-      const paid = Math.round(parseFloat(bill.amountPaid));
-      const balance = amount - paid;
-      const status = balance === 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID';
-      return `${billDate} | #${billNo}
-   Amount: Rs.${amount.toLocaleString()}
-   Paid: Rs.${paid.toLocaleString()}
-   Balance: Rs.${balance.toLocaleString()} [${status}]`;
-    }).join('\n\n');
-
-    const message = `${separator}
-*${receiptSettings.businessName}*
-*ACCOUNT STATEMENT*
-${separator}
-
-*Customer Details*
-Name: ${customer.customerName}
-Phone: ${customer.customerPhone}
-Statement Date: ${formatDateShort(new Date())}
-
-${separator}
-*SUMMARY*
-${separator}
-Total Amount: Rs. ${Math.round(customer.totalAmount).toLocaleString()}
-Total Paid: Rs. ${Math.round(customer.totalPaid).toLocaleString()}
-*Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}*
-
-${separator}
-*TRANSACTION DETAILS*
-${separator}
-
-${billsLedger}
-
-${separator}
-*BALANCE DUE: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}*
-${separator}
-
-${receiptSettings.thankYou}
-${receiptSettings.businessName}
-${receiptSettings.address}`;
-
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/${whatsappPhone}?text=${encodedMessage}`, '_blank');
-    
-    toast({
-      title: "WhatsApp Opening",
-      description: "Statement sent to WhatsApp (PDF sharing not supported on desktop).",
-    });
-  };
-
-  // Add CSS for glass effect
   const glassStyles = `
     .glass-card {
       background: rgba(255, 255, 255, 0.8);
@@ -963,7 +877,11 @@ ${receiptSettings.address}`;
 
             <Button 
               className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all duration-300"
-              onClick={() => consolidatedCustomers.length > 0 && generateDetailedPDFStatement(consolidatedCustomers[0])}
+              onClick={() => {
+                if (consolidatedCustomers.length > 0) {
+                  generateDetailedPDFStatement(consolidatedCustomers[0]);
+                }
+              }}
               disabled={consolidatedCustomers.length === 0}
             >
               <Download className="h-4 w-4" />
@@ -1239,7 +1157,11 @@ ${receiptSettings.address}`;
               <div 
                 key={customer.customerPhone} 
                 className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
-                onClick={() => setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`)}
+                onClick={() => {
+                  // Refresh data before opening customer details
+                  refetchUnpaidSales();
+                  setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`);
+                }}
                 data-testid={`card-customer-${customer.customerPhone}`}
               >
                 {/* Header */}
@@ -1281,13 +1203,6 @@ ${receiptSettings.address}`;
                         }}>
                           <Download className="h-4 w-4 mr-2" />
                           Download Statement
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => {
-                          e.stopPropagation();
-                          shareStatementToWhatsApp(customer);
-                        }} className="text-green-600">
-                          <MessageCircle className="h-4 w-4 mr-2" />
-                          WhatsApp Share
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={(e) => {
                           e.stopPropagation();
@@ -1366,6 +1281,8 @@ ${receiptSettings.address}`;
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
+                      // Refresh data before showing details
+                      refetchUnpaidSales();
                       setSelectedCustomerPhone(customer.customerPhone);
                     }}
                   >
@@ -1380,7 +1297,14 @@ ${receiptSettings.address}`;
       )}
 
       {/* Customer Bills Details Dialog */}
-      <Dialog open={!!selectedCustomerPhone && !paymentDialogOpen} onOpenChange={(open) => !open && setSelectedCustomerPhone(null)}>
+      <Dialog open={!!selectedCustomerPhone && !paymentDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedCustomerPhone(null);
+        } else {
+          // Refresh data when dialog opens
+          refetchUnpaidSales();
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto glass-card border-white/20">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1449,10 +1373,10 @@ ${receiptSettings.address}`;
 
               {/* Bills List */}
               <div className="space-y-3">
-                <h3 className="font-medium text-slate-800">Bills</h3>
+                <h3 className="font-medium text-slate-800">Bills ({selectedCustomer.bills.length})</h3>
                 {selectedCustomer.bills.map((bill) => {
-                  const billTotal = parseFloat(bill.totalAmount);
-                  const billPaid = parseFloat(bill.amountPaid);
+                  const billTotal = parseFloat(bill.totalAmount || "0");
+                  const billPaid = parseFloat(bill.amountPaid || "0");
                   const billOutstanding = Math.round(billTotal - billPaid);
                   const isManual = bill.isManualBalance;
                   
