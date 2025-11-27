@@ -1,4 +1,4 @@
-// stock-management.tsx - Premium Glass Theme Redesign
+// stock-management.tsx - Clean Minimal Version
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,20 +41,13 @@ import {
   ChevronUp,
   Eye,
   Edit,
-  MoreVertical,
   History,
   Calendar,
   Filter,
   Download,
   FileText,
   RefreshCw,
-  Sparkles,
-  TrendingUp,
-  BarChart3,
-  Warehouse,
-  PaintBucket,
   ArrowUpCircle,
-  Database,
   Zap
 } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -66,7 +59,7 @@ import { useDateFormat } from "@/hooks/use-date-format";
 import { usePermissions } from "@/hooks/use-permissions";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Product, VariantWithProduct, ColorWithVariantAndProduct } from "@shared/schema";
-import { getEffectiveRate, formatDateToDDMMYYYY, parseDDMMYYYYToDate } from "@shared/schema";
+import { getEffectiveRate, formatDateToDDMMYYYY } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -247,17 +240,17 @@ export default function StockManagement() {
      ------------------------- */
   const { data: products = [], isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
-    refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
+    refetchOnWindowFocus: true,
   });
 
   const { data: variantsData = [], isLoading: variantsLoading } = useQuery<VariantWithProduct[]>({
     queryKey: ["/api/variants"],
-    refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
+    refetchOnWindowFocus: true,
   });
 
   const { data: colorsData = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
-    refetchOnWindowFocus: true, // Auto-refresh when tab becomes active
+    refetchOnWindowFocus: true,
   });
 
   /* Stock In History Query */
@@ -269,21 +262,18 @@ export default function StockManagement() {
   const filteredStockInHistory = useMemo(() => {
     let filtered = stockInHistory;
 
-    // Apply company filter
     if (historyCompanyFilter !== "all") {
       filtered = filtered.filter(history => 
         history.color.variant.product.company === historyCompanyFilter
       );
     }
 
-    // Apply product filter
     if (historyProductFilter !== "all") {
       filtered = filtered.filter(history => 
         history.color.variant.product.productName === historyProductFilter
       );
     }
 
-    // Apply date filter
     if (historyDateFilter !== "all") {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -312,7 +302,6 @@ export default function StockManagement() {
       });
     }
 
-    // Apply custom date range filter
     if (historyStartDate) {
       const start = new Date(historyStartDate);
       start.setHours(0, 0, 0, 0);
@@ -325,7 +314,6 @@ export default function StockManagement() {
       filtered = filtered.filter(history => new Date(history.createdAt) <= end);
     }
 
-    // Apply search filter
     if (historySearchQuery.trim()) {
       const query = historySearchQuery.trim().toLowerCase();
       filtered = filtered.filter(history => 
@@ -512,7 +500,7 @@ export default function StockManagement() {
   }, [editingStockHistory, stockHistoryEditForm]);
 
   /* -------------------------
-     Mutations (same as before)
+     Mutations
      ------------------------- */
   const createProductSingleMutation = useMutation({
     mutationFn: async (data: z.infer<typeof productFormSchema>) => {
@@ -541,7 +529,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
       toast({ title: "Product updated successfully" });
       setEditingProduct(null);
     },
@@ -557,8 +544,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: "Product deleted successfully" });
     },
     onError: (error: any) => {
@@ -573,8 +558,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       setSelectedProducts(new Set());
       toast({ title: "Products deleted successfully" });
     },
@@ -630,7 +613,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       toast({ title: "Variant deleted successfully" });
     },
     onError: (error: any) => {
@@ -645,7 +627,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       setSelectedVariants(new Set());
       toast({ title: "Variants deleted successfully" });
     },
@@ -665,8 +646,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       toast({ title: "Color added successfully" });
       colorForm.reset();
       setIsColorDialogOpen(false);
@@ -688,7 +667,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       toast({ title: "Color updated successfully" });
       setEditingColor(null);
     },
@@ -704,7 +682,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       toast({ title: "Color deleted successfully" });
     },
     onError: (error: any) => {
@@ -719,7 +696,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       setSelectedColors(new Set());
       toast({ title: "Colors deleted successfully" });
     },
@@ -762,8 +738,6 @@ export default function StockManagement() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       toast({ title: "Stock added successfully" });
       stockInForm.reset({
         stockInDate: formatDateToDDMMYYYY(new Date())
@@ -817,9 +791,9 @@ export default function StockManagement() {
      Helpers + UI functions
      ------------------------- */
   const getStockBadge = (stock: number) => {
-    if (stock === 0) return <Badge variant="destructive" className="glass-destructive">Out of Stock</Badge>;
-    if (stock < 10) return <Badge variant="secondary" className="glass-warning">Low Stock</Badge>;
-    return <Badge variant="default" className="glass-success">In Stock</Badge>;
+    if (stock === 0) return <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">Out of Stock</Badge>;
+    if (stock < 10) return <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200">Low Stock</Badge>;
+    return <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">In Stock</Badge>;
   };
 
   /* -------------------------
@@ -987,7 +961,6 @@ export default function StockManagement() {
   /* PDF Export for Stock In History */
   const exportStockInHistoryPDF = async () => {
     try {
-      // Build query parameters from current filters
       const params = new URLSearchParams();
       
       if (historyCompanyFilter !== 'all') {
@@ -1028,7 +1001,6 @@ export default function StockManagement() {
       console.error("Error exporting PDF:", error);
       toast({ 
         title: "Failed to export PDF", 
-        description: "Please try again later",
         variant: "destructive" 
       });
     }
@@ -1046,11 +1018,9 @@ export default function StockManagement() {
   const [isSavingQuick, setIsSavingQuick] = useState(false);
 
   const saveQuickAdd = async () => {
-    // Determine final company & product
     const company = useExistingCompany ? selectedCompany : newCompany.trim();
     const productName = useExistingProduct ? selectedProduct : newProduct.trim();
 
-    // Basic validations
     if (!company) {
       toast({ title: "Company is required", variant: "destructive" });
       setQuickStep(1);
@@ -1083,7 +1053,6 @@ export default function StockManagement() {
 
     setIsSavingQuick(true);
     try {
-      // Check existing product
       let productId: string | undefined;
       const existingProduct = products.find(p => p.company === company && p.productName === productName);
       if (existingProduct) {
@@ -1095,7 +1064,6 @@ export default function StockManagement() {
 
       if (!productId) throw new Error("Product creation failed: no id returned");
 
-      // Create variants and capture ids
       const createdVariantIds: string[] = [];
       for (const variant of finalVariants) {
         const vResp = await createVariantMutation.mutateAsync({ 
@@ -1106,7 +1074,6 @@ export default function StockManagement() {
         createdVariantIds.push(vResp.id);
       }
 
-      // Create colors for each created variant
       if (finalColors.length > 0) {
         for (const variantId of createdVariantIds) {
           for (const color of finalColors) {
@@ -1129,7 +1096,6 @@ export default function StockManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       queryClient.invalidateQueries({ queryKey: ["/api/variants"] });
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
 
       // Reset wizard
       setIsQuickAddOpen(false);
@@ -1183,51 +1149,7 @@ export default function StockManagement() {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  // Add CSS for glass effect
-  const glassStyles = `
-    .glass-card {
-      background: rgba(255, 255, 255, 0.8);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }
-    .glass-destructive {
-      background: rgba(239, 68, 68, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-    }
-    .glass-warning {
-      background: rgba(245, 158, 11, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(245, 158, 11, 0.2);
-    }
-    .glass-success {
-      background: rgba(34, 197, 94, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(34, 197, 94, 0.2);
-    }
-    .glass-outline {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    .hover-elevate {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .hover-elevate:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-    }
-    .gradient-bg {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .premium-border {
-      border: 1px solid;
-      border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
-    }
-  `;
-
-  // Calculate statistics for the header
+  // Calculate statistics
   const totalStockValue = colorsData.reduce((sum, color) => {
     const rate = parseFloat(getEffectiveRate(color));
     return sum + (color.stockQuantity * rate);
@@ -1240,52 +1162,22 @@ export default function StockManagement() {
      Render
      ------------------------- */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
-      <style>{glassStyles}</style>
-      
-      {/* Header Section */}
-      <div className="glass-card rounded-2xl p-6 border border-white/20 shadow-xl">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div className="space-y-3">
+    <div className="min-h-screen bg-slate-50 p-6 space-y-6">
+      {/* Header Section - Clean and Minimal */}
+      <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="space-y-2">
             <div className="flex items-center gap-3">
-              <div className="gradient-bg p-2 rounded-xl">
-                <Warehouse className="h-6 w-6 text-white" />
+              <div className="bg-blue-500 p-2 rounded-lg">
+                <Package className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                <h1 className="text-2xl font-bold text-slate-800">
                   Stock Management
                 </h1>
-                <p className="text-sm text-slate-600 mt-1">
-                  Manage products, variants, colors, and inventory with premium control
+                <p className="text-sm text-slate-600">
+                  Manage products, variants, colors, and inventory
                 </p>
-              </div>
-            </div>
-            
-            {/* Stats Overview */}
-            <div className="flex items-center gap-6 flex-wrap">
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                <span className="text-slate-700">
-                  <strong>{products.length}</strong> Products
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span className="text-slate-700">
-                  <strong>{colorsData.length}</strong> Colors
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-                <span className="text-slate-700">
-                  Stock Value: <strong>Rs. {Math.round(totalStockValue).toLocaleString()}</strong>
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                <span className="text-slate-700">
-                  <strong>{lowStockItems + outOfStockItems}</strong> Need Attention
-                </span>
               </div>
             </div>
           </div>
@@ -1294,14 +1186,14 @@ export default function StockManagement() {
             <Button 
               variant="outline" 
               onClick={() => setIsQuickAddOpen(true)}
-              className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
+              className="flex items-center gap-2 border-slate-300"
             >
               <Zap className="h-4 w-4" />
               Quick Add
             </Button>
 
             <Button 
-              className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all duration-300"
+              className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700"
               onClick={() => setIsProductDialogOpen(true)}
             >
               <Plus className="h-4 w-4" />
@@ -1311,134 +1203,51 @@ export default function StockManagement() {
         </div>
       </div>
 
-      {/* Quick Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-xl">
-              <Package className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-600">Products</p>
-              <p className="text-2xl font-bold text-slate-800">{products.length}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-xl">
-              <Layers className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-600">Variants</p>
-              <p className="text-2xl font-bold text-slate-800">{variantsData.length}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-xl">
-              <Palette className="h-5 w-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-600">Colors</p>
-              <p className="text-2xl font-bold text-slate-800">{colorsData.length}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-xl">
-              <TrendingUp className="h-5 w-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-600">Stock Value</p>
-              <p className="text-2xl font-bold text-slate-800">Rs. {Math.round(totalStockValue).toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Tabs: Products/Variants/Colors/Stock In/Stock In History */}
       <Tabs defaultValue="products" className="space-y-4">
-        <div className="overflow-x-auto pb-2">
-          <TabsList className="glass-card border-white/20 p-1 inline-flex w-auto min-w-full sm:w-full" data-testid="stock-management-tabs">
-            <TabsTrigger 
-              value="products" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
-              data-testid="tab-products"
-            >
-              <Package className="h-4 w-4" />
-              <span className="hidden sm:inline">Products</span>
-              <span className="sm:hidden">Prod</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="variants" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
-              data-testid="tab-variants"
-            >
-              <Layers className="h-4 w-4" />
-              <span className="hidden sm:inline">Variants</span>
-              <span className="sm:hidden">Var</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="colors" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
-              data-testid="tab-colors"
-            >
-              <Palette className="h-4 w-4" />
-              <span className="hidden sm:inline">Colors</span>
-              <span className="sm:hidden">Col</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="stock-in" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
-              data-testid="tab-stock-in"
-            >
-              <TruckIcon className="h-4 w-4" />
-              <span className="hidden sm:inline">Stock In</span>
-              <span className="sm:hidden">In</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="stock-in-history" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
-              data-testid="tab-history"
-            >
-              <History className="h-4 w-4" />
-              <span className="hidden sm:inline">Stock In</span>
-              <span className="sm:hidden">In</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="stock-out-history" 
-              className="flex items-center gap-2 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#667eea] data-[state=active]:to-[#764ba2] data-[state=active]:text-white data-[state=active]:shadow-md whitespace-nowrap text-slate-700"
-              data-testid="tab-stock-out"
-            >
-              <ArrowUpCircle className="h-4 w-4" />
-              <span className="hidden sm:inline">Stock Out</span>
-              <span className="sm:hidden">Out</span>
-            </TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="bg-white border border-slate-200 p-1 w-full">
+          <TabsTrigger value="products" className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Package className="h-4 w-4" />
+            Products ({products.length})
+          </TabsTrigger>
+          <TabsTrigger value="variants" className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Layers className="h-4 w-4" />
+            Variants ({variantsData.length})
+          </TabsTrigger>
+          <TabsTrigger value="colors" className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Palette className="h-4 w-4" />
+            Colors ({colorsData.length})
+          </TabsTrigger>
+          <TabsTrigger value="stock-in" className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <TruckIcon className="h-4 w-4" />
+            Stock In
+          </TabsTrigger>
+          <TabsTrigger value="stock-in-history" className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <History className="h-4 w-4" />
+            Stock In History
+          </TabsTrigger>
+          <TabsTrigger value="stock-out-history" className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <ArrowUpCircle className="h-4 w-4" />
+            Stock Out History
+          </TabsTrigger>
+        </TabsList>
 
         {/* Products Tab */}
         <TabsContent value="products" className="space-y-4">
-          <div className="glass-card rounded-2xl border border-white/20">
-            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-white/20">
+          <div className="bg-white rounded-xl border border-slate-200">
+            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-semibold text-slate-800">Products ({products.length})</h2>
+                <h2 className="text-xl font-semibold text-slate-800">Products</h2>
                 <p className="text-sm text-slate-600">Manage your product catalog and companies</p>
               </div>
               <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
                 <Button 
                   onClick={() => setIsProductDialogOpen(true)}
-                  className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all"
+                  className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700"
                 >
                   <Plus className="h-4 w-4" /> Add Product
                 </Button>
-                <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+                <DialogContent className="max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Package className="h-5 w-5" />
@@ -1452,11 +1261,7 @@ export default function StockManagement() {
                         <FormItem>
                           <FormLabel>Company Name</FormLabel>
                           <FormControl>
-                            <Input 
-                              placeholder="e.g., Premium Paint Co" 
-                              {...field} 
-                              className="glass-card border-white/20"
-                            />
+                            <Input placeholder="e.g., Premium Paint Co" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1465,29 +1270,16 @@ export default function StockManagement() {
                         <FormItem>
                           <FormLabel>Product Name</FormLabel>
                           <FormControl>
-                            <Input 
-                              placeholder="e.g., Exterior Emulsion" 
-                              {...field} 
-                              className="glass-card border-white/20"
-                            />
+                            <Input placeholder="e.g., Exterior Emulsion" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <div className="flex justify-end gap-2">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          onClick={() => setIsProductDialogOpen(false)}
-                          className="glass-card border-white/20"
-                        >
+                        <Button type="button" variant="outline" onClick={() => setIsProductDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button 
-                          type="submit" 
-                          disabled={createProductSingleMutation.isPending}
-                          className="gradient-bg text-white"
-                        >
+                        <Button type="submit" disabled={createProductSingleMutation.isPending} className="bg-blue-600 text-white">
                           {createProductSingleMutation.isPending ? "Creating..." : "Create Product"}
                         </Button>
                       </div>
@@ -1500,9 +1292,9 @@ export default function StockManagement() {
               {productsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="glass-card rounded-xl p-4 border border-white/20">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
+                    <div key={i} className="bg-slate-50 rounded-lg p-4">
+                      <Skeleton className="h-6 w-3/4 mb-2" />
+                      <Skeleton className="h-4 w-1/2" />
                     </div>
                   ))}
                 </div>
@@ -1511,10 +1303,7 @@ export default function StockManagement() {
                   <Package className="h-16 w-16 mx-auto mb-4 text-slate-400" />
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">No products found</h3>
                   <p className="text-slate-600 mb-4">Add your first product to get started with inventory management</p>
-                  <Button 
-                    onClick={() => setIsProductDialogOpen(true)}
-                    className="gradient-bg text-white"
-                  >
+                  <Button onClick={() => setIsProductDialogOpen(true)} className="bg-blue-600 text-white">
                     <Plus className="h-4 w-4 mr-2" />
                     Add First Product
                   </Button>
@@ -1529,31 +1318,24 @@ export default function StockManagement() {
                         placeholder="Search by product name or company..." 
                         value={productSearchQuery} 
                         onChange={e => setProductSearchQuery(e.target.value)} 
-                        className="pl-9 glass-card border-white/20"
-                        data-testid="input-product-search"
+                        className="pl-9"
                       />
                     </div>
                     <div className="flex gap-2 items-center flex-wrap">
                       <Select value={productCompanyFilter} onValueChange={setProductCompanyFilter}>
-                        <SelectTrigger className="glass-card border-white/20 min-w-[180px]" data-testid="select-product-company-filter">
+                        <SelectTrigger className="min-w-[180px]">
                           <SelectValue placeholder="All Companies" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Companies</SelectItem>
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
                       {(productCompanyFilter !== "all" || productSearchQuery) && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => {
-                            setProductCompanyFilter("all");
-                            setProductSearchQuery("");
-                          }}
-                          className="glass-card border-white/20"
-                          data-testid="button-clear-product-filters"
-                        >
+                        <Button variant="outline" size="sm" onClick={() => {
+                          setProductCompanyFilter("all");
+                          setProductSearchQuery("");
+                        }}>
                           Clear
                         </Button>
                       )}
@@ -1564,16 +1346,11 @@ export default function StockManagement() {
                   {selectedProducts.size > 0 && canDeleteStock && (
                     <div className="flex gap-2 items-center p-3 bg-amber-50 rounded-lg border border-amber-200">
                       <span className="text-sm font-medium text-amber-800">{selectedProducts.size} selected</span>
-                      <Button 
-                        variant="destructive" 
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(`Delete ${selectedProducts.size} selected product(s)? This will also delete all associated variants and colors.`)) {
-                            bulkDeleteProductsMutation.mutate(Array.from(selectedProducts));
-                          }
-                        }}
-                        className="glass-destructive text-red-600 border-red-200"
-                      >
+                      <Button variant="destructive" size="sm" onClick={() => {
+                        if (confirm(`Delete ${selectedProducts.size} selected product(s)? This will also delete all associated variants and colors.`)) {
+                          bulkDeleteProductsMutation.mutate(Array.from(selectedProducts));
+                        }
+                      }}>
                         <Trash className="h-4 w-4 mr-1" /> Delete Selected
                       </Button>
                     </div>
@@ -1585,117 +1362,96 @@ export default function StockManagement() {
                       <Search className="h-12 w-12 mx-auto mb-4 text-slate-400" />
                       <h3 className="text-lg font-semibold text-slate-800 mb-2">No products found</h3>
                       <p className="text-slate-600 mb-4">Try adjusting your search or filter criteria</p>
-                      <Button 
-                        variant="outline"
-                        onClick={() => {
-                          setProductCompanyFilter("all");
-                          setProductSearchQuery("");
-                        }}
-                        className="glass-card border-white/20"
-                        data-testid="button-reset-product-search"
-                      >
+                      <Button variant="outline" onClick={() => {
+                        setProductCompanyFilter("all");
+                        setProductSearchQuery("");
+                      }}>
                         Reset Search
                       </Button>
                     </div>
                   ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="products-grid">
-                    {filteredProducts.map(product => {
-                      const productVariants = variantsData.filter(v => v.productId === product.id);
-                      
-                      // Calculate price range from variants
-                      const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
-                      const minRate = rates.length > 0 ? Math.min(...rates) : 0;
-                      const maxRate = rates.length > 0 ? Math.max(...rates) : 0;
-                      const priceRange = rates.length > 0 
-                        ? (minRate === maxRate 
-                            ? `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` 
-                            : `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} - ${maxRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`)
-                        : "No variants";
-                      
-                      return (
-                        <div 
-                          key={product.id} 
-                          className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate group cursor-pointer"
-                          onClick={() => setViewingProduct(product)}
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-blue-100 rounded-xl">
-                                <Package className="h-4 w-4 text-blue-600" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredProducts.map(product => {
+                        const productVariants = variantsData.filter(v => v.productId === product.id);
+                        
+                        // Calculate price range from variants
+                        const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
+                        const minRate = rates.length > 0 ? Math.min(...rates) : 0;
+                        const maxRate = rates.length > 0 ? Math.max(...rates) : 0;
+                        const priceRange = rates.length > 0 
+                          ? (minRate === maxRate 
+                              ? `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` 
+                              : `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} - ${maxRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`)
+                          : "No variants";
+                        
+                        return (
+                          <div key={product.id} className="bg-white rounded-lg p-4 border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-100 rounded-lg">
+                                  <Package className="h-4 w-4 text-blue-600" />
+                                </div>
+                                <div>
+                                  <h3 className="font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
+                                    {product.productName}
+                                  </h3>
+                                  <p className="text-sm text-slate-600">{product.company}</p>
+                                </div>
                               </div>
-                              <div>
-                                <h3 className="font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
-                                  {product.productName}
-                                </h3>
-                                <p className="text-sm text-slate-600">{product.company}</p>
+                              <input
+                                type="checkbox"
+                                checked={selectedProducts.has(product.id)}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  const newSet = new Set(selectedProducts);
+                                  if (e.target.checked) {
+                                    newSet.add(product.id);
+                                  } else {
+                                    newSet.delete(product.id);
+                                  }
+                                  setSelectedProducts(newSet);
+                                }}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600">Variants</span>
+                                <Badge variant="outline">{productVariants.length} variants</Badge>
+                              </div>
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600">Price Range</span>
+                                <span className="font-mono font-semibold text-blue-600">{priceRange}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600">Created</span>
+                                <span className="text-slate-500">{formatDateShort(product.createdAt)}</span>
                               </div>
                             </div>
-                            <input
-                              type="checkbox"
-                              checked={selectedProducts.has(product.id)}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                const newSet = new Set(selectedProducts);
-                                if (e.target.checked) {
-                                  newSet.add(product.id);
-                                } else {
-                                  newSet.delete(product.id);
-                                }
-                                setSelectedProducts(newSet);
-                              }}
-                              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                          </div>
 
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600">Variants</span>
-                              <Badge variant="outline" className="glass-card border-white/20">
-                                {productVariants.length} variants
-                              </Badge>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600">Price Range</span>
-                              <span className="font-mono font-semibold text-blue-600">{priceRange}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600">Created</span>
-                              <span className="text-slate-500">{formatDateShort(product.createdAt)}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2 mt-3">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 glass-card border-white/20 text-slate-700 hover:border-blue-300"
-                              onClick={(e) => {
+                            <div className="flex gap-2 mt-3">
+                              <Button variant="outline" size="sm" className="flex-1" onClick={(e) => {
                                 e.stopPropagation();
                                 setViewingProduct(product);
-                              }}
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Button>
-                            {canEditStock && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 glass-card border-white/20 text-slate-700 hover:border-green-300"
-                                onClick={(e) => {
+                              }}>
+                                <Eye className="h-4 w-4 mr-1" />
+                                View
+                              </Button>
+                              {canEditStock && (
+                                <Button variant="outline" size="sm" className="flex-1" onClick={(e) => {
                                   e.stopPropagation();
                                   setEditingProduct(product);
-                                }}
-                              >
-                                <Edit className="h-4 w-4 mr-1" />
-                                Edit
-                              </Button>
-                            )}
+                                }}>
+                                  <Edit className="h-4 w-4 mr-1" />
+                                  Edit
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               )}
@@ -1705,20 +1461,17 @@ export default function StockManagement() {
 
         {/* Variants Tab */}
         <TabsContent value="variants" className="space-y-4">
-          <div className="glass-card rounded-2xl border border-white/20">
-            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-white/20">
+          <div className="bg-white rounded-xl border border-slate-200">
+            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-semibold text-slate-800">Variants ({variantsData.length})</h2>
+                <h2 className="text-xl font-semibold text-slate-800">Variants</h2>
                 <p className="text-sm text-slate-600">Manage product variants and pricing</p>
               </div>
               <Dialog open={isVariantDialogOpen} onOpenChange={setIsVariantDialogOpen}>
-                <Button 
-                  onClick={() => setIsVariantDialogOpen(true)}
-                  className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all"
-                >
+                <Button onClick={() => setIsVariantDialogOpen(true)} className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700">
                   <Plus className="h-4 w-4" /> Add Variant
                 </Button>
-                <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+                <DialogContent className="max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Layers className="h-5 w-5" />
@@ -1733,11 +1486,11 @@ export default function StockManagement() {
                           <FormLabel>Product</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
-                              <SelectTrigger className="glass-card border-white/20">
+                              <SelectTrigger>
                                 <SelectValue placeholder="Select product" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent className="glass-card border-white/20">
+                            <SelectContent>
                               {products.map(p => <SelectItem key={p.id} value={p.id}>{p.company} - {p.productName}</SelectItem>)}
                             </SelectContent>
                           </Select>
@@ -1748,11 +1501,7 @@ export default function StockManagement() {
                         <FormItem>
                           <FormLabel>Packing Size</FormLabel>
                           <FormControl>
-                            <Input 
-                              placeholder="e.g., 1L, 4L, 16L" 
-                              {...field} 
-                              className="glass-card border-white/20"
-                            />
+                            <Input placeholder="e.g., 1L, 4L, 16L" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1761,31 +1510,16 @@ export default function StockManagement() {
                         <FormItem>
                           <FormLabel>Rate (Rs.)</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="number" 
-                              step="0.01" 
-                              placeholder="e.g., 250.00" 
-                              {...field} 
-                              className="glass-card border-white/20"
-                            />
+                            <Input type="number" step="0.01" placeholder="e.g., 250.00" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <div className="flex justify-end gap-2">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          onClick={() => setIsVariantDialogOpen(false)}
-                          className="glass-card border-white/20"
-                        >
+                        <Button type="button" variant="outline" onClick={() => setIsVariantDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button 
-                          type="submit" 
-                          disabled={createVariantSingleMutation.isPending}
-                          className="gradient-bg text-white"
-                        >
+                        <Button type="submit" disabled={createVariantSingleMutation.isPending} className="bg-blue-600 text-white">
                           {createVariantSingleMutation.isPending ? "Creating..." : "Create Variant"}
                         </Button>
                       </div>
@@ -1798,9 +1532,9 @@ export default function StockManagement() {
               {variantsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="glass-card rounded-xl p-4 border border-white/20">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
+                    <div key={i} className="bg-slate-50 rounded-lg p-4">
+                      <Skeleton className="h-6 w-3/4 mb-2" />
+                      <Skeleton className="h-4 w-1/2" />
                     </div>
                   ))}
                 </div>
@@ -1809,10 +1543,7 @@ export default function StockManagement() {
                   <Layers className="h-16 w-16 mx-auto mb-4 text-slate-400" />
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">No variants found</h3>
                   <p className="text-slate-600 mb-4">Add variants to organize your products by size and pricing</p>
-                  <Button 
-                    onClick={() => setIsVariantDialogOpen(true)}
-                    className="gradient-bg text-white"
-                  >
+                  <Button onClick={() => setIsVariantDialogOpen(true)} className="bg-blue-600 text-white">
                     <Plus className="h-4 w-4 mr-2" />
                     Add First Variant
                   </Button>
@@ -1827,18 +1558,17 @@ export default function StockManagement() {
                         placeholder="Search by product, company, size, or rate..." 
                         value={variantSearchQuery} 
                         onChange={e => setVariantSearchQuery(e.target.value)} 
-                        className="pl-9 glass-card border-white/20"
-                        data-testid="input-variant-search"
+                        className="pl-9"
                       />
                     </div>
                     <div className="flex gap-2 items-end flex-wrap">
                       <div className="flex-1 min-w-[140px]">
                         <Label className="text-xs text-slate-700">Company</Label>
                         <Select value={variantCompanyFilter} onValueChange={setVariantCompanyFilter}>
-                          <SelectTrigger className="glass-card border-white/20" data-testid="select-variant-company-filter">
+                          <SelectTrigger>
                             <SelectValue placeholder="All" />
                           </SelectTrigger>
-                          <SelectContent className="glass-card border-white/20">
+                          <SelectContent>
                             <SelectItem value="all">All Companies</SelectItem>
                             {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                           </SelectContent>
@@ -1847,10 +1577,10 @@ export default function StockManagement() {
                       <div className="flex-1 min-w-[140px]">
                         <Label className="text-xs text-slate-700">Product</Label>
                         <Select value={variantProductFilter} onValueChange={setVariantProductFilter}>
-                          <SelectTrigger className="glass-card border-white/20" data-testid="select-variant-product-filter">
+                          <SelectTrigger>
                             <SelectValue placeholder="All" />
                           </SelectTrigger>
-                          <SelectContent className="glass-card border-white/20">
+                          <SelectContent>
                             <SelectItem value="all">All Products</SelectItem>
                             {Array.from(new Set(variantsData.map(v => v.product.productName))).sort().map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                           </SelectContent>
@@ -1859,28 +1589,22 @@ export default function StockManagement() {
                       <div className="flex-1 min-w-[140px]">
                         <Label className="text-xs text-slate-700">Size</Label>
                         <Select value={variantSizeFilter} onValueChange={setVariantSizeFilter}>
-                          <SelectTrigger className="glass-card border-white/20" data-testid="select-variant-size-filter">
+                          <SelectTrigger>
                             <SelectValue placeholder="All" />
                           </SelectTrigger>
-                          <SelectContent className="glass-card border-white/20">
+                          <SelectContent>
                             <SelectItem value="all">All Sizes</SelectItem>
                             {Array.from(new Set(variantsData.map(v => v.packingSize))).sort().map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>
                       {(variantCompanyFilter !== "all" || variantProductFilter !== "all" || variantSizeFilter !== "all" || variantSearchQuery) && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => {
-                            setVariantCompanyFilter("all");
-                            setVariantProductFilter("all");
-                            setVariantSizeFilter("all");
-                            setVariantSearchQuery("");
-                          }}
-                          className="glass-card border-white/20"
-                          data-testid="button-clear-variant-filters"
-                        >
+                        <Button variant="outline" size="sm" onClick={() => {
+                          setVariantCompanyFilter("all");
+                          setVariantProductFilter("all");
+                          setVariantSizeFilter("all");
+                          setVariantSearchQuery("");
+                        }}>
                           Clear
                         </Button>
                       )}
@@ -1891,16 +1615,11 @@ export default function StockManagement() {
                   {selectedVariants.size > 0 && canDeleteStock && (
                     <div className="flex gap-2 items-center p-3 bg-amber-50 rounded-lg border border-amber-200">
                       <span className="text-sm font-medium text-amber-800">{selectedVariants.size} selected</span>
-                      <Button 
-                        variant="destructive" 
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(`Delete ${selectedVariants.size} selected variant(s)? This will also delete all associated colors.`)) {
-                            bulkDeleteVariantsMutation.mutate(Array.from(selectedVariants));
-                          }
-                        }}
-                        className="glass-destructive text-red-600 border-red-200"
-                      >
+                      <Button variant="destructive" size="sm" onClick={() => {
+                        if (confirm(`Delete ${selectedVariants.size} selected variant(s)? This will also delete all associated colors.`)) {
+                          bulkDeleteVariantsMutation.mutate(Array.from(selectedVariants));
+                        }
+                      }}>
                         <Trash className="h-4 w-4 mr-1" /> Delete Selected
                       </Button>
                     </div>
@@ -1908,112 +1627,91 @@ export default function StockManagement() {
 
                   {/* Variants Grid */}
                   {filteredVariants.length === 0 ? (
-                    <div className="text-center py-12" data-testid="variants-no-results">
+                    <div className="text-center py-12">
                       <Search className="h-12 w-12 mx-auto mb-4 text-slate-400" />
                       <h3 className="text-lg font-semibold text-slate-800 mb-2">No variants found</h3>
                       <p className="text-slate-600 mb-4">Try adjusting your search or filter criteria</p>
-                      <Button 
-                        variant="outline"
-                        onClick={() => {
-                          setVariantCompanyFilter("all");
-                          setVariantProductFilter("all");
-                          setVariantSizeFilter("all");
-                          setVariantSearchQuery("");
-                        }}
-                        className="glass-card border-white/20"
-                        data-testid="button-reset-variant-search"
-                      >
+                      <Button variant="outline" onClick={() => {
+                        setVariantCompanyFilter("all");
+                        setVariantProductFilter("all");
+                        setVariantSizeFilter("all");
+                        setVariantSearchQuery("");
+                      }}>
                         Reset Search
                       </Button>
                     </div>
                   ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="variants-grid">
-                    {filteredVariants.map(variant => {
-                      const variantColors = colorsData.filter(c => c.variantId === variant.id);
-                      return (
-                        <div 
-                          key={variant.id} 
-                          className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate group cursor-pointer"
-                          onClick={() => setViewingVariant(variant)}
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-green-100 rounded-xl">
-                                <Layers className="h-4 w-4 text-green-600" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredVariants.map(variant => {
+                        const variantColors = colorsData.filter(c => c.variantId === variant.id);
+                        return (
+                          <div key={variant.id} className="bg-white rounded-lg p-4 border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-green-100 rounded-lg">
+                                  <Layers className="h-4 w-4 text-green-600" />
+                                </div>
+                                <div>
+                                  <h3 className="font-semibold text-slate-800 group-hover:text-green-600 transition-colors">
+                                    {variant.packingSize}
+                                  </h3>
+                                  <p className="text-sm text-slate-600">{variant.product.company} - {variant.product.productName}</p>
+                                </div>
                               </div>
-                              <div>
-                                <h3 className="font-semibold text-slate-800 group-hover:text-green-600 transition-colors">
-                                  {variant.packingSize}
-                                </h3>
-                                <p className="text-sm text-slate-600">{variant.product.company} - {variant.product.productName}</p>
+                              <input
+                                type="checkbox"
+                                checked={selectedVariants.has(variant.id)}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  const newSet = new Set(selectedVariants);
+                                  if (e.target.checked) {
+                                    newSet.add(variant.id);
+                                  } else {
+                                    newSet.delete(variant.id);
+                                  }
+                                  setSelectedVariants(newSet);
+                                }}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600">Rate</span>
+                                <span className="font-mono font-semibold text-green-600">Rs. {Math.round(parseFloat(variant.rate))}</span>
+                              </div>
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600">Colors</span>
+                                <Badge variant="outline">{variantColors.length} colors</Badge>
+                              </div>
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-600">Product</span>
+                                <span className="text-slate-500 truncate">{variant.product.productName}</span>
                               </div>
                             </div>
-                            <input
-                              type="checkbox"
-                              checked={selectedVariants.has(variant.id)}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                const newSet = new Set(selectedVariants);
-                                if (e.target.checked) {
-                                  newSet.add(variant.id);
-                                } else {
-                                  newSet.delete(variant.id);
-                                }
-                                setSelectedVariants(newSet);
-                              }}
-                              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                            />
-                          </div>
 
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600">Rate</span>
-                              <span className="font-mono font-semibold text-green-600">Rs. {Math.round(parseFloat(variant.rate))}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600">Colors</span>
-                              <Badge variant="outline" className="glass-card border-white/20">
-                                {variantColors.length} colors
-                              </Badge>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-slate-600">Product</span>
-                              <span className="text-slate-500 truncate">{variant.product.productName}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2 mt-3">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 glass-card border-white/20 text-slate-700 hover:border-green-300"
-                              onClick={(e) => {
+                            <div className="flex gap-2 mt-3">
+                              <Button variant="outline" size="sm" className="flex-1" onClick={(e) => {
                                 e.stopPropagation();
                                 setViewingVariant(variant);
-                              }}
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
-                            </Button>
-                            {canEditStock && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 glass-card border-white/20 text-slate-700 hover:border-blue-300"
-                                onClick={(e) => {
+                              }}>
+                                <Eye className="h-4 w-4 mr-1" />
+                                View
+                              </Button>
+                              {canEditStock && (
+                                <Button variant="outline" size="sm" className="flex-1" onClick={(e) => {
                                   e.stopPropagation();
                                   setEditingVariant(variant);
-                                }}
-                              >
-                                <Edit className="h-4 w-4 mr-1" />
-                                Edit
-                              </Button>
-                            )}
+                                }}>
+                                  <Edit className="h-4 w-4 mr-1" />
+                                  Edit
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               )}
@@ -2023,20 +1721,17 @@ export default function StockManagement() {
 
         {/* Colors Tab */}
         <TabsContent value="colors" className="space-y-4">
-          <div className="glass-card rounded-2xl border border-white/20">
-            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-white/20">
+          <div className="bg-white rounded-xl border border-slate-200">
+            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-semibold text-slate-800">Colors & Inventory ({colorsData.length})</h2>
+                <h2 className="text-xl font-semibold text-slate-800">Colors & Inventory</h2>
                 <p className="text-sm text-slate-600">Manage color variants and stock levels</p>
               </div>
               <Dialog open={isColorDialogOpen} onOpenChange={setIsColorDialogOpen}>
-                <Button 
-                  onClick={() => setIsColorDialogOpen(true)}
-                  className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all"
-                >
+                <Button onClick={() => setIsColorDialogOpen(true)} className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700">
                   <Plus className="h-4 w-4" /> Add Color
                 </Button>
-                <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+                <DialogContent className="max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Palette className="h-5 w-5" />
@@ -2051,11 +1746,11 @@ export default function StockManagement() {
                           <FormLabel>Variant (Product + Size)</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
-                              <SelectTrigger className="glass-card border-white/20">
+                              <SelectTrigger>
                                 <SelectValue placeholder="Select variant" />
                               </SelectTrigger>
                             </FormControl>
-                            <SelectContent className="glass-card border-white/20">
+                            <SelectContent>
                               {variantsData.map(v => <SelectItem key={v.id} value={v.id}>{v.product.company} - {v.product.productName} ({v.packingSize})</SelectItem>)}
                             </SelectContent>
                           </Select>
@@ -2066,11 +1761,7 @@ export default function StockManagement() {
                         <FormItem>
                           <FormLabel>Color Name</FormLabel>
                           <FormControl>
-                            <Input 
-                              placeholder="e.g., Sky Blue" 
-                              {...field} 
-                              className="glass-card border-white/20"
-                            />
+                            <Input placeholder="e.g., Sky Blue" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -2079,11 +1770,7 @@ export default function StockManagement() {
                         <FormItem>
                           <FormLabel>Color Code</FormLabel>
                           <FormControl>
-                            <Input 
-                              placeholder="e.g., RAL 5002" 
-                              {...field} 
-                              className="glass-card border-white/20"
-                            />
+                            <Input placeholder="e.g., RAL 5002" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -2092,31 +1779,16 @@ export default function StockManagement() {
                         <FormItem>
                           <FormLabel>Initial Quantity</FormLabel>
                           <FormControl>
-                            <Input 
-                              type="number" 
-                              min="0" 
-                              placeholder="e.g., 50" 
-                              {...field} 
-                              className="glass-card border-white/20"
-                            />
+                            <Input type="number" min="0" placeholder="e.g., 50" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )} />
                       <div className="flex justify-end gap-2">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          onClick={() => setIsColorDialogOpen(false)}
-                          className="glass-card border-white/20"
-                        >
+                        <Button type="button" variant="outline" onClick={() => setIsColorDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button 
-                          type="submit" 
-                          disabled={createColorSingleMutation.isPending}
-                          className="gradient-bg text-white"
-                        >
+                        <Button type="submit" disabled={createColorSingleMutation.isPending} className="bg-blue-600 text-white">
                           {createColorSingleMutation.isPending ? "Adding..." : "Add Color"}
                         </Button>
                       </div>
@@ -2129,9 +1801,9 @@ export default function StockManagement() {
               {colorsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="glass-card rounded-xl p-4 border border-white/20">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
+                    <div key={i} className="bg-slate-50 rounded-lg p-4">
+                      <Skeleton className="h-6 w-3/4 mb-2" />
+                      <Skeleton className="h-4 w-1/2" />
                     </div>
                   ))}
                 </div>
@@ -2140,10 +1812,7 @@ export default function StockManagement() {
                   <Palette className="h-16 w-16 mx-auto mb-4 text-slate-400" />
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">No colors found</h3>
                   <p className="text-slate-600 mb-4">Add colors to track inventory and manage stock levels</p>
-                  <Button 
-                    onClick={() => setIsColorDialogOpen(true)}
-                    className="gradient-bg text-white"
-                  >
+                  <Button onClick={() => setIsColorDialogOpen(true)} className="bg-blue-600 text-white">
                     <Plus className="h-4 w-4 mr-2" />
                     Add First Color
                   </Button>
@@ -2160,8 +1829,7 @@ export default function StockManagement() {
                           placeholder="Search by color code, name, product, company..." 
                           value={colorSearchQuery} 
                           onChange={e => setColorSearchQuery(e.target.value)} 
-                          className="pl-9 glass-card border-white/20"
-                          data-testid="input-color-search"
+                          className="pl-9"
                         />
                       </div>
                     </div>
@@ -2169,10 +1837,10 @@ export default function StockManagement() {
                     <div>
                       <Label className="text-xs text-slate-700 mb-2 block">Stock Status</Label>
                       <Select value={colorStockStatusFilter} onValueChange={setColorStockStatusFilter}>
-                        <SelectTrigger className="glass-card border-white/20" data-testid="select-color-status-filter">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Status" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Status</SelectItem>
                           <SelectItem value="out">Out of Stock</SelectItem>
                           <SelectItem value="low">Low Stock</SelectItem>
@@ -2184,27 +1852,21 @@ export default function StockManagement() {
                     <div>
                       <Label className="text-xs text-slate-700 mb-2 block">Company</Label>
                       <Select value={colorCompanyFilter} onValueChange={setColorCompanyFilter}>
-                        <SelectTrigger className="glass-card border-white/20" data-testid="select-color-company-filter">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Companies" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Companies</SelectItem>
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
                     {(colorSearchQuery || colorStockStatusFilter !== "all" || colorCompanyFilter !== "all") && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => {
-                          setColorSearchQuery("");
-                          setColorStockStatusFilter("all");
-                          setColorCompanyFilter("all");
-                        }}
-                        className="glass-card border-white/20 self-end"
-                        data-testid="button-clear-color-filters"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setColorSearchQuery("");
+                        setColorStockStatusFilter("all");
+                        setColorCompanyFilter("all");
+                      }} className="self-end">
                         Clear Filters
                       </Button>
                     )}
@@ -2214,47 +1876,33 @@ export default function StockManagement() {
                   {selectedColors.size > 0 && canDeleteStock && (
                     <div className="flex gap-2 items-center p-3 bg-amber-50 rounded-lg border border-amber-200">
                       <span className="text-sm font-medium text-amber-800">{selectedColors.size} selected</span>
-                      <Button 
-                        variant="destructive" 
-                        size="sm"
-                        onClick={() => {
-                          if (confirm(`Delete ${selectedColors.size} selected color(s)?`)) {
-                            bulkDeleteColorsMutation.mutate(Array.from(selectedColors));
-                          }
-                        }}
-                        className="glass-destructive text-red-600 border-red-200"
-                      >
+                      <Button variant="destructive" size="sm" onClick={() => {
+                        if (confirm(`Delete ${selectedColors.size} selected color(s)?`)) {
+                          bulkDeleteColorsMutation.mutate(Array.from(selectedColors));
+                        }
+                      }}>
                         <Trash className="h-4 w-4 mr-1" /> Delete Selected
                       </Button>
                     </div>
                   )}
 
                   {filteredColors.length === 0 ? (
-                    <div className="text-center py-12" data-testid="colors-no-results">
+                    <div className="text-center py-12">
                       <Search className="h-12 w-12 mx-auto mb-4 text-slate-400" />
                       <h3 className="text-lg font-semibold text-slate-800 mb-2">No colors found</h3>
                       <p className="text-slate-600 mb-4">Try adjusting your search or filter criteria</p>
-                      <Button 
-                        variant="outline"
-                        onClick={() => {
-                          setColorSearchQuery("");
-                          setColorStockStatusFilter("all");
-                          setColorCompanyFilter("all");
-                        }}
-                        className="glass-card border-white/20"
-                        data-testid="button-reset-color-search"
-                      >
+                      <Button variant="outline" onClick={() => {
+                        setColorSearchQuery("");
+                        setColorStockStatusFilter("all");
+                        setColorCompanyFilter("all");
+                      }}>
                         Reset Search
                       </Button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" data-testid="colors-grid">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                       {filteredColors.map(color => (
-                        <div 
-                          key={color.id} 
-                          className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate group cursor-pointer"
-                          onClick={() => setViewingColor(color)}
-                        >
+                        <div key={color.id} className="bg-white rounded-lg p-4 border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group">
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-3">
                               <div 
@@ -2292,9 +1940,7 @@ export default function StockManagement() {
                             </div>
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-600">Size</span>
-                              <Badge variant="outline" className="glass-card border-white/20">
-                                {color.variant.packingSize}
-                              </Badge>
+                              <Badge variant="outline">{color.variant.packingSize}</Badge>
                             </div>
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-600">Stock</span>
@@ -2307,28 +1953,18 @@ export default function StockManagement() {
                           </div>
 
                           <div className="flex gap-2 mt-3">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 glass-card border-white/20 text-slate-700 hover:border-purple-300"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setViewingColor(color);
-                              }}
-                            >
+                            <Button variant="outline" size="sm" className="flex-1" onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingColor(color);
+                            }}>
                               <Eye className="h-4 w-4 mr-1" />
                               View
                             </Button>
                             {canEditStock && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 glass-card border-white/20 text-slate-700 hover:border-blue-300"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingColor(color);
-                                }}
-                              >
+                              <Button variant="outline" size="sm" className="flex-1" onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingColor(color);
+                              }}>
                                 <Edit className="h-4 w-4 mr-1" />
                                 Edit
                               </Button>
@@ -2346,17 +1982,13 @@ export default function StockManagement() {
 
         {/* Stock In Tab */}
         <TabsContent value="stock-in" className="space-y-4">
-          <div className="glass-card rounded-2xl border border-white/20">
-            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-white/20">
+          <div className="bg-white rounded-xl border border-slate-200">
+            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-slate-200">
               <div>
                 <h2 className="text-xl font-semibold text-slate-800">Stock In</h2>
                 <p className="text-sm text-slate-600">Add inventory to existing colors</p>
               </div>
-              <Button 
-                variant="outline"
-                onClick={() => setIsStockInDialogOpen(true)}
-                className="flex items-center gap-2 glass-card border-white/20 hover:border-green-300"
-              >
+              <Button variant="outline" onClick={() => setIsStockInDialogOpen(true)} className="flex items-center gap-2">
                 <ArrowUpCircle className="h-4 w-4" />
                 Add Stock
               </Button>
@@ -2365,9 +1997,9 @@ export default function StockManagement() {
               {colorsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="glass-card rounded-xl p-4 border border-white/20">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
+                    <div key={i} className="bg-slate-50 rounded-lg p-4">
+                      <Skeleton className="h-6 w-3/4 mb-2" />
+                      <Skeleton className="h-4 w-1/2" />
                     </div>
                   ))}
                 </div>
@@ -2376,10 +2008,7 @@ export default function StockManagement() {
                   <TruckIcon className="h-16 w-16 mx-auto mb-4 text-slate-400" />
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">No colors found</h3>
                   <p className="text-slate-600 mb-4">Add colors first before using stock in functionality</p>
-                  <Button 
-                    onClick={() => setIsColorDialogOpen(true)}
-                    className="gradient-bg text-white"
-                  >
+                  <Button onClick={() => setIsColorDialogOpen(true)} className="bg-blue-600 text-white">
                     <Plus className="h-4 w-4 mr-2" />
                     Add Colors
                   </Button>
@@ -2392,7 +2021,7 @@ export default function StockManagement() {
                       placeholder="Search by color code, name, company, or product..." 
                       value={stockInSearchQuery} 
                       onChange={e => setStockInSearchQuery(e.target.value)} 
-                      className="pl-9 glass-card border-white/20"
+                      className="pl-9"
                     />
                   </div>
 
@@ -2404,18 +2033,14 @@ export default function StockManagement() {
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {filteredColorsForStockIn.map(color => (
-                        <div 
-                          key={color.id} 
-                          className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate group cursor-pointer"
-                          onClick={() => {
-                            stockInForm.setValue("colorId", color.id);
-                            stockInForm.setValue("quantity", "");
-                            stockInForm.setValue("notes", "");
-                            stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
-                            setSelectedColorForStockIn(color);
-                            setIsStockInDialogOpen(true);
-                          }}
-                        >
+                        <div key={color.id} className="bg-white rounded-lg p-4 border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group" onClick={() => {
+                          stockInForm.setValue("colorId", color.id);
+                          stockInForm.setValue("quantity", "");
+                          stockInForm.setValue("notes", "");
+                          stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
+                          setSelectedColorForStockIn(color);
+                          setIsStockInDialogOpen(true);
+                        }}>
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-3">
                               <div 
@@ -2439,9 +2064,7 @@ export default function StockManagement() {
                             </div>
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-600">Size</span>
-                              <Badge variant="outline" className="glass-card border-white/20">
-                                {color.variant.packingSize}
-                              </Badge>
+                              <Badge variant="outline">{color.variant.packingSize}</Badge>
                             </div>
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-600">Current Stock</span>
@@ -2453,10 +2076,7 @@ export default function StockManagement() {
                             </div>
                           </div>
 
-                          <Button
-                            className="w-full mt-3 gradient-bg text-white hover:shadow-lg"
-                            size="sm"
-                          >
+                          <Button className="w-full mt-3 bg-blue-600 text-white hover:bg-blue-700" size="sm">
                             <ArrowUpCircle className="h-4 w-4 mr-1" />
                             Add Stock
                           </Button>
@@ -2480,7 +2100,7 @@ export default function StockManagement() {
               });
             }
           }}>
-            <DialogContent className="glass-card border-white/20 max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <ArrowUpCircle className="h-5 w-5" />
@@ -2497,7 +2117,7 @@ export default function StockManagement() {
                       placeholder="Search by color code, name, product, or company..." 
                       value={stockInSearchQuery} 
                       onChange={e => setStockInSearchQuery(e.target.value)} 
-                      className="pl-9 glass-card border-white/20"
+                      className="pl-9"
                     />
                   </div>
 
@@ -2509,20 +2129,16 @@ export default function StockManagement() {
                       </div>
                     ) : (
                       filteredColorsForStockIn.map(color => (
-                        <div 
-                          key={color.id} 
-                          className="glass-card rounded-xl p-3 border border-white/20 hover:shadow-md cursor-pointer transition-shadow"
-                          onClick={() => {
-                            setSelectedColorForStockIn(color);
-                            stockInForm.setValue("colorId", color.id);
-                            stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
-                          }}
-                        >
+                        <div key={color.id} className="bg-slate-50 rounded-lg p-3 border border-slate-200 hover:shadow-md cursor-pointer transition-shadow" onClick={() => {
+                          setSelectedColorForStockIn(color);
+                          stockInForm.setValue("colorId", color.id);
+                          stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
+                        }}>
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex-1 space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-semibold font-mono text-sm">{color.colorCode}</span>
-                                <Badge variant="outline" className="glass-card border-white/20 text-xs">
+                                <Badge variant="outline" className="text-xs">
                                   Stock: {color.stockQuantity}
                                 </Badge>
                               </div>
@@ -2542,7 +2158,7 @@ export default function StockManagement() {
                   <form onSubmit={stockInForm.handleSubmit((data) => stockInMutation.mutate(data))} className="space-y-4">
                     <div className="space-y-2">
                       <Label className="text-slate-700">Selected Color</Label>
-                      <div className="glass-card rounded-xl p-4 border border-white/20">
+                      <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -2551,7 +2167,7 @@ export default function StockManagement() {
                                 style={{ backgroundColor: selectedColorForStockIn.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : selectedColorForStockIn.colorCode }}
                               />
                               <span className="font-semibold font-mono text-sm">{selectedColorForStockIn.colorCode}</span>
-                              <Badge variant="outline" className="glass-card border-white/20 text-xs">
+                              <Badge variant="outline" className="text-xs">
                                 Current: {selectedColorForStockIn.stockQuantity}
                               </Badge>
                             </div>
@@ -2560,13 +2176,7 @@ export default function StockManagement() {
                               {selectedColorForStockIn.variant.product.company} - {selectedColorForStockIn.variant.product.productName} ({selectedColorForStockIn.variant.packingSize})
                             </p>
                           </div>
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => setSelectedColorForStockIn(null)}
-                            className="glass-card border-white/20"
-                          >
+                          <Button type="button" variant="outline" size="sm" onClick={() => setSelectedColorForStockIn(null)}>
                             Change
                           </Button>
                         </div>
@@ -2577,14 +2187,7 @@ export default function StockManagement() {
                       <FormItem>
                         <FormLabel>Quantity to Add</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            min="1" 
-                            step="1" 
-                            placeholder="0" 
-                            {...field} 
-                            className="glass-card border-white/20"
-                          />
+                          <Input type="number" min="1" step="1" placeholder="0" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -2603,7 +2206,6 @@ export default function StockManagement() {
                                 field.onChange(value);
                               }
                             }}
-                            className="glass-card border-white/20"
                           />
                         </FormControl>
                         <FormMessage />
@@ -2614,36 +2216,23 @@ export default function StockManagement() {
                       <FormItem>
                         <FormLabel>Notes (Optional)</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            placeholder="Add any notes about this stock addition..." 
-                            {...field} 
-                            className="glass-card border-white/20"
-                          />
+                          <Textarea placeholder="Add any notes about this stock addition..." {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
 
                     <div className="flex justify-end gap-2">
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => {
-                          setSelectedColorForStockIn(null);
-                          setStockInSearchQuery("");
-                          stockInForm.reset({
-                            stockInDate: formatDateToDDMMYYYY(new Date())
-                          });
-                        }}
-                        className="glass-card border-white/20"
-                      >
+                      <Button type="button" variant="outline" onClick={() => {
+                        setSelectedColorForStockIn(null);
+                        setStockInSearchQuery("");
+                        stockInForm.reset({
+                          stockInDate: formatDateToDDMMYYYY(new Date())
+                        });
+                      }}>
                         Cancel
                       </Button>
-                      <Button 
-                        type="submit" 
-                        disabled={stockInMutation.isPending}
-                        className="gradient-bg text-white"
-                      >
+                      <Button type="submit" disabled={stockInMutation.isPending} className="bg-blue-600 text-white">
                         {stockInMutation.isPending ? "Adding..." : "Add Stock"}
                       </Button>
                     </div>
@@ -2656,37 +2245,22 @@ export default function StockManagement() {
 
         {/* Stock In History Tab */}
         <TabsContent value="stock-in-history" className="space-y-4">
-          <div className="glass-card rounded-2xl border border-white/20">
-            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-white/20">
+          <div className="bg-white rounded-xl border border-slate-200">
+            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-semibold text-slate-800">Stock In History ({filteredStockInHistory.length})</h2>
+                <h2 className="text-xl font-semibold text-slate-800">Stock In History</h2>
                 <p className="text-sm text-slate-600">Track all stock additions and inventory changes</p>
               </div>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={refreshStockInHistory}
-                  className="glass-card border-white/20"
-                >
+                <Button variant="outline" size="sm" onClick={refreshStockInHistory}>
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={exportStockInHistory}
-                  className="glass-card border-white/20"
-                >
+                <Button variant="outline" size="sm" onClick={exportStockInHistory}>
                   <Download className="h-4 w-4 mr-2" />
                   Export CSV
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={exportStockInHistoryPDF}
-                  className="glass-card border-white/20"
-                >
+                <Button variant="outline" size="sm" onClick={exportStockInHistoryPDF}>
                   <FileText className="h-4 w-4 mr-2" />
                   Export PDF
                 </Button>
@@ -2696,9 +2270,9 @@ export default function StockManagement() {
               {historyLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="glass-card rounded-xl p-4 border border-white/20">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
+                    <div key={i} className="bg-slate-50 rounded-lg p-4">
+                      <Skeleton className="h-6 w-3/4 mb-2" />
+                      <Skeleton className="h-4 w-1/2" />
                     </div>
                   ))}
                 </div>
@@ -2707,10 +2281,7 @@ export default function StockManagement() {
                   <History className="h-16 w-16 mx-auto mb-4 text-slate-400" />
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">No stock history found</h3>
                   <p className="text-slate-600 mb-4">Stock in history will appear here when you add stock to colors</p>
-                  <Button 
-                    onClick={refreshStockInHistory}
-                    className="gradient-bg text-white"
-                  >
+                  <Button onClick={refreshStockInHistory} className="bg-blue-600 text-white">
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh History
                   </Button>
@@ -2718,14 +2289,14 @@ export default function StockManagement() {
               ) : (
                 <div className="space-y-4">
                   {/* Enhanced Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg">
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Start Date</Label>
                       <Input
                         type="date"
                         value={historyStartDate || ''}
                         onChange={(e) => setHistoryStartDate(e.target.value)}
-                        className="w-full glass-card border-white/20"
+                        className="w-full"
                       />
                     </div>
                     
@@ -2735,17 +2306,17 @@ export default function StockManagement() {
                         type="date"
                         value={historyEndDate || ''}
                         onChange={(e) => setHistoryEndDate(e.target.value)}
-                        className="w-full glass-card border-white/20"
+                        className="w-full"
                       />
                     </div>
                     
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Company</Label>
                       <Select value={historyCompanyFilter} onValueChange={setHistoryCompanyFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Companies" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Companies</SelectItem>
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
@@ -2755,10 +2326,10 @@ export default function StockManagement() {
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Product</Label>
                       <Select value={historyProductFilter} onValueChange={setHistoryProductFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Products" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Products</SelectItem>
                           {Array.from(new Set(stockInHistory.map(h => h.color.variant.product.productName))).sort().map(p => (
                             <SelectItem key={p} value={p}>{p}</SelectItem>
@@ -2778,7 +2349,7 @@ export default function StockManagement() {
                           placeholder="Search by color code, color name, stock in date..." 
                           value={historySearchQuery}
                           onChange={e => setHistorySearchQuery(e.target.value)}
-                          className="pl-9 glass-card border-white/20"
+                          className="pl-9"
                         />
                       </div>
                     </div>
@@ -2786,10 +2357,10 @@ export default function StockManagement() {
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Quick Date Filters</Label>
                       <Select value={historyDateFilter} onValueChange={setHistoryDateFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Time" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Time</SelectItem>
                           <SelectItem value="today">Today</SelectItem>
                           <SelectItem value="yesterday">Yesterday</SelectItem>
@@ -2806,19 +2377,14 @@ export default function StockManagement() {
                       <p className="text-sm text-slate-600">
                         Showing {filteredStockInHistory.length} of {stockInHistory.length} records
                       </p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => {
-                          setHistoryCompanyFilter("all");
-                          setHistoryProductFilter("all");
-                          setHistoryDateFilter("all");
-                          setHistorySearchQuery("");
-                          setHistoryStartDate("");
-                          setHistoryEndDate("");
-                        }}
-                        className="glass-card border-white/20"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setHistoryCompanyFilter("all");
+                        setHistoryProductFilter("all");
+                        setHistoryDateFilter("all");
+                        setHistorySearchQuery("");
+                        setHistoryStartDate("");
+                        setHistoryEndDate("");
+                      }}>
                         <Filter className="h-4 w-4 mr-2" />
                         Clear All Filters
                       </Button>
@@ -2834,16 +2400,12 @@ export default function StockManagement() {
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {filteredStockInHistory.map(history => (
-                        <div 
-                          key={history.id} 
-                          className="glass-card rounded-2xl p-4 border border-white/20 hover-elevate group cursor-pointer"
-                          onClick={() => {
-                            if (canDeleteStockHistory) {
-                              setEditingStockHistory(history);
-                              setIsEditStockHistoryOpen(true);
-                            }
-                          }}
-                        >
+                        <div key={history.id} className="bg-white rounded-lg p-4 border border-slate-200 hover:shadow-md transition-shadow cursor-pointer group" onClick={() => {
+                          if (canDeleteStockHistory) {
+                            setEditingStockHistory(history);
+                            setIsEditStockHistoryOpen(true);
+                          }
+                        }}>
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-3">
                               <div 
@@ -2857,7 +2419,7 @@ export default function StockManagement() {
                                 <p className="text-sm font-mono text-slate-600">{history.color.colorCode}</p>
                               </div>
                             </div>
-                            <Badge variant="outline" className="glass-card border-white/20 text-xs">
+                            <Badge variant="outline" className="text-xs">
                               {history.stockInDate}
                             </Badge>
                           </div>
@@ -2869,9 +2431,7 @@ export default function StockManagement() {
                             </div>
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-600">Size</span>
-                              <Badge variant="outline" className="glass-card border-white/20">
-                                {history.color.variant.packingSize}
-                              </Badge>
+                              <Badge variant="outline">{history.color.variant.packingSize}</Badge>
                             </div>
                             
                             {/* Stock Information */}
@@ -2913,19 +2473,14 @@ export default function StockManagement() {
 
         {/* Stock Out History Tab (Items sold through POS) */}
         <TabsContent value="stock-out-history" className="space-y-4">
-          <div className="glass-card rounded-2xl border border-white/20">
-            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-white/20">
+          <div className="bg-white rounded-xl border border-slate-200">
+            <div className="flex flex-row items-center justify-between gap-4 p-6 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-semibold text-slate-800">Stock Out History ({filteredStockOutHistory.length})</h2>
+                <h2 className="text-xl font-semibold text-slate-800">Stock Out History</h2>
                 <p className="text-sm text-slate-600">Track all items sold through POS bills</p>
               </div>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => refetchStockOutHistory()}
-                  className="glass-card border-white/20"
-                >
+                <Button variant="outline" size="sm" onClick={() => refetchStockOutHistory()}>
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Refresh
                 </Button>
@@ -2935,9 +2490,9 @@ export default function StockManagement() {
               {stockOutLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
-                    <div key={i} className="glass-card rounded-xl p-4 border border-white/20">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
+                    <div key={i} className="bg-slate-50 rounded-lg p-4">
+                      <Skeleton className="h-6 w-3/4 mb-2" />
+                      <Skeleton className="h-4 w-1/2" />
                     </div>
                   ))}
                 </div>
@@ -2946,10 +2501,7 @@ export default function StockManagement() {
                   <ArrowUpCircle className="h-16 w-16 mx-auto mb-4 text-slate-400" />
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">No stock out records found</h3>
                   <p className="text-slate-600 mb-4">Items sold through POS will appear here</p>
-                  <Button 
-                    onClick={() => refetchStockOutHistory()}
-                    className="gradient-bg text-white"
-                  >
+                  <Button onClick={() => refetchStockOutHistory()} className="bg-blue-600 text-white">
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Refresh History
                   </Button>
@@ -2957,14 +2509,14 @@ export default function StockManagement() {
               ) : (
                 <div className="space-y-4">
                   {/* Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-lg">
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Start Date</Label>
                       <Input
                         type="date"
                         value={stockOutStartDate || ''}
                         onChange={(e) => setStockOutStartDate(e.target.value)}
-                        className="w-full glass-card border-white/20"
+                        className="w-full"
                       />
                     </div>
                     
@@ -2974,17 +2526,17 @@ export default function StockManagement() {
                         type="date"
                         value={stockOutEndDate || ''}
                         onChange={(e) => setStockOutEndDate(e.target.value)}
-                        className="w-full glass-card border-white/20"
+                        className="w-full"
                       />
                     </div>
                     
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Company</Label>
                       <Select value={stockOutCompanyFilter} onValueChange={setStockOutCompanyFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Companies" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Companies</SelectItem>
                           {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                         </SelectContent>
@@ -2994,10 +2546,10 @@ export default function StockManagement() {
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Product</Label>
                       <Select value={stockOutProductFilter} onValueChange={setStockOutProductFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Products" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Products</SelectItem>
                           {Array.from(new Set(stockOutHistory.map(h => h.color?.variant?.product?.productName).filter(Boolean))).sort().map(p => (
                             <SelectItem key={p} value={p!}>{p}</SelectItem>
@@ -3017,7 +2569,7 @@ export default function StockManagement() {
                           placeholder="Search by color, product, customer name or phone..." 
                           value={stockOutSearchQuery}
                           onChange={e => setStockOutSearchQuery(e.target.value)}
-                          className="pl-9 glass-card border-white/20"
+                          className="pl-9"
                         />
                       </div>
                     </div>
@@ -3025,10 +2577,10 @@ export default function StockManagement() {
                     <div className="space-y-2">
                       <Label className="text-xs font-medium text-slate-700">Quick Date Filters</Label>
                       <Select value={stockOutDateFilter} onValueChange={setStockOutDateFilter}>
-                        <SelectTrigger className="glass-card border-white/20">
+                        <SelectTrigger>
                           <SelectValue placeholder="All Time" />
                         </SelectTrigger>
-                        <SelectContent className="glass-card border-white/20">
+                        <SelectContent>
                           <SelectItem value="all">All Time</SelectItem>
                           <SelectItem value="today">Today</SelectItem>
                           <SelectItem value="yesterday">Yesterday</SelectItem>
@@ -3045,19 +2597,14 @@ export default function StockManagement() {
                       <p className="text-sm text-slate-600">
                         Showing {filteredStockOutHistory.length} of {stockOutHistory.length} records
                       </p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => {
-                          setStockOutCompanyFilter("all");
-                          setStockOutProductFilter("all");
-                          setStockOutDateFilter("all");
-                          setStockOutSearchQuery("");
-                          setStockOutStartDate("");
-                          setStockOutEndDate("");
-                        }}
-                        className="glass-card border-white/20"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setStockOutCompanyFilter("all");
+                        setStockOutProductFilter("all");
+                        setStockOutDateFilter("all");
+                        setStockOutSearchQuery("");
+                        setStockOutStartDate("");
+                        setStockOutEndDate("");
+                      }}>
                         <Filter className="h-4 w-4 mr-2" />
                         Clear All Filters
                       </Button>
@@ -3067,10 +2614,7 @@ export default function StockManagement() {
                   {/* Stock Out Records Grid */}
                   <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                     {filteredStockOutHistory.map((item) => (
-                      <div 
-                        key={item.id}
-                        className="glass-card rounded-xl p-4 border border-white/20 hover-elevate"
-                      >
+                      <div key={item.id} className="bg-white rounded-lg p-4 border border-slate-200 hover:shadow-md transition-shadow">
                         <div className="space-y-3">
                           {/* Header with color info */}
                           <div className="flex items-center justify-between">
@@ -3100,9 +2644,7 @@ export default function StockManagement() {
                             </div>
                             <div className="flex justify-between items-center text-sm">
                               <span className="text-slate-600">Size</span>
-                              <Badge variant="outline" className="glass-card border-white/20">
-                                {item.color?.variant?.packingSize || '-'}
-                              </Badge>
+                              <Badge variant="outline">{item.color?.variant?.packingSize || '-'}</Badge>
                             </div>
                           </div>
                           
@@ -3157,7 +2699,7 @@ export default function StockManagement() {
           setQuickColors([{ id: `${Date.now()}-c0`, colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }]);
         }
       }}>
-        <DialogContent className="glass-card border-white/20 max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Zap className="h-5 w-5" />
@@ -3169,9 +2711,9 @@ export default function StockManagement() {
           <div className="space-y-4">
             {/* Progress indicator */}
             <div className="flex items-center gap-2">
-              <div className={`px-3 py-1 rounded ${quickStep === 1 ? "gradient-bg text-white" : "glass-card border-white/20 text-slate-600"}`}>1. Product</div>
-              <div className={`px-3 py-1 rounded ${quickStep === 2 ? "gradient-bg text-white" : "glass-card border-white/20 text-slate-600"}`}>2. Variants</div>
-              <div className={`px-3 py-1 rounded ${quickStep === 3 ? "gradient-bg text-white" : "glass-card border-white/20 text-slate-600"}`}>3. Colors</div>
+              <div className={`px-3 py-1 rounded ${quickStep === 1 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>1. Product</div>
+              <div className={`px-3 py-1 rounded ${quickStep === 2 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>2. Variants</div>
+              <div className={`px-3 py-1 rounded ${quickStep === 3 ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>3. Colors</div>
             </div>
 
             {/* Step 1: Product */}
@@ -3190,20 +2732,15 @@ export default function StockManagement() {
 
                   {useExistingCompany ? (
                     <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-                      <SelectTrigger className="glass-card border-white/20">
+                      <SelectTrigger>
                         <SelectValue placeholder="Select company" />
                       </SelectTrigger>
-                      <SelectContent className="glass-card border-white/20">
+                      <SelectContent>
                         {companies.map(company => <SelectItem key={company} value={company}>{company}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Input 
-                      value={newCompany} 
-                      onChange={e => setNewCompany(e.target.value)} 
-                      placeholder="Enter new company name" 
-                      className="glass-card border-white/20"
-                    />
+                    <Input value={newCompany} onChange={e => setNewCompany(e.target.value)} placeholder="Enter new company name" />
                   )}
                 </div>
 
@@ -3220,39 +2757,26 @@ export default function StockManagement() {
 
                   {useExistingProduct ? (
                     <Select value={selectedProduct} onValueChange={setSelectedProduct} disabled={!selectedCompany}>
-                      <SelectTrigger className="glass-card border-white/20">
+                      <SelectTrigger>
                         <SelectValue placeholder={selectedCompany ? "Select product" : "Select company first"} />
                       </SelectTrigger>
-                      <SelectContent className="glass-card border-white/20">
+                      <SelectContent>
                         {productsByCompany.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Input 
-                      value={newProduct} 
-                      onChange={e => setNewProduct(e.target.value)} 
-                      placeholder="Enter new product name" 
-                      className="glass-card border-white/20"
-                    />
+                    <Input value={newProduct} onChange={e => setNewProduct(e.target.value)} placeholder="Enter new product name" />
                   )}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-4">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setIsQuickAddOpen(false)}
-                    className="glass-card border-white/20"
-                  >
+                  <Button variant="outline" onClick={() => setIsQuickAddOpen(false)}>
                     Cancel
                   </Button>
-                  <Button 
-                    onClick={() => setQuickStep(2)} 
-                    disabled={
-                      !(useExistingCompany ? selectedCompany : newCompany.trim()) ||
-                      !(useExistingProduct ? selectedProduct : newProduct.trim())
-                    }
-                    className="gradient-bg text-white"
-                  >
+                  <Button onClick={() => setQuickStep(2)} disabled={
+                    !(useExistingCompany ? selectedCompany : newCompany.trim()) ||
+                    !(useExistingProduct ? selectedProduct : newProduct.trim())
+                  } className="bg-blue-600 text-white">
                     Continue to Variants →
                   </Button>
                 </div>
@@ -3262,10 +2786,10 @@ export default function StockManagement() {
             {/* Step 2: Variants */}
             {quickStep === 2 && (
               <div className="space-y-6">
-                <div className="glass-card rounded-xl p-4 border border-white/20">
+                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                   <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSection("variants")}>
                     <h3 className="font-semibold text-lg text-slate-800">Variants</h3>
-                    <Button variant="ghost" size="sm" className="glass-card border-white/20">
+                    <Button variant="ghost" size="sm">
                       {expandedSections.variants ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
                   </div>
@@ -3280,7 +2804,6 @@ export default function StockManagement() {
                                 placeholder="Packing size (e.g., 1L, 4L, 16L)" 
                                 value={variant.packingSize} 
                                 onChange={e => updateVariant(index, "packingSize", e.target.value)} 
-                                className="glass-card border-white/20"
                               />
                             </div>
                             <div className="col-span-5">
@@ -3290,17 +2813,10 @@ export default function StockManagement() {
                                 placeholder="Rate (Rs.)" 
                                 value={variant.rate} 
                                 onChange={e => updateVariant(index, "rate", e.target.value)} 
-                                className="glass-card border-white/20"
                               />
                             </div>
                             <div className="col-span-2">
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => removeVariantAt(index)} 
-                                disabled={quickVariants.length === 1}
-                                className="glass-card border-white/20"
-                              >
+                              <Button variant="ghost" size="sm" onClick={() => removeVariantAt(index)} disabled={quickVariants.length === 1}>
                                 <Trash className="h-4 w-4" />
                               </Button>
                             </div>
@@ -3308,12 +2824,7 @@ export default function StockManagement() {
                         ))}
                       </div>
 
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        onClick={() => setQuickVariants(p => [...p, { id: String(Date.now()), packingSize: "", rate: "" }])}
-                        className="glass-card border-white/20"
-                      >
+                      <Button size="sm" variant="outline" onClick={() => setQuickVariants(p => [...p, { id: String(Date.now()), packingSize: "", rate: "" }])}>
                         <Plus className="mr-2 h-4 w-4" /> Add Variant
                       </Button>
                     </div>
@@ -3321,26 +2832,14 @@ export default function StockManagement() {
                 </div>
 
                 <div className="flex justify-between pt-4">
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => setQuickStep(1)}
-                    className="glass-card border-white/20"
-                  >
+                  <Button variant="ghost" onClick={() => setQuickStep(1)}>
                     ← Back
                   </Button>
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setIsQuickAddOpen(false)}
-                      className="glass-card border-white/20"
-                    >
+                    <Button variant="outline" onClick={() => setIsQuickAddOpen(false)}>
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={() => setQuickStep(3)} 
-                      disabled={quickVariants.filter(v => v.packingSize.trim() !== "" && v.rate.trim() !== "").length === 0}
-                      className="gradient-bg text-white"
-                    >
+                    <Button onClick={() => setQuickStep(3)} disabled={quickVariants.filter(v => v.packingSize.trim() !== "" && v.rate.trim() !== "").length === 0} className="bg-blue-600 text-white">
                       Continue to Colors →
                     </Button>
                   </div>
@@ -3351,10 +2850,10 @@ export default function StockManagement() {
             {/* Step 3: Colors */}
             {quickStep === 3 && (
               <div className="space-y-6">
-                <div className="glass-card rounded-xl p-4 border border-white/20">
+                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                   <div className="flex items-center justify-between cursor-pointer" onClick={() => toggleSection("colors")}>
                     <h3 className="font-semibold text-lg text-slate-800">Colors</h3>
-                    <Button variant="ghost" size="sm" className="glass-card border-white/20">
+                    <Button variant="ghost" size="sm">
                       {expandedSections.colors ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
                   </div>
@@ -3366,14 +2865,13 @@ export default function StockManagement() {
                       </div>
                       <div className="space-y-3">
                         {quickColors.map((color, index) => (
-                          <div key={color.id} className="space-y-2 p-3 glass-card rounded-lg border border-white/20">
+                          <div key={color.id} className="space-y-2 p-3 bg-white rounded-lg border border-slate-200">
                             <div className="grid grid-cols-12 gap-3 items-center">
                               <div className="col-span-3">
                                 <Input 
                                   placeholder="Color name" 
                                   value={color.colorName} 
                                   onChange={e => updateColor(index, "colorName", e.target.value)} 
-                                  className="glass-card border-white/20"
                                 />
                               </div>
                               <div className="col-span-3">
@@ -3381,7 +2879,6 @@ export default function StockManagement() {
                                   placeholder="Color code" 
                                   value={color.colorCode} 
                                   onChange={e => updateColor(index, "colorCode", e.target.value)} 
-                                  className="glass-card border-white/20"
                                 />
                               </div>
                               <div className="col-span-2">
@@ -3391,7 +2888,6 @@ export default function StockManagement() {
                                   placeholder="Stock qty" 
                                   value={color.stockQuantity} 
                                   onChange={e => updateColor(index, "stockQuantity", e.target.value)} 
-                                  className="glass-card border-white/20"
                                 />
                               </div>
                               <div className="col-span-3">
@@ -3402,17 +2898,11 @@ export default function StockManagement() {
                                   placeholder="Custom rate (optional)" 
                                   value={color.rateOverride || ""} 
                                   onChange={e => updateColor(index, "rateOverride", e.target.value)} 
-                                  className="glass-card border-white/20 border-dashed"
+                                  className="border-dashed"
                                 />
                               </div>
                               <div className="col-span-1">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  onClick={() => removeColorAt(index)} 
-                                  disabled={quickColors.length === 1}
-                                  className="glass-card border-white/20"
-                                >
+                                <Button variant="ghost" size="sm" onClick={() => removeColorAt(index)} disabled={quickColors.length === 1}>
                                   <Trash className="h-4 w-4" />
                                 </Button>
                               </div>
@@ -3421,12 +2911,7 @@ export default function StockManagement() {
                         ))}
                       </div>
 
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        onClick={() => setQuickColors(p => [...p, { id: String(Date.now()), colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }])}
-                        className="glass-card border-white/20"
-                      >
+                      <Button size="sm" variant="outline" onClick={() => setQuickColors(p => [...p, { id: String(Date.now()), colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }])}>
                         <Plus className="mr-2 h-4 w-4" /> Add Color
                       </Button>
                     </div>
@@ -3434,26 +2919,14 @@ export default function StockManagement() {
                 </div>
 
                 <div className="flex justify-between pt-4">
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => setQuickStep(2)}
-                    className="glass-card border-white/20"
-                  >
+                  <Button variant="ghost" onClick={() => setQuickStep(2)}>
                     ← Back
                   </Button>
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setIsQuickAddOpen(false)}
-                      className="glass-card border-white/20"
-                    >
+                    <Button variant="outline" onClick={() => setIsQuickAddOpen(false)}>
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={saveQuickAdd} 
-                      disabled={isSavingQuick}
-                      className="gradient-bg text-white"
-                    >
+                    <Button onClick={saveQuickAdd} disabled={isSavingQuick} className="bg-blue-600 text-white">
                       {isSavingQuick ? "Saving..." : "Save Product"}
                     </Button>
                   </div>
@@ -3464,10 +2937,10 @@ export default function StockManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialogs remain the same but with glass styling */}
+      {/* Edit Dialogs */}
       {/* Edit Product Dialog */}
       <Dialog open={!!editingProduct} onOpenChange={(open) => !open && setEditingProduct(null)}>
-        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3484,7 +2957,7 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Company Name</FormLabel>
                   <FormControl>
-                    <Input {...field} className="glass-card border-white/20" />
+                    <Input {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -3493,25 +2966,16 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Product Name</FormLabel>
                   <FormControl>
-                    <Input {...field} className="glass-card border-white/20" />
+                    <Input {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <div className="flex justify-end gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setEditingProduct(null)}
-                  className="glass-card border-white/20"
-                >
+                <Button type="button" variant="outline" onClick={() => setEditingProduct(null)}>
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
-                  disabled={updateProductMutation.isPending}
-                  className="gradient-bg text-white"
-                >
+                <Button type="submit" disabled={updateProductMutation.isPending} className="bg-blue-600 text-white">
                   {updateProductMutation.isPending ? "Updating..." : "Update Product"}
                 </Button>
               </div>
@@ -3522,7 +2986,7 @@ export default function StockManagement() {
 
       {/* Edit Variant Dialog */}
       <Dialog open={!!editingVariant} onOpenChange={(open) => !open && setEditingVariant(null)}>
-        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3545,11 +3009,11 @@ export default function StockManagement() {
                   <FormLabel>Product</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <SelectTrigger className="glass-card border-white/20">
+                      <SelectTrigger>
                         <SelectValue placeholder="Select product" />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent className="glass-card border-white/20">
+                    <SelectContent>
                       {products.map(p => <SelectItem key={p.id} value={p.id}>{p.company} - {p.productName}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -3560,7 +3024,7 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Packing Size</FormLabel>
                   <FormControl>
-                    <Input {...field} className="glass-card border-white/20" />
+                    <Input {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -3569,25 +3033,16 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Rate (Rs.)</FormLabel>
                   <FormControl>
-                    <Input type="number" step="0.01" {...field} className="glass-card border-white/20" />
+                    <Input type="number" step="0.01" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <div className="flex justify-end gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setEditingVariant(null)}
-                  className="glass-card border-white/20"
-                >
+                <Button type="button" variant="outline" onClick={() => setEditingVariant(null)}>
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
-                  disabled={updateVariantMutation.isPending}
-                  className="gradient-bg text-white"
-                >
+                <Button type="submit" disabled={updateVariantMutation.isPending} className="bg-blue-600 text-white">
                   {updateVariantMutation.isPending ? "Updating..." : "Update Variant"}
                 </Button>
               </div>
@@ -3598,7 +3053,7 @@ export default function StockManagement() {
 
       {/* Edit Color Dialog */}
       <Dialog open={!!editingColor} onOpenChange={(open) => !open && setEditingColor(null)}>
-        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3609,7 +3064,6 @@ export default function StockManagement() {
             <form onSubmit={colorForm.handleSubmit(async (data) => {
               if (editingColor) {
                 try {
-                  // Update basic color details
                   await updateColorMutation.mutateAsync({ 
                     id: editingColor.id, 
                     variantId: data.variantId,
@@ -3618,7 +3072,6 @@ export default function StockManagement() {
                     stockQuantity: parseInt(data.stockQuantity, 10) 
                   });
                   
-                  // Update rate override separately
                   const rateOverrideValue = data.rateOverride && data.rateOverride.trim() !== "" 
                     ? parseFloat(data.rateOverride) 
                     : null;
@@ -3643,11 +3096,11 @@ export default function StockManagement() {
                   <FormLabel>Variant (Product + Size)</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <SelectTrigger className="glass-card border-white/20">
+                      <SelectTrigger>
                         <SelectValue placeholder="Select variant" />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent className="glass-card border-white/20">
+                    <SelectContent>
                       {variantsData.map(v => <SelectItem key={v.id} value={v.id}>{v.product.company} - {v.product.productName} ({v.packingSize})</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -3658,7 +3111,7 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Color Name</FormLabel>
                   <FormControl>
-                    <Input {...field} className="glass-card border-white/20" />
+                    <Input {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -3667,7 +3120,7 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Color Code</FormLabel>
                   <FormControl>
-                    <Input {...field} className="glass-card border-white/20" />
+                    <Input {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -3676,7 +3129,7 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Quantity</FormLabel>
                   <FormControl>
-                    <Input type="number" min="0" {...field} className="glass-card border-white/20" />
+                    <Input type="number" min="0" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -3685,26 +3138,17 @@ export default function StockManagement() {
                 <FormItem>
                   <FormLabel>Custom Rate (Optional)</FormLabel>
                   <FormControl>
-                    <Input type="number" min="0" step="0.01" placeholder="Leave empty to use variant rate" {...field} className="glass-card border-white/20" />
+                    <Input type="number" min="0" step="0.01" placeholder="Leave empty to use variant rate" {...field} />
                   </FormControl>
                   <p className="text-xs text-slate-600">Default: Rs. {editingColor ? Math.round(parseFloat(editingColor.variant.rate)) : '0'}</p>
                   <FormMessage />
                 </FormItem>
               )} />
               <div className="flex justify-end gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setEditingColor(null)}
-                  className="glass-card border-white/20"
-                >
+                <Button type="button" variant="outline" onClick={() => setEditingColor(null)}>
                   Cancel
                 </Button>
-                <Button 
-                  type="submit" 
-                  disabled={updateColorMutation.isPending}
-                  className="gradient-bg text-white"
-                >
+                <Button type="submit" disabled={updateColorMutation.isPending} className="bg-blue-600 text-white">
                   {updateColorMutation.isPending ? "Updating..." : "Update Color"}
                 </Button>
               </div>
@@ -3715,7 +3159,7 @@ export default function StockManagement() {
 
       {/* Edit Stock History Dialog */}
       <Dialog open={isEditStockHistoryOpen} onOpenChange={setIsEditStockHistoryOpen}>
-        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
@@ -3737,14 +3181,14 @@ export default function StockManagement() {
               })} className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-slate-700">Color Details</Label>
-                  <div className="glass-card rounded-xl p-3 border border-white/20">
+                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <div 
                           className="w-6 h-6 rounded border-2 border-white shadow-sm"
                           style={{ backgroundColor: editingStockHistory.color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : editingStockHistory.color.colorCode }}
                         />
-                        <Badge variant="outline" className="glass-card border-white/20 font-mono">
+                        <Badge variant="outline" className="font-mono">
                           {editingStockHistory.color.colorCode}
                         </Badge>
                         <span className="font-medium">{editingStockHistory.color.colorName}</span>
@@ -3760,7 +3204,7 @@ export default function StockManagement() {
                   <FormItem>
                     <FormLabel>Quantity</FormLabel>
                     <FormControl>
-                      <Input type="number" min="1" step="1" {...field} className="glass-card border-white/20" />
+                      <Input type="number" min="1" step="1" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -3779,7 +3223,6 @@ export default function StockManagement() {
                             field.onChange(value);
                           }
                         }}
-                        className="glass-card border-white/20"
                       />
                     </FormControl>
                     <FormMessage />
@@ -3790,26 +3233,17 @@ export default function StockManagement() {
                   <FormItem>
                     <FormLabel>Notes</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Add any notes..." {...field} className="glass-card border-white/20" />
+                      <Textarea placeholder="Add any notes..." {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
 
                 <DialogFooter>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setIsEditStockHistoryOpen(false)}
-                    className="glass-card border-white/20"
-                  >
+                  <Button type="button" variant="outline" onClick={() => setIsEditStockHistoryOpen(false)}>
                     Cancel
                   </Button>
-                  <Button 
-                    type="submit" 
-                    disabled={updateStockHistoryMutation.isPending}
-                    className="gradient-bg text-white"
-                  >
+                  <Button type="submit" disabled={updateStockHistoryMutation.isPending} className="bg-blue-600 text-white">
                     {updateStockHistoryMutation.isPending ? "Updating..." : "Update Record"}
                   </Button>
                 </DialogFooter>
@@ -3819,10 +3253,10 @@ export default function StockManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* View Detail Dialogs with glass styling */}
+      {/* View Detail Dialogs */}
       {/* View Product Details */}
       <Dialog open={!!viewingProduct} onOpenChange={(open) => !open && setViewingProduct(null)}>
-        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
@@ -3850,11 +3284,7 @@ export default function StockManagement() {
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setViewingProduct(null)}
-                  className="glass-card border-white/20"
-                >
+                <Button variant="outline" onClick={() => setViewingProduct(null)}>
                   Close
                 </Button>
               </div>
@@ -3865,7 +3295,7 @@ export default function StockManagement() {
 
       {/* View Variant Details */}
       <Dialog open={!!viewingVariant} onOpenChange={(open) => !open && setViewingVariant(null)}>
-        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
@@ -3901,11 +3331,7 @@ export default function StockManagement() {
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setViewingVariant(null)}
-                  className="glass-card border-white/20"
-                >
+                <Button variant="outline" onClick={() => setViewingVariant(null)}>
                   Close
                 </Button>
               </div>
@@ -3916,7 +3342,7 @@ export default function StockManagement() {
 
       {/* View Color Details */}
       <Dialog open={!!viewingColor} onOpenChange={(open) => !open && setViewingColor(null)}>
-        <DialogContent className="glass-card border-white/20 max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="h-5 w-5" />
@@ -3974,11 +3400,7 @@ export default function StockManagement() {
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setViewingColor(null)}
-                  className="glass-card border-white/20"
-                >
+                <Button variant="outline" onClick={() => setViewingColor(null)}>
                   Close
                 </Button>
               </div>
