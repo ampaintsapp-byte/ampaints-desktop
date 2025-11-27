@@ -269,7 +269,8 @@ function createTables() {
       );
     `);
   
-    // Create settings table with ALL columns
+    // Create settings table with ALL columns INCLUDING AUDIT PIN
+    console.log('[Database] Creating settings table...');
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS settings (
         id TEXT PRIMARY KEY DEFAULT 'default',
@@ -296,6 +297,71 @@ function createTables() {
         updated_at INTEGER NOT NULL
       );
     `);
+    console.log('[Database] ✅ Settings table created');
+
+    // Insert default settings if table is empty
+    try {
+      const checkStmt = sqlite.prepare('SELECT COUNT(*) as count FROM settings');
+      const checkResult = checkStmt.get() as { count: number };
+      
+      if (checkResult.count === 0) {
+        console.log('[Database] Inserting default settings...');
+        const defaultTimestamp = new Date().getTime();
+        
+        sqlite.exec(`
+          INSERT INTO settings (
+            id, 
+            store_name, 
+            date_format, 
+            card_border_style, 
+            card_shadow_size, 
+            card_button_color, 
+            card_price_color, 
+            show_stock_badge_border,
+            audit_pin_hash,
+            audit_pin_salt,
+            perm_stock_delete,
+            perm_stock_edit,
+            perm_stock_history_delete,
+            perm_sales_delete,
+            perm_sales_edit,
+            perm_payment_edit,
+            perm_payment_delete,
+            perm_database_access,
+            cloud_database_url,
+            cloud_sync_enabled,
+            last_sync_time,
+            updated_at
+          ) VALUES (
+            'default',
+            'PaintPulse',
+            'DD-MM-YYYY',
+            'shadow',
+            'sm',
+            'gray-900',
+            'blue-600',
+            0,
+            NULL,
+            NULL,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            NULL,
+            0,
+            NULL,
+            ${defaultTimestamp}
+          )
+        `);
+        console.log('[Database] ✅ Default settings inserted');
+      }
+    } catch (settingsError) {
+      console.log('[Database] Settings already exist or error:', settingsError);
+    }
 
     // Create returns table
     sqlite.exec(`

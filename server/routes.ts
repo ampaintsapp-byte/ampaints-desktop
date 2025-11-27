@@ -969,30 +969,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Audit endpoints
-  app.get("/api/audit/has-pin", async (req, res) => {
+  // AUDIT ROUTES
+  app.post("/api/audit/has-pin", async (req, res) => {
     try {
       const settings = await storage.getSettings();
-      res.json({ hasPin: !!settings.auditPinHash });
+      res.json({ 
+        hasPin: !!settings.auditPinHash,
+        isDefault: !settings.auditPinHash // If no hash, default PIN is active
+      });
     } catch (error) {
       console.error("[API] Error checking PIN:", error);
-      res.status(200).json({ hasPin: false });
+      res.status(500).json({ error: "Failed to check PIN" });
     }
   });
 
   app.post("/api/audit/verify", async (req, res) => {
     try {
       const { pin } = req.body;
-      if (!pin) {
-        return res.status(400).json({ error: "PIN required" });
+      
+      if (!pin || pin.length !== 4) {
+        return res.status(400).json({ error: "Invalid PIN format" });
       }
 
       const settings = await storage.getSettings();
-      // TODO: Implement PIN verification logic
-      res.json({ verified: false });
+      
+      // If no PIN hash exists, check against default PIN "0000"
+      if (!settings.auditPinHash) {
+        console.log("[API] Checking default PIN");
+        if (pin === "0000") {
+          const token = crypto.randomBytes(32).toString('hex');
+          return res.json({ 
+            ok: true, 
+            isDefault: true,
+            auditToken: token 
+          });
+        } else {
+          return res.status(401).json({ error: "Invalid PIN" });
+        }
+      }
+
+      // Verify against stored hash
+      console.log("[API] Verifying PIN against hash");
+      const hash = crypto
+        .pbkdf2Sync(pin, settings.auditPinSalt!, 100000, 64, "sha512")
+        .toString("hex");
+
+      if (hash === settings.auditPinHash) {
+        const token = crypto.randomBytes(32).toString('hex');
+        return res.json({ 
+          ok: true, 
+          isDefault: false,
+          auditToken: token 
+        });
+      } else {
+        return res.status(401).json({ error: "Invalid PIN" });
+      }
     } catch (error) {
       console.error("[API] Error verifying PIN:", error);
-      res.status(500).json({ error: "Failed to verify PIN" });
+      res.status(500).json({ error: "PIN verification failed" });
+    }
+  });
+
+  app.patch("/api/audit/pin", async (req, res) => {
+    try {
+      const { currentPin, newPin } = req.body;
+
+      if (!currentPin || !newPin || newPin.length !== 4) {
+        return res.status(400).json({ error: "Invalid PIN format" });
+      }
+
+      const settings = await storage.getSettings();
+
+      // Verify current PIN
+      let isValid = false;
+      
+      if (!settings.auditPinHash) {
+        // No hash set yet, check against default
+        isValid = currentPin === "0000";
+      } else {
+        // Check against stored hash
+        const hash = crypto
+          .pbkdf2Sync(currentPin, settings.auditPinSalt!, 100000, 64, "sha512")
+          .toString("hex");
+        isValid = hash === settings.auditPinHash;
+      }
+
+      if (!isValid) {
+        return res.status(401).json({ error: "Current PIN is incorrect" });
+      }
+
+      // Hash new PIN
+      const salt = crypto.randomBytes(32).toString("hex");
+      const newHash = crypto
+        .pbkdf2Sync(newPin, salt, 100000, 64, "sha512")
+        .toString("hex");
+
+      // Save new PIN
+      await storage.updateSettings({
+        auditPinHash: newHash,
+        auditPinSalt: salt,
+      });
+
+      console.log("[API] PIN changed successfully");
+      res.json({ 
+        ok: true, 
+        message: "PIN changed successfully" 
+      });
+    } catch (error) {
+      console.error("[API] Error changing PIN:", error);
+      res.status(500).json({ error: "Failed to change PIN" });
     }
   });
 
