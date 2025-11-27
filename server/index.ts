@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { log } from "./utils";
+import { initializeDatabase } from "./db";
 
 const app = express();
 
@@ -78,3 +79,9 @@ app.use((req, res, next) => {
     log(`serving on port ${port}`);
   });
 })();
+
+// Initialize database before setting up routes
+initializeDatabase().catch(error => {
+  console.error("[Server] Failed to initialize database:", error);
+  process.exit(1);
+});

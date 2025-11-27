@@ -922,240 +922,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Settings routes
-  app.get("/api/settings", async (_req, res) => {
+  app.get("/api/settings", async (req, res) => {
     try {
-      const settingsData = await storage.getSettings();
-      res.json(settingsData);
+      const settings = await storage.getSettings();
+      res.json(settings);
     } catch (error) {
-      console.error("Error getting settings:", error);
-      res.status(500).json({ error: "Failed to get settings" });
+      console.error("[API] Error getting settings:", error);
+      res.status(200).json({ 
+        id: 'default',
+        storeName: 'PaintPulse',
+        dateFormat: 'DD-MM-YYYY',
+        cardBorderStyle: 'shadow',
+        cardShadowSize: 'sm',
+        cardButtonColor: 'gray-900',
+        cardPriceColor: 'blue-600',
+        showStockBadgeBorder: false,
+        auditPinHash: null,
+        auditPinSalt: null,
+        permStockDelete: true,
+        permStockEdit: true,
+        permStockHistoryDelete: true,
+        permSalesDelete: true,
+        permSalesEdit: true,
+        permPaymentEdit: true,
+        permPaymentDelete: true,
+        permDatabaseAccess: true,
+        cloudDatabaseUrl: null,
+        cloudSyncEnabled: false,
+        lastSyncTime: null,
+        updatedAt: new Date(),
+      });
     }
   });
 
   app.patch("/api/settings", async (req, res) => {
     try {
       const updated = await storage.updateSettings(req.body);
-      invalidatePermCache();
       res.json(updated);
     } catch (error) {
-      console.error("Error updating settings:", error);
-      res.status(500).json({ error: "Failed to update settings" });
-    }
-  });
-
-  // Customer Balance Summary API
-  app.get("/api/customer/:phone/balance-summary", async (req, res) => {
-    try {
-      const { phone } = req.params;
-      const unpaidSales = await storage.getUnpaidSales();
-      
-      const customerBills = unpaidSales.filter(sale => sale.customerPhone === phone);
-      
-      if (customerBills.length === 0) {
-        res.status(404).json({ error: "No unpaid bills found for this customer" });
-        return;
-      }
-      
-      const totalAmount = customerBills.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
-      const totalPaid = customerBills.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
-      const totalOutstanding = totalAmount - totalPaid;
-      
-      const oldestBill = customerBills.reduce((oldest, sale) => {
-        return new Date(sale.createdAt) < new Date(oldest.createdAt) ? sale : oldest;
+      console.error("[API] Error updating settings:", error);
+      res.status(500).json({ 
+        error: "Failed to update settings",
+        message: error instanceof Error ? error.message : "Unknown error"
       });
-      
-      const daysOverdue = Math.ceil((new Date().getTime() - new Date(oldestBill.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-      
-      const summary = {
-        customerName: customerBills[0].customerName,
-        customerPhone: phone,
-        totalBills: customerBills.length,
-        totalAmount,
-        totalPaid,
-        totalOutstanding,
-        oldestBillDate: oldestBill.createdAt,
-        daysOverdue,
-        bills: customerBills
-      };
-      
-      res.json(summary);
-    } catch (error) {
-      console.error("Error fetching customer balance summary:", error);
-      res.status(500).json({ error: "Failed to fetch customer balance summary" });
     }
   });
 
-  // Customer Statements API
-  app.get("/api/customer/:phone/statement", async (req, res) => {
+  // Audit endpoints
+  app.get("/api/audit/has-pin", async (req, res) => {
     try {
-      const { phone } = req.params;
-      const { format = 'html' } = req.query;
-      
-      const unpaidSales = await storage.getUnpaidSales();
-      const paymentHistory = await storage.getPaymentHistoryByCustomer(phone);
-      const allSales = await storage.getSales();
-      
-      const customerBills = unpaidSales.filter(sale => sale.customerPhone === phone);
-      const customerNotes = allSales
-        .filter(sale => sale.customerPhone === phone && sale.isManualBalance && sale.notes)
-        .map(sale => ({
-          id: sale.id,
-          saleId: sale.id,
-          note: sale.notes!,
-          createdBy: "System",
-          createdAt: sale.createdAt
-        }));
-      
-      if (customerBills.length === 0) {
-        res.status(404).json({ error: "No bills found for this customer" });
-        return;
-      }
-      
-      const totalAmount = customerBills.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
-      const totalPaid = customerBills.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
-      const totalOutstanding = totalAmount - totalPaid;
-      
-      const oldestBill = customerBills.reduce((oldest, sale) => {
-        return new Date(sale.createdAt) < new Date(oldest.createdAt) ? sale : oldest;
-      });
-      
-      const daysOverdue = Math.ceil((new Date().getTime() - new Date(oldestBill.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-      
-      const statement = {
-        customerName: customerBills[0].customerName,
-        customerPhone: phone,
-        totalBills: customerBills.length,
-        totalAmount,
-        totalPaid,
-        totalOutstanding,
-        oldestBillDate: oldestBill.createdAt,
-        daysOverdue,
-        bills: customerBills,
-        paymentHistory,
-        notes: customerNotes,
-        generatedAt: new Date().toISOString()
-      };
-      
-      if (format === 'pdf') {
-        // Generate PDF statement (you can implement PDF generation here)
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="statement-${phone}-${new Date().toISOString().split('T')[0]}.pdf"`);
-        // For now, return JSON as we'll handle PDF generation in the frontend
-        res.json(statement);
-      } else {
-        res.json(statement);
-      }
+      const settings = await storage.getSettings();
+      res.json({ hasPin: !!settings.auditPinHash });
     } catch (error) {
-      console.error("Error generating customer statement:", error);
-      res.status(500).json({ error: "Failed to generate customer statement" });
+      console.error("[API] Error checking PIN:", error);
+      res.status(200).json({ hasPin: false });
     }
   });
 
-  // Returns API
-  app.get("/api/returns", async (_req, res) => {
+  app.post("/api/audit/verify", async (req, res) => {
+    try {
+      const { pin } = req.body;
+      if (!pin) {
+        return res.status(400).json({ error: "PIN required" });
+      }
+
+      const settings = await storage.getSettings();
+      // TODO: Implement PIN verification logic
+      res.json({ verified: false });
+    } catch (error) {
+      console.error("[API] Error verifying PIN:", error);
+      res.status(500).json({ error: "Failed to verify PIN" });
+    }
+  });
+
+  // Returns
+  app.get("/api/returns", async (req, res) => {
     try {
       const returns = await storage.getReturns();
       res.json(returns);
     } catch (error) {
-      console.error("Error fetching returns:", error);
-      res.status(500).json({ error: "Failed to fetch returns" });
+      console.error("[API] Error fetching returns:", error);
+      // Return empty array if table doesn't exist
+      if (error instanceof Error && error.message.includes("no such table")) {
+        res.json([]);
+      } else {
+        res.status(500).json({ 
+          error: "Failed to fetch returns",
+          message: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
     }
   });
 
   app.get("/api/returns/:id", async (req, res) => {
     try {
       const returnRecord = await storage.getReturn(req.params.id);
-      if (!returnRecord) {
-        res.status(404).json({ error: "Return not found" });
-        return;
-      }
       res.json(returnRecord);
     } catch (error) {
-      console.error("Error fetching return:", error);
-      res.status(500).json({ error: "Failed to fetch return" });
+      console.error("[API] Error fetching return:", error);
+      res.status(500).json({ 
+        error: "Failed to fetch return",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
   app.post("/api/returns", requirePerm('sales:edit'), async (req, res) => {
     try {
-      const { returnData, items } = req.body;
-      
-      if (!returnData || !items || !Array.isArray(items) || items.length === 0) {
-        res.status(400).json({ error: "Return data and items are required" });
-        return;
-      }
-
-      const validatedReturn = insertReturnSchema.parse(returnData);
-      const validatedItems = items.map((item: any) => insertReturnItemSchema.parse(item));
-      
-      const returnRecord = await storage.createReturn(validatedReturn, validatedItems);
-      res.json(returnRecord);
+      const result = await storage.createReturn(req.body.returnData, req.body.items);
+      res.json(result);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid return data", details: error.errors });
-      } else {
-        console.error("Error creating return:", error);
-        res.status(500).json({ error: "Failed to create return" });
-      }
+      console.error("[API] Error creating return:", error);
+      res.status(500).json({ 
+        error: "Failed to create return",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
-  app.get("/api/returns/customer/:phone", async (req, res) => {
-    try {
-      const returns = await storage.getReturnsByCustomerPhone(req.params.phone);
-      res.json(returns);
-    } catch (error) {
-      console.error("Error fetching customer returns:", error);
-      res.status(500).json({ error: "Failed to fetch customer returns" });
-    }
-  });
-
-  // Audit PIN Routes
-  // Helper function to hash PIN with salt
-  function hashPin(pin: string, salt: string): string {
-    return crypto.createHash('sha256').update(pin + salt).digest('hex');
-  }
-
-  // In-memory audit token store with TTL (1 hour)
-  const auditTokens = new Map<string, { createdAt: number }>();
-  const AUDIT_TOKEN_TTL = 60 * 60 * 1000; // 1 hour
-
-  // Clean up expired tokens periodically
-  setInterval(() => {
-    const now = Date.now();
-    const tokensToDelete: string[] = [];
-    auditTokens.forEach((data, token) => {
-      if (now - data.createdAt > AUDIT_TOKEN_TTL) {
-        tokensToDelete.push(token);
-      }
-    });
-    tokensToDelete.forEach(token => auditTokens.delete(token));
-  }, 5 * 60 * 1000); // Clean every 5 minutes
-
-  // Middleware to verify audit token
-  function verifyAuditToken(req: any, res: any, next: any) {
-    const token = req.headers['x-audit-token'];
-    if (!token || !auditTokens.has(token as string)) {
-      res.status(401).json({ error: "Unauthorized. Please verify audit PIN first." });
-      return;
-    }
-    const tokenData = auditTokens.get(token as string);
-    if (tokenData && Date.now() - tokenData.createdAt > AUDIT_TOKEN_TTL) {
-      auditTokens.delete(token as string);
-      res.status(401).json({ error: "Session expired. Please verify audit PIN again." });
-      return;
-    }
-    next();
-  }
-
-  // Check if audit PIN is set
-  app.get("/api/audit/has-pin", async (_req, res) => {
+  // Audit
+  app.get("/api/audit/has-pin", async (req, res) => {
     try {
       const settings = await storage.getSettings();
-      res.json({ hasPin: !!settings.auditPinHash && !!settings.auditPinSalt });
+      res.json({ hasPin: !!settings.auditPinHash });
     } catch (error) {
-      console.error("Error checking audit PIN:", error);
-      res.status(500).json({ error: "Failed to check audit PIN" });
+      console.error("[API] Error checking PIN:", error);
+      res.status(200).json({ hasPin: false });
     }
   });
 

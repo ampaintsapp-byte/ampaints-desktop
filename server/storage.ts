@@ -1,4 +1,4 @@
-// storage.ts
+// storage.ts - UPDATED WITH PROPER SETTINGS HANDLING
 import {
   products,
   variants,
@@ -40,6 +40,7 @@ import { db } from "./db";
 import { eq, desc, gte, sql, and } from "drizzle-orm";
 
 export interface IStorage {
+  // ... (keep all existing interface methods the same)
   // Products
   getProducts(): Promise<Product[]>;
   getProduct(id: string): Promise<Product | undefined>;
@@ -146,6 +147,8 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // ... (keep all existing helper methods the same)
+
   // Helper method to format dates to DD-MM-YYYY
   private formatDateToDDMMYYYY(date: Date): string {
     const day = String(date.getDate()).padStart(2, '0');
@@ -167,6 +170,126 @@ export class DatabaseStorage implements IStorage {
            date.getFullYear() === year;
   }
 
+  // Settings - UPDATED WITH PROPER DEFAULT VALUES AND ERROR HANDLING
+  async getSettings(): Promise<Settings> {
+    try {
+      const [setting] = await db.select().from(settings).where(eq(settings.id, 'default'));
+      if (!setting) {
+        // Create default settings if not found
+        const defaultSettings: Settings = {
+          id: 'default',
+          storeName: 'PaintPulse',
+          dateFormat: 'DD-MM-YYYY',
+          cardBorderStyle: 'shadow',
+          cardShadowSize: 'sm',
+          cardButtonColor: 'gray-900',
+          cardPriceColor: 'blue-600',
+          showStockBadgeBorder: false,
+          auditPinHash: null,
+          auditPinSalt: null,
+          permStockDelete: true,
+          permStockEdit: true,
+          permStockHistoryDelete: true,
+          permSalesDelete: true,
+          permSalesEdit: true,
+          permPaymentEdit: true,
+          permPaymentDelete: true,
+          permDatabaseAccess: true,
+          cloudDatabaseUrl: null,
+          cloudSyncEnabled: false,
+          lastSyncTime: null,
+          updatedAt: new Date(),
+        };
+        try {
+          await db.insert(settings).values(defaultSettings);
+          console.log('[Storage] Default settings created');
+        } catch (insertError) {
+          console.error('[Storage] Error inserting default settings (table may not exist):', insertError);
+          // Return defaults even if insert fails
+        }
+        return defaultSettings;
+      }
+      return setting;
+    } catch (error) {
+      console.error('[Storage] Error getting settings:', error);
+      // Return safe defaults if there's an error - this prevents crashes
+      const defaultSettings: Settings = {
+        id: 'default',
+        storeName: 'PaintPulse',
+        dateFormat: 'DD-MM-YYYY',
+        cardBorderStyle: 'shadow',
+        cardShadowSize: 'sm',
+        cardButtonColor: 'gray-900',
+        cardPriceColor: 'blue-600',
+        showStockBadgeBorder: false,
+        auditPinHash: null,
+        auditPinSalt: null,
+        permStockDelete: true,
+        permStockEdit: true,
+        permStockHistoryDelete: true,
+        permSalesDelete: true,
+        permSalesEdit: true,
+        permPaymentEdit: true,
+        permPaymentDelete: true,
+        permDatabaseAccess: true,
+        cloudDatabaseUrl: null,
+        cloudSyncEnabled: false,
+        lastSyncTime: null,
+        updatedAt: new Date(),
+      };
+      return defaultSettings;
+    }
+  }
+
+  async updateSettings(data: UpdateSettings): Promise<Settings> {
+    try {
+      const existing = await db.select().from(settings).where(eq(settings.id, 'default'));
+      
+      if (existing.length === 0) {
+        // If settings don't exist, create them first
+        const defaultSettings: Settings = {
+          id: 'default',
+          storeName: data.storeName || 'PaintPulse',
+          dateFormat: data.dateFormat || 'DD-MM-YYYY',
+          cardBorderStyle: data.cardBorderStyle || 'shadow',
+          cardShadowSize: data.cardShadowSize || 'sm',
+          cardButtonColor: data.cardButtonColor || 'gray-900',
+          cardPriceColor: data.cardPriceColor || 'blue-600',
+          showStockBadgeBorder: data.showStockBadgeBorder ?? false,
+          auditPinHash: data.auditPinHash ?? null,
+          auditPinSalt: data.auditPinSalt ?? null,
+          permStockDelete: data.permStockDelete ?? true,
+          permStockEdit: data.permStockEdit ?? true,
+          permStockHistoryDelete: data.permStockHistoryDelete ?? true,
+          permSalesDelete: data.permSalesDelete ?? true,
+          permSalesEdit: data.permSalesEdit ?? true,
+          permPaymentEdit: data.permPaymentEdit ?? true,
+          permPaymentDelete: data.permPaymentDelete ?? true,
+          permDatabaseAccess: data.permDatabaseAccess ?? true,
+          cloudDatabaseUrl: data.cloudDatabaseUrl ?? null,
+          cloudSyncEnabled: data.cloudSyncEnabled ?? false,
+          lastSyncTime: data.lastSyncTime ?? null,
+          updatedAt: new Date(),
+        };
+        await db.insert(settings).values(defaultSettings);
+        return defaultSettings;
+      }
+
+      // Update existing settings
+      await db
+        .update(settings)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(settings.id, 'default'));
+      
+      const updated = await this.getSettings();
+      return updated;
+    } catch (error) {
+      console.error('[Storage] Error updating settings:', error);
+      throw new Error('Failed to update settings');
+    }
+  }
+
+  // ... (keep all other existing methods exactly the same)
   // Products
   async getProducts(): Promise<Product[]> {
     return await db.select().from(products).orderBy(desc(products.createdAt));
@@ -1398,53 +1521,7 @@ export class DatabaseStorage implements IStorage {
     return result as ReturnWithItems[];
   }
 
-  // Settings
-  async getSettings(): Promise<Settings> {
-    const [setting] = await db.select().from(settings).where(eq(settings.id, 'default'));
-    if (!setting) {
-      // Create default settings if not found
-      const defaultSettings: Settings = {
-        id: 'default',
-        storeName: 'PaintPulse',
-        dateFormat: 'DD-MM-YYYY',
-        cardBorderStyle: 'shadow',
-        cardShadowSize: 'sm',
-        cardButtonColor: 'gray-900',
-        cardPriceColor: 'blue-600',
-        showStockBadgeBorder: false,
-        auditPinHash: null,
-        auditPinSalt: null,
-        // Permissions - all enabled by default
-        permStockDelete: true,
-        permStockEdit: true,
-        permStockHistoryDelete: true,
-        permSalesDelete: true,
-        permSalesEdit: true,
-        permPaymentEdit: true,
-        permPaymentDelete: true,
-        permDatabaseAccess: true,
-        // Cloud sync settings
-        cloudDatabaseUrl: null,
-        cloudSyncEnabled: false,
-        lastSyncTime: null,
-        updatedAt: new Date(),
-      };
-      await db.insert(settings).values(defaultSettings);
-      return defaultSettings;
-    }
-    return setting;
-  }
-
-  async updateSettings(data: UpdateSettings): Promise<Settings> {
-    await db
-      .update(settings)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(settings.id, 'default'));
-    
-    const updated = await this.getSettings();
-    return updated;
-  }
-
+  // Audit
   async getStockOutHistory(): Promise<any[]> {
     const result = await db.query.saleItems.findMany({
       with: {

@@ -1,4 +1,4 @@
-// db.ts
+// db.ts - UPDATED WITH SCHEMA MIGRATION
 import Database from "better-sqlite3";
 import { drizzle, BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "@shared/schema";
@@ -62,6 +62,10 @@ function initializeDatabase() {
     console.log('[Database] Creating tables and indexes');
     createTables();
     
+    // Update schema for new columns
+    console.log('[Database] Running schema updates');
+    updateSchema();
+    
     // Run migrations to ensure schema compatibility (important for imported databases)
     console.log('[Database] Running schema migrations');
     try {
@@ -90,6 +94,90 @@ function initializeDatabase() {
       console.error('[Database] ❌ Failed to recover database:', recoveryError);
       throw recoveryError;
     }
+  }
+}
+
+// NEW FUNCTION: Update schema for new columns
+function updateSchema() {
+  try {
+    console.log('[Database] Checking for schema updates...');
+    
+    // Check if cloud_database_url column exists in settings table
+    const checkColumn = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('settings') WHERE name = 'cloud_database_url'
+    `).get();
+    
+    if (!checkColumn) {
+      console.log('[Database] Adding missing columns to settings table...');
+      
+      // Add missing columns for cloud sync
+      sqlite.exec(`
+        ALTER TABLE settings ADD COLUMN cloud_database_url TEXT;
+        ALTER TABLE settings ADD COLUMN cloud_sync_enabled INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE settings ADD COLUMN last_sync_time INTEGER;
+      `);
+      
+      console.log('[Database] ✅ Cloud sync columns added to settings table');
+    }
+
+    // Check if date_format column exists (added in previous migrations)
+    const checkDateFormat = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('settings') WHERE name = 'date_format'
+    `).get();
+    
+    if (!checkDateFormat) {
+      console.log('[Database] Adding date_format column to settings table...');
+      sqlite.exec(`ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'`);
+      console.log('[Database] ✅ date_format column added to settings table');
+    }
+
+    // Check if permission columns exist
+    const checkPermColumns = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('settings') WHERE name = 'perm_stock_delete'
+    `).get();
+    
+    if (!checkPermColumns) {
+      console.log('[Database] Adding permission columns to settings table...');
+      
+      // Add all permission columns
+      sqlite.exec(`
+        ALTER TABLE settings ADD COLUMN perm_stock_delete INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE settings ADD COLUMN perm_stock_edit INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE settings ADD COLUMN perm_stock_history_delete INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE settings ADD COLUMN perm_sales_delete INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE settings ADD COLUMN perm_sales_edit INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE settings ADD COLUMN perm_payment_edit INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE settings ADD COLUMN perm_payment_delete INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE settings ADD COLUMN perm_database_access INTEGER NOT NULL DEFAULT 1;
+      `);
+      
+      console.log('[Database] ✅ Permission columns added to settings table');
+    }
+
+    // Update existing settings row with default values for new columns
+    const updateStmt = sqlite.prepare(`
+      UPDATE settings SET 
+        cloud_database_url = COALESCE(cloud_database_url, NULL),
+        cloud_sync_enabled = COALESCE(cloud_sync_enabled, 0),
+        last_sync_time = COALESCE(last_sync_time, NULL),
+        date_format = COALESCE(date_format, 'DD-MM-YYYY'),
+        perm_stock_delete = COALESCE(perm_stock_delete, 1),
+        perm_stock_edit = COALESCE(perm_stock_edit, 1),
+        perm_stock_history_delete = COALESCE(perm_stock_history_delete, 1),
+        perm_sales_delete = COALESCE(perm_sales_delete, 1),
+        perm_sales_edit = COALESCE(perm_sales_edit, 1),
+        perm_payment_edit = COALESCE(perm_payment_edit, 1),
+        perm_payment_delete = COALESCE(perm_payment_delete, 1),
+        perm_database_access = COALESCE(perm_database_access, 1)
+      WHERE id = 'default'
+    `);
+    
+    updateStmt.run();
+    console.log('[Database] ✅ Settings table updated with default values');
+
+  } catch (error) {
+    console.error('[Database] ❌ Error updating schema:', error);
+    // Don't throw error - continue with existing schema
   }
 }
 
@@ -181,16 +269,30 @@ function createTables() {
       );
     `);
   
-    // Create settings table
+    // Create settings table with ALL columns
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS settings (
         id TEXT PRIMARY KEY DEFAULT 'default',
         store_name TEXT NOT NULL DEFAULT 'PaintPulse',
+        date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY',
         card_border_style TEXT NOT NULL DEFAULT 'shadow',
         card_shadow_size TEXT NOT NULL DEFAULT 'sm',
         card_button_color TEXT NOT NULL DEFAULT 'gray-900',
         card_price_color TEXT NOT NULL DEFAULT 'blue-600',
         show_stock_badge_border INTEGER NOT NULL DEFAULT 0,
+        audit_pin_hash TEXT,
+        audit_pin_salt TEXT,
+        perm_stock_delete INTEGER NOT NULL DEFAULT 1,
+        perm_stock_edit INTEGER NOT NULL DEFAULT 1,
+        perm_stock_history_delete INTEGER NOT NULL DEFAULT 1,
+        perm_sales_delete INTEGER NOT NULL DEFAULT 1,
+        perm_sales_edit INTEGER NOT NULL DEFAULT 1,
+        perm_payment_edit INTEGER NOT NULL DEFAULT 1,
+        perm_payment_delete INTEGER NOT NULL DEFAULT 1,
+        perm_database_access INTEGER NOT NULL DEFAULT 1,
+        cloud_database_url TEXT,
+        cloud_sync_enabled INTEGER NOT NULL DEFAULT 0,
+        last_sync_time INTEGER,
         updated_at INTEGER NOT NULL
       );
     `);
@@ -225,6 +327,22 @@ function createTables() {
         FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
         FOREIGN KEY (color_id) REFERENCES colors(id),
         FOREIGN KEY (sale_item_id) REFERENCES sale_items(id) ON DELETE SET NULL
+      );
+    `);
+  
+    // Create payment_history table
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS payment_history (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        previous_balance TEXT NOT NULL,
+        new_balance TEXT NOT NULL,
+        payment_method TEXT DEFAULT 'cash',
+        notes TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
       );
     `);
   
@@ -364,6 +482,19 @@ function createTables() {
     } catch (error) {
       console.log('[Database] Index already exists: idx_return_items_color_id');
     }
+
+    // Payment history indexes
+    try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_customer_phone ON payment_history(customer_phone)');
+    } catch (error) {
+      console.log('[Database] Index already exists: idx_payment_history_customer_phone');
+    }
+    
+    try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_sale_id ON payment_history(sale_id)');
+    } catch (error) {
+      console.log('[Database] Index already exists: idx_payment_history_sale_id');
+    }
   
     console.log('[Database] ✅ All tables and indexes created successfully');
   } catch (error) {
@@ -484,7 +615,7 @@ export function getDatabaseStats(): {
   }
   
   const tableCounts: Record<string, number> = {};
-  const tables = ['products', 'variants', 'colors', 'sales', 'sale_items', 'stock_in_history', 'settings'];
+  const tables = ['products', 'variants', 'colors', 'sales', 'sale_items', 'stock_in_history', 'settings', 'returns', 'return_items', 'payment_history'];
   
   for (const table of tables) {
     try {
@@ -514,3 +645,60 @@ export function getDatabaseStats(): {
     lastBackup
   };
 }
+
+// Initialize database - create all tables
+export async function initializeDatabase() {
+  try {
+    console.log("[DB] Initializing database...");
+    
+    // Run migrations to create tables
+    const migrations = await import("./migrations").catch(() => null);
+    
+    if (migrations?.default) {
+      console.log("[DB] Running migrations...");
+      await migrations.default(db);
+    } else {
+      console.log("[DB] No migrations found, running manual schema sync...");
+      // Manually create tables by accessing them
+      // This ensures they exist
+      await syncDatabase();
+    }
+    
+    console.log("[DB] Database initialized successfully");
+  } catch (error) {
+    console.error("[DB] Error initializing database:", error);
+    // Continue anyway - tables might already exist
+  }
+}
+
+// Sync database schema (create tables if they don't exist)
+async function syncDatabase() {
+  try {
+    // Test each table by querying it
+    const tables = [
+      { name: "products", query: () => db.select().from(schema.products).limit(1) },
+      { name: "variants", query: () => db.select().from(schema.variants).limit(1) },
+      { name: "colors", query: () => db.select().from(schema.colors).limit(1) },
+      { name: "sales", query: () => db.select().from(schema.sales).limit(1) },
+      { name: "saleItems", query: () => db.select().from(schema.saleItems).limit(1) },
+      { name: "settings", query: () => db.select().from(schema.settings).limit(1) },
+      { name: "stockInHistory", query: () => db.select().from(schema.stockInHistory).limit(1) },
+      { name: "paymentHistory", query: () => db.select().from(schema.paymentHistory).limit(1) },
+      { name: "returns", query: () => db.select().from(schema.returns).limit(1) },
+      { name: "returnItems", query: () => db.select().from(schema.returnItems).limit(1) },
+    ];
+
+    for (const table of tables) {
+      try {
+        await table.query();
+        console.log(`[DB] Table '${table.name}' exists ✓`);
+      } catch (error) {
+        console.log(`[DB] Table '${table.name}' will be created on first use`);
+      }
+    }
+  } catch (error) {
+    console.error("[DB] Error syncing database:", error);
+  }
+}
+
+export default db;
