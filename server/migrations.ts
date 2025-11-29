@@ -152,7 +152,7 @@ export function migrateDatabase(db: Database.Database): void {
             perm_payment_delete, perm_database_access,
             cloud_database_url, cloud_sync_enabled, last_sync_time,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           'default', 'PaintPulse', 'DD-MM-YYYY', 'shadow', 'sm', 
           'gray-900', 'blue-600', 0,
@@ -540,25 +540,304 @@ function fixForeignKeyIssues(db: Database.Database): void {
 /**
  * Backup current database before migration (safety measure)
  */
-export function backupDatabase(db: Database.Database, backupPath: string): boolean {
+export function backupDatabase(sourceDb: Database.Database, backupPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      console.log(`[Backup] Creating backup at: ${backupPath}`);
+      
+      // Use better-sqlite3 backup API
+      const backupDb = new Database(backupPath);
+      
+      sourceDb.backup(backupDb)
+        .then(() => {
+          console.log('[Backup] ✅ Database backup completed successfully');
+          backupDb.close();
+          resolve(true);
+        })
+        .catch((error) => {
+          console.error('[Backup] ❌ Database backup failed:', error);
+          backupDb.close();
+          resolve(false);
+        });
+      
+    } catch (error) {
+      console.error('[Backup] ❌ Backup initialization failed:', error);
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * Comprehensive database health check and repair
+ */
+export function performDatabaseHealthCheck(db: Database.Database): { healthy: boolean; issues: string[] } {
+  console.log('[HealthCheck] Starting comprehensive database health check...');
+  
+  const issues: string[] = [];
+  
   try {
-    console.log(`[Backup] Creating backup at: ${backupPath}`);
+    // 1. Check database integrity
+    const integrityCheck = db.prepare('PRAGMA integrity_check').get() as { integrity_check: string };
+    if (integrityCheck.integrity_check !== 'ok') {
+      issues.push(`Database integrity check failed: ${integrityCheck.integrity_check}`);
+    }
     
-    // Use better-sqlite3 backup API
-    const backupDb = new Database(backupPath);
-    db.backup(backupDb)
-      .then(() => {
-        console.log('[Backup] ✅ Database backup completed successfully');
-        backupDb.close();
-      })
-      .catch((error) => {
-        console.error('[Backup] ❌ Database backup failed:', error);
-        backupDb.close();
-      });
+    // 2. Check for table corruption
+    const tables = ['products', 'variants', 'colors', 'sales', 'sale_items', 'stock_in_history', 'payment_history', 'returns', 'return_items'];
     
-    return true;
+    for (const table of tables) {
+      try {
+        const count = db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number };
+        console.log(`[HealthCheck] Table ${table}: ${count.count} records`);
+      } catch (error) {
+        issues.push(`Table ${table} appears to be corrupted or missing`);
+      }
+    }
+    
+    // 3. Check foreign key consistency
+    const fkViolations = db.prepare('PRAGMA foreign_key_check').all() as Array<any>;
+    if (fkViolations.length > 0) {
+      issues.push(`Found ${fkViolations.length} foreign key violations`);
+    }
+    
+    // 4. Check for data consistency issues
+    const consistencyChecks = [
+      {
+        name: 'Sales with invalid payment status',
+        sql: "SELECT COUNT(*) as count FROM sales WHERE payment_status NOT IN ('paid', 'unpaid', 'partial')",
+        threshold: 0
+      },
+      {
+        name: 'Negative stock quantities',
+        sql: 'SELECT COUNT(*) as count FROM colors WHERE stock_quantity < 0',
+        threshold: 0
+      },
+      {
+        name: 'Sales with amount_paid > total_amount',
+        sql: 'SELECT COUNT(*) as count FROM sales WHERE CAST(amount_paid AS REAL) > CAST(total_amount AS REAL)',
+        threshold: 0
+      },
+      {
+        name: 'Duplicate color codes',
+        sql: 'SELECT COUNT(*) as count FROM (SELECT color_code, COUNT(*) as cnt FROM colors GROUP BY color_code HAVING cnt > 1)',
+        threshold: 0
+      }
+    ];
+    
+    for (const check of consistencyChecks) {
+      try {
+        const result = db.prepare(check.sql).get() as { count: number };
+        if (result.count > check.threshold) {
+          issues.push(`${check.name}: ${result.count} issues found`);
+        }
+      } catch (error) {
+        console.log(`[HealthCheck] Error running check ${check.name}:`, error);
+      }
+    }
+    
+    // 5. Check index health
+    try {
+      const missingIndexes = db.prepare(`
+        SELECT name FROM sqlite_master 
+        WHERE type = 'table' 
+        AND name NOT LIKE 'sqlite_%'
+        AND name NOT IN (SELECT DISTINCT tbl_name FROM sqlite_master WHERE type = 'index')
+      `).all() as Array<{ name: string }>;
+      
+      if (missingIndexes.length > 0) {
+        issues.push(`Tables missing indexes: ${missingIndexes.map(t => t.name).join(', ')}`);
+      }
+    } catch (error) {
+      console.log('[HealthCheck] Error checking indexes:', error);
+    }
+    
+    const healthy = issues.length === 0;
+    
+    if (healthy) {
+      console.log('[HealthCheck] ✅ Database health check passed - no issues found');
+    } else {
+      console.log('[HealthCheck] ⚠️ Database health check found issues:', issues);
+    }
+    
+    return { healthy, issues };
+    
   } catch (error) {
-    console.error('[Backup] ❌ Backup initialization failed:', error);
-    return false;
+    console.error('[HealthCheck] ❌ Error during health check:', error);
+    issues.push('Health check failed to complete');
+    return { healthy: false, issues };
   }
 }
+
+/**
+ * Optimize database performance
+ */
+export function optimizeDatabase(db: Database.Database): void {
+  console.log('[Optimization] Starting database optimization...');
+  
+  try {
+    // 1. Run VACUUM to defragment and optimize storage
+    db.exec('VACUUM');
+    console.log('[Optimization] VACUUM completed');
+    
+    // 2. Update database statistics for query optimizer
+    db.exec('ANALYZE');
+    console.log('[Optimization] ANALYZE completed');
+    
+    // 3. Set optimal pragma settings
+    db.pragma('optimize');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('cache_size = -64000'); // 64MB cache
+    db.pragma('temp_store = MEMORY');
+    
+    console.log('[Optimization] ✅ Database optimization completed');
+    
+  } catch (error) {
+    console.error('[Optimization] ❌ Error during optimization:', error);
+  }
+}
+
+/**
+ * Migration manager that coordinates all database operations
+ */
+export class DatabaseMigrationManager {
+  private db: Database.Database;
+  
+  constructor(database: Database.Database) {
+    this.db = database;
+  }
+  
+  /**
+   * Run complete database maintenance routine
+   */
+  async runMaintenance(): Promise<{ success: boolean; backupCreated: boolean; issues: string[] }> {
+    const issues: string[] = [];
+    let backupCreated = false;
+    
+    try {
+      console.log('[MigrationManager] Starting database maintenance...');
+      
+      // Step 1: Create backup
+      const backupPath = `backup-${Date.now()}.db`;
+      backupCreated = await backupDatabase(this.db, backupPath);
+      
+      if (!backupCreated) {
+        issues.push('Failed to create backup before maintenance');
+      }
+      
+      // Step 2: Run migration
+      migrateDatabase(this.db);
+      
+      // Step 3: Validate database
+      validateDatabase(this.db);
+      
+      // Step 4: Health check
+      const health = performDatabaseHealthCheck(this.db);
+      issues.push(...health.issues);
+      
+      // Step 5: Optimize if healthy
+      if (health.healthy) {
+        optimizeDatabase(this.db);
+      } else {
+        console.log('[MigrationManager] Skipping optimization due to health issues');
+      }
+      
+      console.log('[MigrationManager] ✅ Database maintenance completed');
+      return { success: true, backupCreated, issues };
+      
+    } catch (error) {
+      console.error('[MigrationManager] ❌ Database maintenance failed:', error);
+      issues.push(`Maintenance failed: ${error}`);
+      return { success: false, backupCreated, issues };
+    }
+  }
+  
+  /**
+   * Get database schema version information
+   */
+  getSchemaVersion(): { version: string; tables: string[]; indexes: string[] } {
+    try {
+      const tables = this.db.prepare(`
+        SELECT name FROM sqlite_master 
+        WHERE type = 'table' 
+        AND name NOT LIKE 'sqlite_%'
+      `).all() as Array<{ name: string }>;
+      
+      const indexes = this.db.prepare(`
+        SELECT name FROM sqlite_master 
+        WHERE type = 'index' 
+        AND name NOT LIKE 'sqlite_%'
+      `).all() as Array<{ name: string }>;
+      
+      // Determine version based on table presence
+      let version = '1.0.0';
+      const tableNames = tables.map(t => t.name);
+      
+      if (tableNames.includes('payment_history')) version = '2.1.0';
+      if (tableNames.includes('returns')) version = '2.2.0';
+      if (tableNames.includes('settings')) {
+        // Check for cloud sync columns in settings
+        const settingsColumns = this.db.pragma('table_info(settings)') as Array<{ name: string }>;
+        const settingColumnNames = settingsColumns.map(c => c.name);
+        if (settingColumnNames.includes('cloud_sync_enabled')) version = '2.3.0';
+      }
+      
+      return {
+        version,
+        tables: tableNames,
+        indexes: indexes.map(i => i.name)
+      };
+      
+    } catch (error) {
+      console.error('[MigrationManager] Error getting schema version:', error);
+      return { version: 'unknown', tables: [], indexes: [] };
+    }
+  }
+  
+  /**
+   * Export database schema for documentation
+   */
+  exportSchema(): Record<string, any> {
+    const schema: Record<string, any> = {};
+    
+    try {
+      const tables = this.db.prepare(`
+        SELECT name FROM sqlite_master 
+        WHERE type = 'table' 
+        AND name NOT LIKE 'sqlite_%'
+      `).all() as Array<{ name: string }>;
+      
+      for (const table of tables) {
+        const tableName = table.name;
+        const columns = this.db.pragma(`table_info(${tableName})`) as Array<any>;
+        const indexes = this.db.prepare(`
+          SELECT * FROM sqlite_master 
+          WHERE type = 'index' 
+          AND tbl_name = ?
+        `).all(tableName) as Array<any>;
+        
+        schema[tableName] = {
+          columns: columns.map(col => ({
+            name: col.name,
+            type: col.type,
+            notnull: col.notnull,
+            defaultValue: col.dflt_value,
+            primaryKey: col.pk
+          })),
+          indexes: indexes.map(idx => ({
+            name: idx.name,
+            sql: idx.sql
+          }))
+        };
+      }
+      
+      return schema;
+      
+    } catch (error) {
+      console.error('[MigrationManager] Error exporting schema:', error);
+      return {};
+    }
+  }
+}
+
+// Export default migration function for backward compatibility
+export default migrateDatabase;

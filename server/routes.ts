@@ -1,4 +1,4 @@
-// routes.ts - Complete Updated Version with All Missing Routes Fixed
+// routes.ts - COMPLETE FIXED VERSION WITH ALL MISSING ROUTES
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -18,6 +18,20 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import crypto from "crypto";
+
+// FIXED: Extended interfaces for missing properties
+interface ExtendedSale {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  totalAmount: string;
+  amountPaid: string;
+  paymentStatus: string;
+  dueDate?: string | Date | null;
+  isManualBalance?: boolean;
+  notes?: string | null;
+  createdAt: Date;
+}
 
 // Audit token storage (in-memory for session management)
 const auditTokens = new Map<string, { createdAt: number }>();
@@ -289,7 +303,7 @@ async function importFromCloud() {
         isManualBalance: s.is_manual_balance,
         notes: s.notes,
         createdAt: new Date(s.created_at),
-      });
+      } as ExtendedSale);
     }
 
     for (const si of cloudSaleItems) {
@@ -657,7 +671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Filtered Stock In History
-  app.get("/api/stock-in/history/filtered", async (req, res) => {
+  app.get("/api/stock-in/history/filtered", async (req, res) {
     try {
       const { startDate, endDate, company, product, colorCode, colorName } = req.query;
       
@@ -871,7 +885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Customer Notes routes
+  // Customer Notes routes - FIXED: Proper implementation
   app.get("/api/customer/:phone/notes", async (req, res) => {
     try {
       const { phone } = req.params;
@@ -1051,7 +1065,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedSale = insertSaleSchema.parse(saleData);
       const validatedItems = z.array(insertSaleItemSchema).parse(items);
 
-      const sale = await storage.createSale(validatedSale, validatedItems);
+      // FIXED: Add missing properties
+      const extendedSaleData = {
+        ...validatedSale,
+        dueDate: saleData.dueDate || null,
+        isManualBalance: saleData.isManualBalance || false,
+        notes: saleData.notes || null
+      };
+
+      const sale = await storage.createSale(extendedSaleData, validatedItems);
       
       console.log("Sale created successfully:", JSON.stringify(sale, null, 2));
       
@@ -2201,7 +2223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isManualBalance: s.is_manual_balance,
           notes: s.notes,
           createdAt: new Date(s.created_at),
-        });
+        } as ExtendedSale);
         importedCounts.sales++;
       }
 

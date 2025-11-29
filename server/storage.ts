@@ -1,4 +1,4 @@
-// storage.ts - COMPLETE UPDATED VERSION WITH AUTOMATIC CLOUD SYNC SUPPORT
+// storage.ts - COMPLETE FIXED VERSION WITH ALL MISSING PROPERTIES
 import {
   products,
   variants,
@@ -39,6 +39,19 @@ import {
 import { db } from "./db";
 import { eq, desc, gte, sql, and } from "drizzle-orm";
 
+// FIXED: Extended interfaces with missing properties
+interface ExtendedSale extends Sale {
+  dueDate?: string | Date | null;
+  isManualBalance?: boolean;
+  notes?: string | null;
+}
+
+interface ExtendedInsertSale extends InsertSale {
+  dueDate?: string | Date | null;
+  isManualBalance?: boolean;
+  notes?: string | null;
+}
+
 export interface IStorage {
   // Products
   getProducts(): Promise<Product[]>;
@@ -65,18 +78,18 @@ export interface IStorage {
   stockIn(id: string, quantity: number, notes?: string, stockInDate?: string): Promise<Color>;
   deleteColor(id: string): Promise<void>;
 
-  // Sales
-  getSales(): Promise<Sale[]>;
+  // Sales - FIXED: Extended with missing properties
+  getSales(): Promise<ExtendedSale[]>;
   getSalesWithItems(): Promise<SaleWithItems[]>;
-  getUnpaidSales(): Promise<Sale[]>;
-  getSalesByCustomerPhone(customerPhone: string): Promise<Sale[]>;
+  getUnpaidSales(): Promise<ExtendedSale[]>;
+  getSalesByCustomerPhone(customerPhone: string): Promise<ExtendedSale[]>;
   getSalesByCustomerPhoneWithItems(customerPhone: string): Promise<SaleWithItems[]>;
-  findUnpaidSaleByPhone(customerPhone: string): Promise<Sale | undefined>;
+  findUnpaidSaleByPhone(customerPhone: string): Promise<ExtendedSale | undefined>;
   getSale(id: string): Promise<SaleWithItems | undefined>;
-  createSale(sale: InsertSale, items: InsertSaleItem[]): Promise<Sale>;
-  createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<Sale>;
-  updateSalePayment(saleId: string, amount: number, paymentMethod?: string, notes?: string): Promise<Sale>;
-  updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<Sale>;
+  createSale(sale: ExtendedInsertSale, items: InsertSaleItem[]): Promise<ExtendedSale>;
+  createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<ExtendedSale>;
+  updateSalePayment(saleId: string, amount: number, paymentMethod?: string, notes?: string): Promise<ExtendedSale>;
+  updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<ExtendedSale>;
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>;
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
   deleteSaleItem(saleItemId: string): Promise<void>;
@@ -118,7 +131,7 @@ export interface IStorage {
     monthlySales: { revenue: number; transactions: number };
     inventory: { totalProducts: number; totalVariants: number; totalColors: number; lowStock: number; totalStockValue: number };
     unpaidBills: { count: number; totalAmount: number };
-    recentSales: Sale[];
+    recentSales: ExtendedSale[];
     monthlyChart: { date: string; revenue: number }[];
     topCustomers: Array<{ customerName: string; customerPhone: string; totalPurchases: number; transactionCount: number }>;
   }>;
@@ -151,7 +164,7 @@ export interface IStorage {
   upsertProduct(data: Product): Promise<void>;
   upsertVariant(data: Variant): Promise<void>;
   upsertColor(data: Color): Promise<void>;
-  upsertSale(data: Sale): Promise<void>;
+  upsertSale(data: ExtendedSale): Promise<void>;
   upsertSaleItem(data: SaleItem): Promise<void>;
   upsertStockInHistory(data: StockInHistory): Promise<void>;
   upsertPaymentHistory(data: PaymentHistory): Promise<void>;
@@ -1143,9 +1156,15 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  // Sales - UPDATED WITH AUTO-SYNC
-  async getSales(): Promise<Sale[]> {
-    return await db.select().from(sales).orderBy(desc(sales.createdAt));
+  // Sales - UPDATED WITH AUTO-SYNC AND FIXED PROPERTIES
+  async getSales(): Promise<ExtendedSale[]> {
+    const salesData = await db.select().from(sales).orderBy(desc(sales.createdAt));
+    return salesData.map(sale => ({
+      ...sale,
+      dueDate: sale.dueDate,
+      isManualBalance: sale.isManualBalance,
+      notes: sale.notes
+    })) as ExtendedSale[];
   }
 
   async getSalesWithItems(): Promise<SaleWithItems[]> {
@@ -1170,20 +1189,34 @@ export class DatabaseStorage implements IStorage {
     return allSales;
   }
 
-  async getUnpaidSales(): Promise<Sale[]> {
-    return await db
+  async getUnpaidSales(): Promise<ExtendedSale[]> {
+    const unpaidData = await db
       .select()
       .from(sales)
       .where(sql`${sales.paymentStatus} != 'paid'`)
       .orderBy(desc(sales.createdAt));
+    
+    return unpaidData.map(sale => ({
+      ...sale,
+      dueDate: sale.dueDate,
+      isManualBalance: sale.isManualBalance,
+      notes: sale.notes
+    })) as ExtendedSale[];
   }
 
-  async getSalesByCustomerPhone(customerPhone: string): Promise<Sale[]> {
-    return await db
+  async getSalesByCustomerPhone(customerPhone: string): Promise<ExtendedSale[]> {
+    const salesData = await db
       .select()
       .from(sales)
       .where(eq(sales.customerPhone, customerPhone))
       .orderBy(desc(sales.createdAt));
+    
+    return salesData.map(sale => ({
+      ...sale,
+      dueDate: sale.dueDate,
+      isManualBalance: sale.isManualBalance,
+      notes: sale.notes
+    })) as ExtendedSale[];
   }
 
   async getSalesByCustomerPhoneWithItems(customerPhone: string): Promise<SaleWithItems[]> {
@@ -1209,7 +1242,7 @@ export class DatabaseStorage implements IStorage {
     return customerSales;
   }
 
-  async findUnpaidSaleByPhone(customerPhone: string): Promise<Sale | undefined> {
+  async findUnpaidSaleByPhone(customerPhone: string): Promise<ExtendedSale | undefined> {
     const [sale] = await db
       .select()
       .from(sales)
@@ -1219,7 +1252,13 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(desc(sales.createdAt))
       .limit(1);
-    return sale;
+    
+    return sale ? {
+      ...sale,
+      dueDate: sale.dueDate,
+      isManualBalance: sale.isManualBalance,
+      notes: sale.notes
+    } as ExtendedSale : undefined;
   }
 
   async getSale(id: string): Promise<SaleWithItems | undefined> {
@@ -1244,15 +1283,15 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async createSale(insertSale: InsertSale, items: InsertSaleItem[]): Promise<Sale> {
-    const sale: Sale = {
+  async createSale(insertSale: ExtendedInsertSale, items: InsertSaleItem[]): Promise<ExtendedSale> {
+    const sale: ExtendedSale = {
       id: crypto.randomUUID(),
       ...insertSale,
       totalAmount: typeof insertSale.totalAmount === 'number' ? insertSale.totalAmount.toString() : insertSale.totalAmount,
       amountPaid: typeof insertSale.amountPaid === 'number' ? insertSale.amountPaid.toString() : insertSale.amountPaid,
-      dueDate: null,
-      isManualBalance: false,
-      notes: null,
+      dueDate: insertSale.dueDate || null,
+      isManualBalance: insertSale.isManualBalance || false,
+      notes: insertSale.notes || null,
       createdAt: new Date(),
     };
     await db.insert(sales).values(sale);
@@ -1288,7 +1327,7 @@ export class DatabaseStorage implements IStorage {
     return sale;
   }
 
-  async updateSalePayment(saleId: string, amount: number, paymentMethod?: string, notes?: string): Promise<Sale> {
+  async updateSalePayment(saleId: string, amount: number, paymentMethod?: string, notes?: string): Promise<ExtendedSale> {
     const [sale] = await db.select().from(sales).where(eq(sales.id, saleId));
     if (!sale) {
       throw new Error("Sale not found");
@@ -1333,11 +1372,16 @@ export class DatabaseStorage implements IStorage {
     this.detectChanges('sales');
     this.detectChanges('payments');
     
-    return updatedSale;
+    return {
+      ...updatedSale,
+      dueDate: updatedSale.dueDate,
+      isManualBalance: updatedSale.isManualBalance,
+      notes: updatedSale.notes
+    } as ExtendedSale;
   }
 
-  async createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<Sale> {
-    const sale: Sale = {
+  async createManualBalance(data: { customerName: string; customerPhone: string; totalAmount: string; dueDate: Date | null; notes?: string }): Promise<ExtendedSale> {
+    const sale: ExtendedSale = {
       id: crypto.randomUUID(),
       customerName: data.customerName,
       customerPhone: data.customerPhone,
@@ -1357,7 +1401,7 @@ export class DatabaseStorage implements IStorage {
     return sale;
   }
 
-  async updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<Sale> {
+  async updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<ExtendedSale> {
     const updateData: any = {
       dueDate: data.dueDate,
     };
@@ -1375,7 +1419,12 @@ export class DatabaseStorage implements IStorage {
     // AUTO-SYNC TRIGGER
     this.detectChanges('sales');
     
-    return updatedSale;
+    return {
+      ...updatedSale,
+      dueDate: updatedSale.dueDate,
+      isManualBalance: updatedSale.isManualBalance,
+      notes: updatedSale.notes
+    } as ExtendedSale;
   }
 
   async addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem> {
@@ -1553,7 +1602,7 @@ export class DatabaseStorage implements IStorage {
     this.detectChanges('payments');
   }
 
-  // Dashboard Stats
+  // Dashboard Stats - FIXED: Return ExtendedSale[]
   async getDashboardStats() {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1601,11 +1650,18 @@ export class DatabaseStorage implements IStorage {
       .from(sales)
       .where(sql`${sales.paymentStatus} != 'paid'`);
 
-    const recentSales = await db
+    const recentSalesData = await db
       .select()
       .from(sales)
       .orderBy(desc(sales.createdAt))
       .limit(10);
+
+    const recentSales: ExtendedSale[] = recentSalesData.map(sale => ({
+      ...sale,
+      dueDate: sale.dueDate,
+      isManualBalance: sale.isManualBalance,
+      notes: sale.notes
+    })) as ExtendedSale[];
 
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -1911,7 +1967,7 @@ export class DatabaseStorage implements IStorage {
     })).sort((a, b) => new Date(b.soldAt || 0).getTime() - new Date(a.soldAt || 0).getTime());
   }
 
-  // Cloud Sync Upserts
+  // Cloud Sync Upserts - FIXED: ExtendedSale support
   async upsertProduct(data: Product): Promise<void> {
     const existing = await db.select().from(products).where(eq(products.id, data.id));
     if (existing.length > 0) {
@@ -1952,7 +2008,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async upsertSale(data: Sale): Promise<void> {
+  async upsertSale(data: ExtendedSale): Promise<void> {
     const existing = await db.select().from(sales).where(eq(sales.id, data.id));
     if (existing.length > 0) {
       await db.update(sales).set({

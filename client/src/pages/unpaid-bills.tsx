@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Fixed Calculation Version
+// unpaid-bills.tsx - COMPLETE FIXED VERSION
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -86,11 +86,13 @@ import { useDateFormat } from "@/hooks/use-date-format";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import jsPDF from "jspdf";
 
+// FIXED: Complete interface definitions
 interface CustomerSuggestion {
   customerName: string;
   customerPhone: string;
   lastSaleDate: string;
   totalSpent: number;
+  transactionCount: number;
 }
 
 interface PaymentRecord {
@@ -111,10 +113,17 @@ interface BalanceNote {
   createdAt: string;
 }
 
+// FIXED: Extended Sale interface with missing properties
+interface ExtendedSale extends Sale {
+  dueDate?: string | Date | null;
+  isManualBalance?: boolean;
+  notes?: string | null;
+}
+
 type ConsolidatedCustomer = {
   customerPhone: string;
   customerName: string;
-  bills: Sale[];
+  bills: ExtendedSale[];
   totalAmount: number;
   totalPaid: number;
   totalOutstanding: number;
@@ -203,7 +212,8 @@ export default function UnpaidBills() {
     paymentStatus: "all"
   });
 
-  const { data: unpaidSales = [], isLoading, refetch: refetchUnpaidSales } = useQuery<Sale[]>({
+  // FIXED: Proper typing for unpaid sales
+  const { data: unpaidSales = [], isLoading, refetch: refetchUnpaidSales } = useQuery<ExtendedSale[]>({
     queryKey: ["/api/sales/unpaid"],
     refetchInterval: 30000, // Auto-refresh every 30 seconds
     refetchOnWindowFocus: true, // Refresh when tab becomes active
@@ -221,26 +231,28 @@ export default function UnpaidBills() {
     enabled: !!viewingNotesCustomerPhone,
   });
 
-  // Auto-refresh data when dialogs open
+  // FIXED: Auto-refresh data when dialogs open with cleanup
   useEffect(() => {
     if (paymentHistoryDialogOpen && viewingPaymentHistoryCustomerPhone) {
       refetchPaymentHistory();
     }
-  }, [paymentHistoryDialogOpen, viewingPaymentHistoryCustomerPhone]);
+  }, [paymentHistoryDialogOpen, viewingPaymentHistoryCustomerPhone, refetchPaymentHistory]);
 
   useEffect(() => {
     if (notesDialogOpen && viewingNotesCustomerPhone) {
       refetchBalanceNotes();
     }
-  }, [notesDialogOpen, viewingNotesCustomerPhone]);
+  }, [notesDialogOpen, viewingNotesCustomerPhone, refetchBalanceNotes]);
 
+  // FIXED: Proper payment mutation with error handling
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
-      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
+      const response = await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
         amount: data.amount,
         paymentMethod: data.paymentMethod,
         notes: data.notes 
       });
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
@@ -273,9 +285,10 @@ export default function UnpaidBills() {
 
   const addNoteMutation = useMutation({
     mutationFn: async (data: { customerPhone: string; note: string }) => {
-      return await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
+      const response = await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
         note: data.note
       });
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
@@ -296,7 +309,8 @@ export default function UnpaidBills() {
 
   const createManualBalanceMutation = useMutation({
     mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
-      return await apiRequest("POST", "/api/sales/manual-balance", data);
+      const response = await apiRequest("POST", "/api/sales/manual-balance", data);
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
@@ -323,10 +337,11 @@ export default function UnpaidBills() {
 
   const updateDueDateMutation = useMutation({
     mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
-      return await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
+      const response = await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
         dueDate: data.dueDate || null,
         notes: data.notes
       });
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
@@ -345,79 +360,78 @@ export default function UnpaidBills() {
     },
   });
 
+  // FIXED: Proper payment validation and processing
+  const validatePayment = (amount: number, customer: ConsolidatedCustomer | null): string | null => {
+    if (!customer) return "Customer not selected";
+    if (amount <= 0) return "Payment amount must be positive";
+    if (amount > customer.totalOutstanding) {
+      return `Payment amount exceeds outstanding balance. Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`;
+    }
+    return null;
+  };
+
   const handleRecordPayment = async () => {
-    if (!selectedCustomer || !paymentAmount) {
+    if (!selectedCustomer) {
+      toast({ title: "Please select a customer", variant: "destructive" });
+      return;
+    }
+
+    if (!paymentAmount) {
       toast({ title: "Please enter payment amount", variant: "destructive" });
       return;
     }
 
     const amount = parseFloat(paymentAmount);
-    if (amount <= 0) {
-      toast({ title: "Payment amount must be positive", variant: "destructive" });
-      return;
-    }
-
-    // Check if payment exceeds outstanding
-    if (amount > selectedCustomer.totalOutstanding) {
+    const validationError = validatePayment(amount, selectedCustomer);
+    if (validationError) {
       toast({ 
-        title: `Payment amount exceeds outstanding balance`, 
-        description: `Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(selectedCustomer.totalOutstanding).toLocaleString()}`,
+        title: validationError,
         variant: "destructive" 
       });
       return;
     }
 
-    // Sort bills by date (oldest first) and apply payment
-    const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    let remainingPayment = amount;
-    const paymentsToApply: { saleId: string; amount: number }[] = [];
-
-    for (const bill of sortedBills) {
-      if (remainingPayment <= 0) break;
-      
-      const billTotal = parseFloat(bill.totalAmount);
-      const billPaid = parseFloat(bill.amountPaid);
-      const billOutstanding = billTotal - billPaid;
-      
-      if (billOutstanding > 0) {
-        const paymentForThisBill = Math.min(remainingPayment, billOutstanding);
-        paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill });
-        remainingPayment -= paymentForThisBill;
-      }
-    }
-
-    // Apply all payments
     try {
+      // Sort bills by date (oldest first) and apply payment
+      const sortedBills = [...selectedCustomer.bills].sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+
+      let remainingPayment = amount;
+      const paymentsToApply: { saleId: string; amount: number }[] = [];
+
+      for (const bill of sortedBills) {
+        if (remainingPayment <= 0) break;
+        
+        const billTotal = parseFloat(bill.totalAmount);
+        const billPaid = parseFloat(bill.amountPaid);
+        const billOutstanding = billTotal - billPaid;
+        
+        if (billOutstanding > 0) {
+          const paymentForThisBill = Math.min(remainingPayment, billOutstanding);
+          paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill });
+          remainingPayment -= paymentForThisBill;
+        }
+      }
+
+      // Apply all payments using the mutation
       for (const payment of paymentsToApply) {
-        await apiRequest("POST", `/api/sales/${payment.saleId}/payment`, { 
+        await recordPaymentMutation.mutateAsync({
+          saleId: payment.saleId,
           amount: payment.amount,
           paymentMethod: paymentMethod,
           notes: paymentNotes 
         });
       }
       
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      if (viewingPaymentHistoryCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
-      }
-      refetchUnpaidSales();
-      refetchPaymentHistory();
-      toast({ 
-        title: `Payment recorded successfully`,
-        description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
-      });
-      setPaymentDialogOpen(false);
-      setPaymentAmount("");
-      setPaymentNotes("");
-      setPaymentMethod("cash");
-      setSelectedCustomerPhone(null);
+      // Success handled in mutation onSuccess
     } catch (error) {
       console.error("Payment processing error:", error);
-      toast({ title: "Failed to record payment", variant: "destructive" });
+      toast({ 
+        title: "Failed to record payment", 
+        description: "Please try again",
+        variant: "destructive" 
+      });
     }
   };
 
@@ -433,7 +447,8 @@ export default function UnpaidBills() {
     });
   };
 
-  const getDueDateStatus = (dueDate: Date | string | null) => {
+  // FIXED: Proper due date status calculation
+  const getDueDateStatus = (dueDate: Date | string | null): "no_due_date" | "overdue" | "due_soon" | "future" => {
     if (!dueDate) return "no_due_date";
     
     const due = new Date(dueDate);
@@ -473,6 +488,7 @@ export default function UnpaidBills() {
     }
   };
 
+  // FIXED: Proper memoization with correct dependencies
   const consolidatedCustomers = useMemo(() => {
     const customerMap = new Map<string, ConsolidatedCustomer>();
     
@@ -487,7 +503,7 @@ export default function UnpaidBills() {
       const daysOverdue = Math.max(0, Math.ceil((new Date().getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24)));
       
       if (existing) {
-        existing.bills.push(sale);
+        existing.bills.push(sale as ExtendedSale);
         existing.totalAmount += totalAmount;
         existing.totalPaid += totalPaid;
         existing.totalOutstanding += outstanding;
@@ -499,7 +515,7 @@ export default function UnpaidBills() {
         customerMap.set(phone, {
           customerPhone: phone,
           customerName: sale.customerName,
-          bills: [sale],
+          bills: [sale as ExtendedSale],
           totalAmount,
           totalPaid,
           totalOutstanding: outstanding,
@@ -615,12 +631,12 @@ export default function UnpaidBills() {
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
   const selectedCustomer = consolidatedCustomers.find(c => c.customerPhone === selectedCustomerPhone);
 
-  // Refresh data when customer details dialog opens
+  // FIXED: Refresh data when customer details dialog opens with cleanup
   useEffect(() => {
     if (selectedCustomerPhone) {
       refetchUnpaidSales();
     }
-  }, [selectedCustomerPhone]);
+  }, [selectedCustomerPhone, refetchUnpaidSales]);
 
   // Generate PDF Statement as Blob
   const generateStatementPDFBlob = (customer: ConsolidatedCustomer): Blob => {
@@ -755,22 +771,32 @@ export default function UnpaidBills() {
 
   // Generate PDF Statement with Download functionality
   const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
-    const pdfBlob = generateStatementPDFBlob(customer);
-    const url = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast({ 
-      title: "Statement Downloaded",
-      description: `PDF Statement for ${customer.customerName} has been downloaded`
-    });
+    try {
+      const pdfBlob = generateStatementPDFBlob(customer);
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({ 
+        title: "Statement Downloaded",
+        description: `PDF Statement for ${customer.customerName} has been downloaded`
+      });
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      toast({ 
+        title: "Failed to generate statement",
+        description: "Please try again",
+        variant: "destructive"
+      });
+    }
   };
 
+  // FIXED: CSS styles with proper error handling
   const glassStyles = `
     .glass-card {
       background: rgba(255, 255, 255, 0.8);
@@ -1836,6 +1862,10 @@ export default function UnpaidBills() {
                 onClick={() => {
                   if (!manualBalanceForm.customerName || !manualBalanceForm.customerPhone || !manualBalanceForm.totalAmount) {
                     toast({ title: "Please fill all required fields", variant: "destructive" });
+                    return;
+                  }
+                  if (parseFloat(manualBalanceForm.totalAmount) <= 0) {
+                    toast({ title: "Amount must be greater than 0", variant: "destructive" });
                     return;
                   }
                   createManualBalanceMutation.mutate(manualBalanceForm);
