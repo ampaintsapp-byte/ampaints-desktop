@@ -1,7 +1,7 @@
-// unpaid-bills.tsx - Fixed Calculation Version
+// unpaid-bills.tsx - Complete Real-time Version
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,7 +66,10 @@ import {
   Wallet,
   IndianRupee,
   SortAsc,
-  SortDesc
+  SortDesc,
+  RefreshCw,
+  Edit,
+  Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -181,8 +184,12 @@ export default function UnpaidBills() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   
+  // Refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
   const { toast } = useToast();
   const { canEditPayment, canDeletePayment, canEditSales } = usePermissions();
+  const queryClient = useQueryClient();
 
   const { data: customerSuggestions = [] } = useQuery<CustomerSuggestion[]>({
     queryKey: ["/api/customers/suggestions"],
@@ -203,25 +210,54 @@ export default function UnpaidBills() {
     paymentStatus: "all"
   });
 
-  const { data: unpaidSales = [], isLoading, refetch: refetchUnpaidSales } = useQuery<Sale[]>({
+  // Enhanced query with real-time refetching
+  const { 
+    data: unpaidSales = [], 
+    isLoading, 
+    refetch: refetchUnpaidSales,
+    isRefetching 
+  } = useQuery<Sale[]>({
     queryKey: ["/api/sales/unpaid"],
     refetchInterval: 30000, // Auto-refresh every 30 seconds
     refetchOnWindowFocus: true, // Refresh when tab becomes active
+    staleTime: 10000, // Consider data stale after 10 seconds
   });
 
   // Fetch payment history for a specific customer
   const { data: paymentHistory = [], refetch: refetchPaymentHistory } = useQuery<PaymentRecord[]>({
     queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`],
     enabled: !!viewingPaymentHistoryCustomerPhone,
+    staleTime: 5000, // Shorter stale time for payment history
   });
 
   // Fetch balance notes for all sales of a customer
   const { data: balanceNotes = [], refetch: refetchBalanceNotes } = useQuery<BalanceNote[]>({
     queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`],
     enabled: !!viewingNotesCustomerPhone,
+    staleTime: 5000, // Shorter stale time for notes
   });
 
-  // Auto-refresh data when dialogs open
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchUnpaidSales(),
+        viewingPaymentHistoryCustomerPhone && refetchPaymentHistory(),
+        viewingNotesCustomerPhone && refetchBalanceNotes(),
+        queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+      ]);
+      toast({ title: "Data refreshed successfully" });
+    } catch (error) {
+      console.error("Refresh error:", error);
+      toast({ title: "Failed to refresh data", variant: "destructive" });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Auto-refresh data when dialogs open or close
   useEffect(() => {
     if (paymentHistoryDialogOpen && viewingPaymentHistoryCustomerPhone) {
       refetchPaymentHistory();
@@ -234,6 +270,16 @@ export default function UnpaidBills() {
     }
   }, [notesDialogOpen, viewingNotesCustomerPhone]);
 
+  // Auto-refresh when payment dialog closes
+  useEffect(() => {
+    if (!paymentDialogOpen && selectedCustomerPhone) {
+      // Refresh all relevant data when payment dialog closes
+      refetchUnpaidSales();
+      refetchPaymentHistory();
+      refetchBalanceNotes();
+    }
+  }, [paymentDialogOpen, selectedCustomerPhone]);
+
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
       return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
@@ -242,16 +288,19 @@ export default function UnpaidBills() {
         notes: data.notes 
       });
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      // Invalidate all relevant queries for real-time updates
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
-      }
-      if (viewingPaymentHistoryCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
-      }
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      refetchUnpaidSales();
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      
+      if (selectedCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomerPhone}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/customer/${selectedCustomerPhone}/notes`] });
+      }
+      
       toast({ 
         title: "Payment recorded successfully",
         description: `Payment of Rs. ${parseFloat(paymentAmount).toLocaleString()} has been recorded.`
@@ -260,6 +309,12 @@ export default function UnpaidBills() {
       setPaymentAmount("");
       setPaymentNotes("");
       setPaymentMethod("cash");
+      
+      // Force immediate refetch
+      refetchUnpaidSales();
+      if (selectedCustomerPhone) {
+        refetchPaymentHistory();
+      }
     },
     onError: (error: Error) => {
       console.error("Payment recording error:", error);
@@ -277,16 +332,20 @@ export default function UnpaidBills() {
         note: data.note
       });
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (viewingNotesCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
-      }
-      refetchUnpaidSales();
-      refetchBalanceNotes();
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/customer/${variables.customerPhone}/notes`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      
       toast({ title: "Note added successfully" });
       setNotesDialogOpen(false);
       setNewNote("");
+      
+      // Force immediate refetch
+      refetchUnpaidSales();
+      refetchBalanceNotes();
     },
     onError: (error: Error) => {
       console.error("Add note error:", error);
@@ -298,10 +357,14 @@ export default function UnpaidBills() {
     mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
       return await apiRequest("POST", "/api/sales/manual-balance", data);
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      refetchUnpaidSales();
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${variables.customerPhone}`] });
+      
       toast({ 
         title: "New pending balance added successfully",
         description: "A new separate bill has been created for this customer"
@@ -314,6 +377,9 @@ export default function UnpaidBills() {
         dueDate: "",
         notes: ""
       });
+      
+      // Force immediate refetch
+      refetchUnpaidSales();
     },
     onError: (error: Error) => {
       console.error("Create manual balance error:", error);
@@ -328,20 +394,57 @@ export default function UnpaidBills() {
         notes: data.notes
       });
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      if (selectedSaleId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/sales/${selectedSaleId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      
+      if (selectedCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomerPhone}`] });
       }
-      refetchUnpaidSales();
+      
       toast({ title: "Due date updated successfully" });
       setDueDateDialogOpen(false);
       setEditingSaleId(null);
       setDueDateForm({ dueDate: "", notes: "" });
+      
+      // Force immediate refetch
+      refetchUnpaidSales();
     },
     onError: (error: Error) => {
       console.error("Update due date error:", error);
       toast({ title: "Failed to update due date", variant: "destructive" });
+    },
+  });
+
+  const deleteSaleMutation = useMutation({
+    mutationFn: async (saleId: string) => {
+      return await apiRequest("DELETE", `/api/sales/${saleId}`);
+    },
+    onSuccess: (_, saleId) => {
+      // Invalidate all relevant queries
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
+      
+      if (selectedCustomerPhone) {
+        queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomerPhone}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`] });
+      }
+      
+      toast({ title: "Sale deleted successfully" });
+      
+      // Force immediate refetch
+      refetchUnpaidSales();
+      if (selectedCustomerPhone) {
+        refetchPaymentHistory();
+      }
+    },
+    onError: (error: Error) => {
+      console.error("Delete sale error:", error);
+      toast({ title: "Failed to delete sale", variant: "destructive" });
     },
   });
 
@@ -389,32 +492,20 @@ export default function UnpaidBills() {
       }
     }
 
-    // Apply all payments
+    // Apply all payments using the mutation
     try {
       for (const payment of paymentsToApply) {
-        await apiRequest("POST", `/api/sales/${payment.saleId}/payment`, { 
+        await recordPaymentMutation.mutateAsync({
+          saleId: payment.saleId,
           amount: payment.amount,
           paymentMethod: paymentMethod,
-          notes: paymentNotes 
+          notes: paymentNotes
         });
       }
       
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
-      if (viewingPaymentHistoryCustomerPhone) {
-        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`] });
-      }
-      refetchUnpaidSales();
-      refetchPaymentHistory();
-      toast({ 
-        title: `Payment recorded successfully`,
-        description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
-      });
-      setPaymentDialogOpen(false);
-      setPaymentAmount("");
-      setPaymentNotes("");
-      setPaymentMethod("cash");
-      setSelectedCustomerPhone(null);
+      // Additional refresh to ensure data is updated
+      handleManualRefresh();
+      
     } catch (error) {
       console.error("Payment processing error:", error);
       toast({ title: "Failed to record payment", variant: "destructive" });
@@ -431,6 +522,21 @@ export default function UnpaidBills() {
       customerPhone: viewingNotesCustomerPhone,
       note: newNote.trim()
     });
+  };
+
+  const handleDeleteSale = (saleId: string) => {
+    if (window.confirm("Are you sure you want to delete this sale? This action cannot be undone.")) {
+      deleteSaleMutation.mutate(saleId);
+    }
+  };
+
+  const handleEditDueDate = (saleId: string, currentDueDate: string | null) => {
+    setEditingSaleId(saleId);
+    setDueDateForm({
+      dueDate: currentDueDate ? new Date(currentDueDate).toISOString().split('T')[0] : "",
+      notes: ""
+    });
+    setDueDateDialogOpen(true);
   };
 
   const getDueDateStatus = (dueDate: Date | string | null) => {
@@ -619,6 +725,8 @@ export default function UnpaidBills() {
   useEffect(() => {
     if (selectedCustomerPhone) {
       refetchUnpaidSales();
+      refetchPaymentHistory();
+      refetchBalanceNotes();
     }
   }, [selectedCustomerPhone]);
 
@@ -818,6 +926,13 @@ export default function UnpaidBills() {
   const totalCustomers = consolidatedCustomers.length;
   const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0;
 
+  const isAnyMutationLoading = 
+    recordPaymentMutation.isPending || 
+    addNoteMutation.isPending || 
+    createManualBalanceMutation.isPending || 
+    updateDueDateMutation.isPending || 
+    deleteSaleMutation.isPending;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
       <style>{glassStyles}</style>
@@ -864,10 +979,21 @@ export default function UnpaidBills() {
           </div>
           
           <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing || isAnyMutationLoading}
+              className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+
             {canEditSales && (
               <Button 
                 variant="outline" 
                 onClick={() => setManualBalanceDialogOpen(true)}
+                disabled={isAnyMutationLoading}
                 className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
               >
                 <Plus className="h-4 w-4" />
@@ -882,7 +1008,7 @@ export default function UnpaidBills() {
                   generateDetailedPDFStatement(consolidatedCustomers[0]);
                 }
               }}
-              disabled={consolidatedCustomers.length === 0}
+              disabled={consolidatedCustomers.length === 0 || isAnyMutationLoading}
             >
               <Download className="h-4 w-4" />
               Download Statement
@@ -899,6 +1025,7 @@ export default function UnpaidBills() {
               value={filters.search}
               onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
               className="pl-10 glass-card border-white/20 focus:border-purple-300 transition-colors"
+              disabled={isAnyMutationLoading}
             />
           </div>
 
@@ -906,6 +1033,7 @@ export default function UnpaidBills() {
           <Select
             value={filters.sortBy}
             onValueChange={(value: any) => setFilters(prev => ({ ...prev, sortBy: value }))}
+            disabled={isAnyMutationLoading}
           >
             <SelectTrigger className="w-[180px] glass-card border-white/20">
               <SelectValue placeholder="Sort by" />
@@ -922,7 +1050,11 @@ export default function UnpaidBills() {
           {/* Filter Button */}
           <DropdownMenu open={filterOpen} onOpenChange={setFilterOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300">
+              <Button 
+                variant="outline" 
+                className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300"
+                disabled={isAnyMutationLoading}
+              >
                 <Filter className="h-4 w-4" />
                 Filters
                 {hasActiveFilters && (
@@ -1051,6 +1183,18 @@ export default function UnpaidBills() {
         </div>
       </div>
 
+      {/* Loading Overlay */}
+      {(isAnyMutationLoading || isRefreshing) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="glass-card rounded-2xl p-6 flex items-center gap-3">
+            <RefreshCw className="h-6 w-6 animate-spin text-purple-600" />
+            <span className="text-slate-800 font-medium">
+              {isAnyMutationLoading ? "Processing..." : "Refreshing data..."}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Filter Summary */}
       {hasActiveFilters && (
         <div className="glass-card rounded-xl p-4 border border-white/20">
@@ -1160,7 +1304,7 @@ export default function UnpaidBills() {
                 onClick={() => {
                   // Refresh data before opening customer details
                   refetchUnpaidSales();
-                  setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`);
+                  setSelectedCustomerPhone(customer.customerPhone);
                 }}
                 data-testid={`card-customer-${customer.customerPhone}`}
               >
@@ -1297,7 +1441,7 @@ export default function UnpaidBills() {
       )}
 
       {/* Customer Bills Details Dialog */}
-      <Dialog open={!!selectedCustomerPhone && !paymentDialogOpen} onOpenChange={(open) => {
+      <Dialog open={!!selectedCustomerPhone} onOpenChange={(open) => {
         if (!open) {
           setSelectedCustomerPhone(null);
         } else {
@@ -1369,6 +1513,18 @@ export default function UnpaidBills() {
                   <Download className="h-4 w-4" />
                   Download Statement
                 </Button>
+                {canEditPayment && (
+                  <Button
+                    onClick={() => {
+                      setPaymentDialogOpen(true);
+                      setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
+                    }}
+                    className="flex items-center gap-2 gradient-bg text-white ml-auto"
+                  >
+                    <Banknote className="h-4 w-4" />
+                    Record Payment
+                  </Button>
+                )}
               </div>
 
               {/* Bills List */}
@@ -1420,6 +1576,16 @@ export default function UnpaidBills() {
                             </div>
                           </div>
                           <div className="flex gap-2">
+                            {canEditSales && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditDueDate(bill.id, bill.dueDate)}
+                                className="glass-card border-white/20"
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                            )}
                             {!isManual && (
                               <Link href={`/bill/${bill.id}`}>
                                 <Button variant="outline" size="sm" className="glass-card border-white/20">
@@ -1427,6 +1593,16 @@ export default function UnpaidBills() {
                                   Print
                                 </Button>
                               </Link>
+                            )}
+                            {canEditSales && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteSale(bill.id)}
+                                className="glass-card border-white/20 text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -1456,18 +1632,6 @@ export default function UnpaidBills() {
                 <Button variant="outline" onClick={() => setSelectedCustomerPhone(null)} className="glass-card border-white/20">
                   Close
                 </Button>
-                {canEditPayment && (
-                  <Button
-                    onClick={() => {
-                      setPaymentDialogOpen(true);
-                      setPaymentAmount(Math.round(selectedCustomer.totalOutstanding).toString());
-                    }}
-                    className="gradient-bg text-white"
-                  >
-                    <Banknote className="h-4 w-4 mr-2" />
-                    Record Payment
-                  </Button>
-                )}
               </DialogFooter>
             </div>
           )}
@@ -1562,7 +1726,14 @@ export default function UnpaidBills() {
                   disabled={recordPaymentMutation.isPending}
                   className="gradient-bg text-white"
                 >
-                  {recordPaymentMutation.isPending ? "Processing..." : "Record Payment"}
+                  {recordPaymentMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Record Payment"
+                  )}
                 </Button>
               </DialogFooter>
             </div>
@@ -1657,7 +1828,14 @@ export default function UnpaidBills() {
                 disabled={addNoteMutation.isPending || !newNote.trim()}
                 className="w-full gradient-bg text-white"
               >
-                {addNoteMutation.isPending ? "Adding..." : "Add Note"}
+                {addNoteMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  "Add Note"
+                )}
               </Button>
             </div>
 
@@ -1843,7 +2021,87 @@ export default function UnpaidBills() {
                 disabled={createManualBalanceMutation.isPending}
                 className="gradient-bg text-white"
               >
-                {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
+                {createManualBalanceMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  "Add Balance"
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Due Date Edit Dialog */}
+      <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
+        <DialogContent className="sm:max-w-md glass-card border-white/20">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Update Due Date
+            </DialogTitle>
+            <DialogDescription>
+              Set or update the due date for this bill
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="dueDate">Due Date</Label>
+              <Input
+                id="dueDate"
+                type="date"
+                value={dueDateForm.dueDate}
+                onChange={(e) => setDueDateForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                className="glass-card border-white/20"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dueDateNotes">Notes (Optional)</Label>
+              <Textarea
+                id="dueDateNotes"
+                placeholder="Add notes about this due date..."
+                value={dueDateForm.notes}
+                onChange={(e) => setDueDateForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={3}
+                className="glass-card border-white/20"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDueDateDialogOpen(false);
+                  setEditingSaleId(null);
+                  setDueDateForm({ dueDate: "", notes: "" });
+                }}
+                className="glass-card border-white/20"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (editingSaleId) {
+                    updateDueDateMutation.mutate({
+                      saleId: editingSaleId,
+                      dueDate: dueDateForm.dueDate || undefined,
+                      notes: dueDateForm.notes || undefined
+                    });
+                  }
+                }}
+                disabled={updateDueDateMutation.isPending}
+                className="gradient-bg text-white"
+              >
+                {updateDueDateMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  "Update Due Date"
+                )}
               </Button>
             </DialogFooter>
           </div>

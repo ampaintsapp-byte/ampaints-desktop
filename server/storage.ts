@@ -1,4 +1,4 @@
-// storage.ts - UPDATED WITH PROPER SETTINGS HANDLING
+// storage.ts - COMPLETE UPDATED VERSION WITH FIXED RETURNS
 import {
   products,
   variants,
@@ -40,7 +40,6 @@ import { db } from "./db";
 import { eq, desc, gte, sql, and } from "drizzle-orm";
 
 export interface IStorage {
-  // ... (keep all existing interface methods the same)
   // Products
   getProducts(): Promise<Product[]>;
   getProduct(id: string): Promise<Product | undefined>;
@@ -81,6 +80,7 @@ export interface IStorage {
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>;
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>;
   deleteSaleItem(saleItemId: string): Promise<void>;
+  deleteSale(saleId: string): Promise<void>;
 
   // Stock In History
   getStockInHistory(): Promise<StockInHistoryWithColor[]>;
@@ -109,6 +109,8 @@ export interface IStorage {
   getPaymentHistoryByCustomer(customerPhone: string): Promise<PaymentHistoryWithSale[]>;
   getPaymentHistoryBySale(saleId: string): Promise<PaymentHistory[]>;
   getAllPaymentHistory(): Promise<PaymentHistoryWithSale[]>;
+  updatePaymentHistory(id: string, data: { amount?: number; paymentMethod?: string; notes?: string }): Promise<PaymentHistory | null>;
+  deletePaymentHistory(id: string): Promise<boolean>;
 
   // Dashboard Stats
   getDashboardStats(): Promise<{
@@ -121,11 +123,22 @@ export interface IStorage {
     topCustomers: Array<{ customerName: string; customerPhone: string; totalPurchases: number; transactionCount: number }>;
   }>;
 
-  // Returns
+  // Returns - UPDATED WITH FIXED METHODS
   getReturns(): Promise<ReturnWithItems[]>;
   getReturn(id: string): Promise<ReturnWithItems | undefined>;
   createReturn(returnData: InsertReturn, items: InsertReturnItem[]): Promise<Return>;
+  createQuickReturn(data: {
+    customerName: string;
+    customerPhone: string;
+    colorId: string;
+    quantity: number;
+    rate: number;
+    reason?: string;
+    restoreStock?: boolean;
+  }): Promise<Return>;
   getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]>;
+  getReturnItems(): Promise<ReturnItem[]>;
+  getSaleItems(): Promise<SaleItem[]>;
 
   // Settings
   getSettings(): Promise<Settings>;
@@ -147,8 +160,6 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // ... (keep all existing helper methods the same)
-
   // Helper method to format dates to DD-MM-YYYY
   private formatDateToDDMMYYYY(date: Date): string {
     const day = String(date.getDate()).padStart(2, '0');
@@ -170,12 +181,11 @@ export class DatabaseStorage implements IStorage {
            date.getFullYear() === year;
   }
 
-  // Settings - UPDATED WITH PROPER DEFAULT VALUES AND ERROR HANDLING
+  // Settings
   async getSettings(): Promise<Settings> {
     try {
       const [setting] = await db.select().from(settings).where(eq(settings.id, 'default'));
       if (!setting) {
-        // Create default settings if not found
         const defaultSettings: Settings = {
           id: 'default',
           storeName: 'PaintPulse',
@@ -204,15 +214,13 @@ export class DatabaseStorage implements IStorage {
           await db.insert(settings).values(defaultSettings);
           console.log('[Storage] Default settings created');
         } catch (insertError) {
-          console.error('[Storage] Error inserting default settings (table may not exist):', insertError);
-          // Return defaults even if insert fails
+          console.error('[Storage] Error inserting default settings:', insertError);
         }
         return defaultSettings;
       }
       return setting;
     } catch (error) {
       console.error('[Storage] Error getting settings:', error);
-      // Return safe defaults if there's an error - this prevents crashes
       const defaultSettings: Settings = {
         id: 'default',
         storeName: 'PaintPulse',
@@ -246,7 +254,6 @@ export class DatabaseStorage implements IStorage {
       const existing = await db.select().from(settings).where(eq(settings.id, 'default'));
       
       if (existing.length === 0) {
-        // If settings don't exist, create them first
         const defaultSettings: Settings = {
           id: 'default',
           storeName: data.storeName || 'PaintPulse',
@@ -275,12 +282,10 @@ export class DatabaseStorage implements IStorage {
         return defaultSettings;
       }
 
-      // Prepare update data - only include fields that are provided
       const updateData: any = {
         updatedAt: new Date(),
       };
 
-      // Add all provided fields to update
       if (data.storeName !== undefined) updateData.storeName = data.storeName;
       if (data.dateFormat !== undefined) updateData.dateFormat = data.dateFormat;
       if (data.cardBorderStyle !== undefined) updateData.cardBorderStyle = data.cardBorderStyle;
@@ -288,11 +293,8 @@ export class DatabaseStorage implements IStorage {
       if (data.cardButtonColor !== undefined) updateData.cardButtonColor = data.cardButtonColor;
       if (data.cardPriceColor !== undefined) updateData.cardPriceColor = data.cardPriceColor;
       if (data.showStockBadgeBorder !== undefined) updateData.showStockBadgeBorder = data.showStockBadgeBorder;
-      
-      // IMPORTANT: Audit PIN hash and salt must be explicitly set
       if (data.auditPinHash !== undefined) updateData.auditPinHash = data.auditPinHash;
       if (data.auditPinSalt !== undefined) updateData.auditPinSalt = data.auditPinSalt;
-      
       if (data.permStockDelete !== undefined) updateData.permStockDelete = data.permStockDelete;
       if (data.permStockEdit !== undefined) updateData.permStockEdit = data.permStockEdit;
       if (data.permStockHistoryDelete !== undefined) updateData.permStockHistoryDelete = data.permStockHistoryDelete;
@@ -305,14 +307,13 @@ export class DatabaseStorage implements IStorage {
       if (data.cloudSyncEnabled !== undefined) updateData.cloudSyncEnabled = data.cloudSyncEnabled;
       if (data.lastSyncTime !== undefined) updateData.lastSyncTime = data.lastSyncTime;
 
-      // Update existing settings
       await db
         .update(settings)
         .set(updateData)
         .where(eq(settings.id, 'default'));
     
       const updated = await this.getSettings();
-      console.log('[Storage] Settings updated:', { hasPin: !!updated.auditPinHash });
+      console.log('[Storage] Settings updated');
       return updated;
     } catch (error) {
       console.error('[Storage] Error updating settings:', error);
@@ -320,7 +321,6 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // ... (keep all other existing methods exactly the same)
   // Products
   async getProducts(): Promise<Product[]> {
     return await db.select().from(products).orderBy(desc(products.createdAt));
@@ -486,7 +486,6 @@ export class DatabaseStorage implements IStorage {
     try {
       console.log(`[Storage] Starting stock in for color ${id}, quantity: ${quantity}, date: ${stockInDate}`);
       
-      // Get current stock
       const [currentColor] = await db.select().from(colors).where(eq(colors.id, id));
       if (!currentColor) {
         console.error(`[Storage] Color not found: ${id}`);
@@ -498,7 +497,6 @@ export class DatabaseStorage implements IStorage {
 
       console.log(`[Storage] Stock update: Previous: ${previousStock}, Adding: ${quantity}, New: ${newStock}`);
 
-      // Update color stock
       await db
         .update(colors)
         .set({
@@ -506,9 +504,7 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(colors.id, id));
 
-      // Record in history
       try {
-        // Use provided stockInDate or current date
         const actualStockInDate = stockInDate && this.isValidDDMMYYYY(stockInDate) 
           ? stockInDate 
           : this.formatDateToDDMMYYYY(new Date());
@@ -528,10 +524,8 @@ export class DatabaseStorage implements IStorage {
         await db.insert(stockInHistory).values(historyRecord);
       } catch (historyError) {
         console.error("[Storage] Error recording history (non-fatal):", historyError);
-        // Continue even if history recording fails
       }
 
-      // Fetch and return updated color
       const [updatedColor] = await db.select().from(colors).where(eq(colors.id, id));
       if (!updatedColor) {
         console.error(`[Storage] Color not found after update: ${id}`);
@@ -574,7 +568,6 @@ export class DatabaseStorage implements IStorage {
       return result;
     } catch (error) {
       console.error("[Storage] Error fetching stock in history:", error);
-      // If table doesn't exist yet, return empty array
       if (error instanceof Error && error.message.includes("no such table")) {
         console.log("[Storage] stock_in_history table doesn't exist yet");
         return [];
@@ -609,12 +602,10 @@ export class DatabaseStorage implements IStorage {
         orderBy: desc(stockInHistory.createdAt),
       });
 
-      // Apply filters
       const result = await query;
       
       let filtered = result;
 
-      // Date filter
       if (filters.startDate && filters.endDate) {
         const start = filters.startDate.getTime();
         const end = filters.endDate.getTime();
@@ -630,28 +621,24 @@ export class DatabaseStorage implements IStorage {
         filtered = filtered.filter(record => new Date(record.createdAt).getTime() <= end);
       }
 
-      // Company filter
       if (filters.company && filters.company !== 'all') {
         filtered = filtered.filter(record => 
           record.color.variant.product.company === filters.company
         );
       }
 
-      // Product filter
       if (filters.product && filters.product !== 'all') {
         filtered = filtered.filter(record => 
           record.color.variant.product.productName === filters.product
         );
       }
 
-      // Color code filter
       if (filters.colorCode) {
         filtered = filtered.filter(record => 
           record.color.colorCode.toLowerCase().includes(filters.colorCode!.toLowerCase())
         );
       }
 
-      // Color name filter
       if (filters.colorName) {
         filtered = filtered.filter(record => 
           record.color.colorName.toLowerCase().includes(filters.colorName!.toLowerCase())
@@ -694,7 +681,6 @@ export class DatabaseStorage implements IStorage {
 
       await db.insert(stockInHistory).values(historyRecord);
 
-      // Return the created record with color details
       const result = await db.query.stockInHistory.findFirst({
         where: eq(stockInHistory.id, historyRecord.id),
         with: {
@@ -728,10 +714,8 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // FIXED: Update stock history with proper new stock calculation
   async updateStockInHistory(id: string, data: { quantity?: number; notes?: string; stockInDate?: string }): Promise<StockInHistoryWithColor> {
     try {
-      // First get the current record to know the previous stock
       const currentRecord = await db.query.stockInHistory.findFirst({
         where: eq(stockInHistory.id, id),
       });
@@ -743,14 +727,12 @@ export class DatabaseStorage implements IStorage {
       const updateData: any = {};
       
       if (data.quantity !== undefined) {
-        // Calculate new stock based on previous stock and updated quantity
         const newQuantity = data.quantity;
         const newStock = currentRecord.previousStock + newQuantity;
         
         updateData.quantity = newQuantity;
         updateData.newStock = newStock;
 
-        // Also update the current stock in the color table
         await db
           .update(colors)
           .set({
@@ -764,7 +746,6 @@ export class DatabaseStorage implements IStorage {
       }
 
       if (data.stockInDate !== undefined) {
-        // Validate the date format
         if (data.stockInDate && !this.isValidDDMMYYYY(data.stockInDate)) {
           throw new Error("Invalid date format. Please use DD-MM-YYYY format.");
         }
@@ -889,26 +870,6 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  // Helper method to get color with relations
-  private async getColorWithRelations(id: string): Promise<ColorWithVariantAndProduct> {
-    const result = await db.query.colors.findFirst({
-      where: eq(colors.id, id),
-      with: {
-        variant: {
-          with: {
-            product: true,
-          },
-        },
-      },
-    });
-    
-    if (!result) {
-      throw new Error(`Color with id ${id} not found`);
-    }
-    
-    return result;
-  }
-
   // Sales
   async getSales(): Promise<Sale[]> {
     return await db.select().from(sales).orderBy(desc(sales.createdAt));
@@ -1023,7 +984,6 @@ export class DatabaseStorage implements IStorage {
     };
     await db.insert(sales).values(sale);
 
-    // Insert sale items
     const saleItemsToInsert = items.map((item) => ({
       id: crypto.randomUUID(),
       ...item,
@@ -1033,10 +993,8 @@ export class DatabaseStorage implements IStorage {
     }));
     await db.insert(saleItems).values(saleItemsToInsert);
 
-    // Update stock quantities in colors table
     console.log(`[Storage] Updating stock for ${items.length} items...`);
     for (const item of items) {
-      // Get current stock before update
       const [currentColor] = await db.select().from(colors).where(eq(colors.id, item.colorId));
       const previousStock = currentColor?.stockQuantity ?? 0;
       
@@ -1047,7 +1005,6 @@ export class DatabaseStorage implements IStorage {
         })
         .where(eq(colors.id, item.colorId));
       
-      // Log the stock change
       const [updatedColor] = await db.select().from(colors).where(eq(colors.id, item.colorId));
       console.log(`[Storage] Stock reduced: ${currentColor?.colorName || item.colorId} - Previous: ${previousStock}, Sold: ${item.quantity}, New: ${updatedColor?.stockQuantity}`);
     }
@@ -1084,7 +1041,6 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(sales.id, saleId));
 
-    // Record payment history
     await this.recordPaymentHistory({
       saleId,
       customerPhone: sale.customerPhone,
@@ -1134,7 +1090,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem> {
-    // Add the item to the sale
     const saleItem: SaleItem = {
       id: crypto.randomUUID(),
       ...item,
@@ -1144,7 +1099,6 @@ export class DatabaseStorage implements IStorage {
     };
     await db.insert(saleItems).values(saleItem);
 
-    // Update stock for this color
     await db
       .update(colors)
       .set({
@@ -1152,7 +1106,6 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(colors.id, item.colorId));
 
-    // Recalculate sale total
     const allItems = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
     const newTotal = allItems.reduce((sum, item) => sum + parseFloat(item.subtotal), 0);
 
@@ -1181,16 +1134,13 @@ export class DatabaseStorage implements IStorage {
 
   async updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem> {
     try {
-      // Get the current item to check stock changes
       const [currentItem] = await db.select().from(saleItems).where(eq(saleItems.id, id));
       if (!currentItem) {
         throw new Error("Sale item not found");
       }
 
-      // Calculate stock difference
       const stockDifference = currentItem.quantity - data.quantity;
 
-      // Update the sale item
       const [updatedItem] = await db
         .update(saleItems)
         .set({
@@ -1201,7 +1151,6 @@ export class DatabaseStorage implements IStorage {
         .where(eq(saleItems.id, id))
         .returning();
 
-      // Update stock quantity if quantity changed
       if (stockDifference !== 0) {
         await db
           .update(colors)
@@ -1211,7 +1160,6 @@ export class DatabaseStorage implements IStorage {
           .where(eq(colors.id, currentItem.colorId));
       }
 
-      // Recalculate sale total
       const saleId = currentItem.saleId;
       const allItems = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
       const newTotal = allItems.reduce((sum, item) => sum + parseFloat(item.subtotal), 0);
@@ -1244,7 +1192,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSaleItem(saleItemId: string): Promise<void> {
-    // Get the item details before deleting
     const [item] = await db.select().from(saleItems).where(eq(saleItems.id, saleItemId));
     if (!item) {
       throw new Error("Sale item not found");
@@ -1252,7 +1199,6 @@ export class DatabaseStorage implements IStorage {
 
     const saleId = item.saleId;
 
-    // Return stock to inventory
     await db
       .update(colors)
       .set({
@@ -1260,10 +1206,8 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(colors.id, item.colorId));
 
-    // Delete the item
     await db.delete(saleItems).where(eq(saleItems.id, saleItemId));
 
-    // Recalculate sale total
     const allItems = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
     const newTotal = allItems.reduce((sum, item) => sum + parseFloat(item.subtotal), 0);
 
@@ -1290,12 +1234,9 @@ export class DatabaseStorage implements IStorage {
       .where(eq(sales.id, saleId));
   }
 
-  // Delete entire sale (with all items and restore stock)
   async deleteSale(saleId: string): Promise<void> {
-    // Get all sale items first to restore stock
     const items = await db.select().from(saleItems).where(eq(saleItems.saleId, saleId));
     
-    // Restore stock for each item
     for (const item of items) {
       await db
         .update(colors)
@@ -1305,13 +1246,8 @@ export class DatabaseStorage implements IStorage {
         .where(eq(colors.id, item.colorId));
     }
     
-    // Delete all sale items
     await db.delete(saleItems).where(eq(saleItems.saleId, saleId));
-    
-    // Delete payment history for this sale
     await db.delete(paymentHistory).where(eq(paymentHistory.saleId, saleId));
-    
-    // Delete the sale
     await db.delete(sales).where(eq(sales.id, saleId));
   }
 
@@ -1321,11 +1257,9 @@ export class DatabaseStorage implements IStorage {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Convert dates to Unix timestamps for SQLite
     const todayStartTimestamp = Math.floor(todayStart.getTime() / 1000) * 1000;
     const monthStartTimestamp = Math.floor(monthStart.getTime() / 1000) * 1000;
 
-    // Today's sales
     const todaySalesData = await db
       .select({
         revenue: sql<number>`COALESCE(SUM(CAST(${sales.totalAmount} AS REAL)), 0)`,
@@ -1334,7 +1268,6 @@ export class DatabaseStorage implements IStorage {
       .from(sales)
       .where(sql`${sales.createdAt} >= ${todayStartTimestamp}`);
 
-    // Monthly sales
     const monthlySalesData = await db
       .select({
         revenue: sql<number>`COALESCE(SUM(CAST(${sales.totalAmount} AS REAL)), 0)`,
@@ -1343,7 +1276,6 @@ export class DatabaseStorage implements IStorage {
       .from(sales)
       .where(sql`${sales.createdAt} >= ${monthStartTimestamp}`);
 
-    // Inventory stats
     const totalProducts = await db.select({ count: sql<number>`COUNT(*)` }).from(products);
     const totalVariants = await db.select({ count: sql<number>`COUNT(*)` }).from(variants);
     const totalColors = await db.select({ count: sql<number>`COUNT(*)` }).from(colors);
@@ -1352,7 +1284,6 @@ export class DatabaseStorage implements IStorage {
       .from(colors)
       .where(sql`${colors.stockQuantity} < 10 AND ${colors.stockQuantity} > 0`);
     
-    // Calculate total stock value (stockQuantity * rate for all colors)
     const totalStockValue = await db
       .select({
         value: sql<number>`COALESCE(SUM(${colors.stockQuantity} * CAST(${variants.rate} AS REAL)), 0)`,
@@ -1360,7 +1291,6 @@ export class DatabaseStorage implements IStorage {
       .from(colors)
       .innerJoin(variants, eq(colors.variantId, variants.id));
 
-    // Unpaid bills
     const unpaidData = await db
       .select({
         count: sql<number>`COUNT(*)`,
@@ -1369,14 +1299,12 @@ export class DatabaseStorage implements IStorage {
       .from(sales)
       .where(sql`${sales.paymentStatus} != 'paid'`);
 
-    // Recent sales
     const recentSales = await db
       .select()
       .from(sales)
       .orderBy(desc(sales.createdAt))
       .limit(10);
 
-    // Monthly chart data (last 30 days)
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoTimestamp = Math.floor(thirtyDaysAgo.getTime() / 1000) * 1000;
@@ -1391,7 +1319,6 @@ export class DatabaseStorage implements IStorage {
       .groupBy(sql`DATE(${sales.createdAt} / 1000, 'unixepoch')`)
       .orderBy(sql`DATE(${sales.createdAt} / 1000, 'unixepoch')`);
 
-    // Top 20 customers by total purchases (exclude null/empty phone numbers)
     const topCustomersData = await db
       .select({
         customerName: sql<string>`${sales.customerName}`,
@@ -1439,28 +1366,33 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  // Returns
+  // RETURNS - FIXED AND ENHANCED METHODS
   async getReturns(): Promise<ReturnWithItems[]> {
-    const result = await db.query.returns.findMany({
-      with: {
-        sale: true,
-        returnItems: {
-          with: {
-            color: {
-              with: {
-                variant: {
-                  with: {
-                    product: true,
+    try {
+      const result = await db.query.returns.findMany({
+        with: {
+          sale: true,
+          returnItems: {
+            with: {
+              color: {
+                with: {
+                  variant: {
+                    with: {
+                      product: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-      orderBy: desc(returns.createdAt),
-    });
-    return result as ReturnWithItems[];
+        orderBy: desc(returns.createdAt),
+      });
+      return result as ReturnWithItems[];
+    } catch (error) {
+      console.error('[Storage] Error fetching returns:', error);
+      return [];
+    }
   }
 
   async getReturn(id: string): Promise<ReturnWithItems | undefined> {
@@ -1487,45 +1419,116 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReturn(returnData: InsertReturn, items: InsertReturnItem[]): Promise<Return> {
-    const returnRecord: Return = {
-      id: crypto.randomUUID(),
-      saleId: returnData.saleId || null,
-      customerName: returnData.customerName,
-      customerPhone: returnData.customerPhone,
-      returnType: returnData.returnType || "item",
-      totalRefund: String(returnData.totalRefund || "0"),
-      reason: returnData.reason || null,
-      status: returnData.status || "completed",
-      createdAt: new Date(),
-    };
+    try {
+      console.log('[Storage] Creating return with items:', { returnData, items });
+      
+      const returnRecord: Return = {
+        id: crypto.randomUUID(),
+        saleId: returnData.saleId || null,
+        customerName: returnData.customerName,
+        customerPhone: returnData.customerPhone,
+        returnType: returnData.returnType || "item",
+        totalRefund: String(returnData.totalRefund || "0"),
+        reason: returnData.reason || null,
+        status: returnData.status || "completed",
+        createdAt: new Date(),
+      };
 
-    await db.insert(returns).values(returnRecord);
+      console.log('[Storage] Inserting return record:', returnRecord);
+      await db.insert(returns).values(returnRecord);
 
-    // Insert return items and restore stock
-    for (const item of items) {
+      console.log('[Storage] Processing return items:', items.length);
+      for (const item of items) {
+        const returnItem: ReturnItem = {
+          id: crypto.randomUUID(),
+          returnId: returnRecord.id,
+          colorId: item.colorId,
+          saleItemId: item.saleItemId || null,
+          quantity: item.quantity,
+          rate: String(item.rate),
+          subtotal: String(item.subtotal),
+          stockRestored: item.stockRestored !== false,
+        };
+
+        console.log('[Storage] Inserting return item:', returnItem);
+        await db.insert(returnItems).values(returnItem);
+
+        if (returnItem.stockRestored) {
+          console.log(`[Storage] Restoring stock for color ${item.colorId}, quantity: ${item.quantity}`);
+          const [color] = await db.select().from(colors).where(eq(colors.id, item.colorId));
+          if (color) {
+            const newStock = color.stockQuantity + item.quantity;
+            await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, item.colorId));
+            console.log(`[Storage] Stock restored: ${color.colorName} - New stock: ${newStock}`);
+          } else {
+            console.warn(`[Storage] Color not found for stock restoration: ${item.colorId}`);
+          }
+        }
+      }
+
+      console.log('[Storage] Return created successfully:', returnRecord.id);
+      return returnRecord;
+    } catch (error) {
+      console.error('[Storage] Error creating return:', error);
+      throw new Error(`Failed to create return: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async createQuickReturn(data: {
+    customerName: string;
+    customerPhone: string;
+    colorId: string;
+    quantity: number;
+    rate: number;
+    reason?: string;
+    restoreStock?: boolean;
+  }): Promise<Return> {
+    try {
+      const { customerName, customerPhone, colorId, quantity, rate, reason, restoreStock = true } = data;
+      
+      const [color] = await db.select().from(colors).where(eq(colors.id, colorId));
+      if (!color) {
+        throw new Error('Color not found');
+      }
+
+      const subtotal = quantity * rate;
+      const returnRecord: Return = {
+        id: crypto.randomUUID(),
+        saleId: null,
+        customerName,
+        customerPhone,
+        returnType: "item",
+        totalRefund: String(subtotal),
+        reason: reason || "Quick return",
+        status: "completed",
+        createdAt: new Date(),
+      };
+
+      await db.insert(returns).values(returnRecord);
+
       const returnItem: ReturnItem = {
         id: crypto.randomUUID(),
         returnId: returnRecord.id,
-        colorId: item.colorId,
-        saleItemId: item.saleItemId || null,
-        quantity: item.quantity,
-        rate: String(item.rate),
-        subtotal: String(item.subtotal),
-        stockRestored: item.stockRestored !== false,
+        colorId,
+        saleItemId: null,
+        quantity,
+        rate: String(rate),
+        subtotal: String(subtotal),
+        stockRestored: restoreStock,
       };
+
       await db.insert(returnItems).values(returnItem);
 
-      // Restore stock if stockRestored is true
-      if (returnItem.stockRestored) {
-        const [color] = await db.select().from(colors).where(eq(colors.id, item.colorId));
-        if (color) {
-          const newStock = color.stockQuantity + item.quantity;
-          await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, item.colorId));
-        }
+      if (restoreStock) {
+        const newStock = color.stockQuantity + quantity;
+        await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, colorId));
       }
-    }
 
-    return returnRecord;
+      return returnRecord;
+    } catch (error) {
+      console.error('[Storage] Error in quick return:', error);
+      throw error;
+    }
   }
 
   async getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]> {
@@ -1550,6 +1553,14 @@ export class DatabaseStorage implements IStorage {
       orderBy: desc(returns.createdAt),
     });
     return result as ReturnWithItems[];
+  }
+
+  async getReturnItems(): Promise<ReturnItem[]> {
+    return await db.select().from(returnItems);
+  }
+
+  async getSaleItems(): Promise<SaleItem[]> {
+    return await db.select().from(saleItems);
   }
 
   // Audit
@@ -1584,19 +1595,7 @@ export class DatabaseStorage implements IStorage {
     })).sort((a, b) => new Date(b.soldAt || 0).getTime() - new Date(a.soldAt || 0).getTime());
   }
 
-  // ============ CLOUD SYNC HELPER METHODS ============
-  
-  // Get all sale items (for cloud export)
-  async getSaleItems(): Promise<SaleItem[]> {
-    return await db.select().from(saleItems);
-  }
-
-  // Get all return items (for cloud export)
-  async getReturnItems(): Promise<ReturnItem[]> {
-    return await db.select().from(returnItems);
-  }
-
-  // Upsert methods for cloud import
+  // Cloud Sync Upserts
   async upsertProduct(data: Product): Promise<void> {
     const existing = await db.select().from(products).where(eq(products.id, data.id));
     if (existing.length > 0) {

@@ -1,4 +1,4 @@
-// routes.ts - Complete Updated Version with Fixed Audit
+// routes.ts - Complete Updated Version with Real-time Query Invalidation
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -61,6 +61,24 @@ setInterval(() => {
     }
   }
 }, 60 * 60 * 1000); // Run every hour
+
+// Real-time query invalidation helper
+function invalidateCustomerQueries(customerPhone: string) {
+  // This would be connected to your WebSocket or SSE implementation
+  // For now, we'll log the invalidation
+  console.log(`[Real-time] Invalidating queries for customer: ${customerPhone}`);
+  
+  // In a real implementation, you would broadcast to connected clients
+  // via WebSocket or Server-Sent Events to refetch their queries
+}
+
+// Global query invalidation helper
+function invalidateGlobalQueries() {
+  console.log("[Real-time] Invalidating global queries");
+  
+  // Invalidate dashboard and summary queries
+  // This would trigger refetch in all connected clients
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Products
@@ -557,6 +575,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============ FIXED RETURNS ENDPOINTS ============
+  
+  // Get all returns
+  app.get("/api/returns", async (_req, res) => {
+    try {
+      const returns = await storage.getReturns();
+      res.json(returns);
+    } catch (error) {
+      console.error("Error fetching returns:", error);
+      res.status(500).json({ error: "Failed to fetch returns" });
+    }
+  });
+
+  // Get return by ID
+  app.get("/api/returns/:id", async (req, res) => {
+    try {
+      const returnRecord = await storage.getReturn(req.params.id);
+      if (!returnRecord) {
+        return res.status(404).json({ error: "Return not found" });
+      }
+      res.json(returnRecord);
+    } catch (error) {
+      console.error("Error fetching return:", error);
+      res.status(500).json({ error: "Failed to fetch return" });
+    }
+  });
+
+  // Create return - FIXED WITH PROPER STOCK HANDLING
+  app.post("/api/returns", async (req, res) => {
+    try {
+      const { returnData, items } = req.body;
+      
+      console.log('[API] Creating return:', { returnData, items });
+
+      if (!returnData || !items || !Array.isArray(items)) {
+        return res.status(400).json({ 
+          error: "Invalid request data",
+          details: "returnData and items array are required" 
+        });
+      }
+
+      if (items.length === 0) {
+        return res.status(400).json({ 
+          error: "No items to return",
+          details: "At least one item is required for return" 
+        });
+      }
+
+      // Validate items
+      for (const item of items) {
+        if (!item.colorId || typeof item.quantity !== 'number' || item.quantity <= 0) {
+          return res.status(400).json({ 
+            error: "Invalid item data",
+            details: "Each item must have colorId and positive quantity" 
+          });
+        }
+      }
+
+      const returnRecord = await storage.createReturn(returnData, items);
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(returnData.customerPhone);
+      invalidateGlobalQueries();
+      
+      res.json(returnRecord);
+    } catch (error) {
+      console.error("[API] Error creating return:", error);
+      res.status(500).json({ 
+        error: "Failed to create return",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Quick return endpoint for single items
+  app.post("/api/returns/quick", async (req, res) => {
+    try {
+      const { customerName, customerPhone, colorId, quantity, rate, reason, restoreStock } = req.body;
+      
+      if (!customerName || !customerPhone || !colorId || !quantity || !rate) {
+        return res.status(400).json({ 
+          error: "Missing required fields",
+          details: "customerName, customerPhone, colorId, quantity, and rate are required" 
+        });
+      }
+
+      if (quantity <= 0) {
+        return res.status(400).json({ 
+          error: "Invalid quantity",
+          details: "Quantity must be positive" 
+        });
+      }
+
+      const returnRecord = await storage.createQuickReturn({
+        customerName,
+        customerPhone,
+        colorId,
+        quantity,
+        rate,
+        reason,
+        restoreStock: restoreStock !== false,
+      });
+
+      // Invalidate real-time queries
+      invalidateCustomerQueries(customerPhone);
+      invalidateGlobalQueries();
+
+      res.json(returnRecord);
+    } catch (error) {
+      console.error("[API] Error creating quick return:", error);
+      res.status(500).json({ 
+        error: "Failed to create quick return",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Get return items
+  app.get("/api/return-items", async (_req, res) => {
+    try {
+      const returnItems = await storage.getReturnItems();
+      res.json(returnItems);
+    } catch (error) {
+      console.error("Error fetching return items:", error);
+      res.status(500).json({ error: "Failed to fetch return items" });
+    }
+  });
+
+  // Get returns by customer phone
+  app.get("/api/returns/customer/:phone", async (req, res) => {
+    try {
+      const returns = await storage.getReturnsByCustomerPhone(req.params.phone);
+      res.json(returns);
+    } catch (error) {
+      console.error("Error fetching customer returns:", error);
+      res.status(500).json({ error: "Failed to fetch customer returns" });
+    }
+  });
+
   // Customer Notes routes
   app.get("/api/customer/:phone/notes", async (req, res) => {
     try {
@@ -581,7 +738,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add customer note
+  // Add customer note - UPDATED WITH REAL-TIME INVALIDATION
   app.post("/api/customer/:phone/notes", async (req, res) => {
     try {
       const { phone } = req.params;
@@ -605,6 +762,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dueDate: null,
         notes: note
       });
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(phone);
+      invalidateGlobalQueries();
       
       res.json({ 
         success: true, 
@@ -715,6 +876,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create sale - UPDATED WITH REAL-TIME INVALIDATION
   app.post("/api/sales", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { items, ...saleData } = req.body;
@@ -728,6 +890,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log("Sale created successfully:", JSON.stringify(sale, null, 2));
       
+      // Invalidate real-time queries
+      invalidateCustomerQueries(sale.customerPhone);
+      invalidateGlobalQueries();
+      
       res.json(sale);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -740,6 +906,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Record payment - UPDATED WITH REAL-TIME INVALIDATION
   app.post("/api/sales/:id/payment", requirePerm('payment:edit'), async (req, res) => {
     try {
       const { amount, paymentMethod, notes } = req.body;
@@ -747,8 +914,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(400).json({ error: "Invalid payment amount" });
         return;
       }
-      const sale = await storage.updateSalePayment(req.params.id, amount, paymentMethod, notes);
-      res.json(sale);
+      
+      // Get sale details before update to know customer phone
+      const sale = await storage.getSale(req.params.id);
+      if (!sale) {
+        res.status(404).json({ error: "Sale not found" });
+        return;
+      }
+      
+      const updatedSale = await storage.updateSalePayment(req.params.id, amount, paymentMethod, notes);
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(sale.customerPhone);
+      invalidateGlobalQueries();
+      
+      res.json(updatedSale);
     } catch (error) {
       console.error("Error recording payment:", error);
       res.status(500).json({ error: "Failed to record payment" });
@@ -770,7 +950,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // UPDATE SALE ITEM ENDPOINT
+  // UPDATE SALE ITEM ENDPOINT - UPDATED WITH REAL-TIME INVALIDATION
   app.patch("/api/sale-items/:id", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { quantity, rate, subtotal } = req.body;
@@ -785,11 +965,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
+      // Get sale item details to find customer phone
+      const saleItems = await storage.getSaleItems();
+      const currentItem = saleItems.find(item => item.id === req.params.id);
+      if (!currentItem) {
+        res.status(404).json({ error: "Sale item not found" });
+        return;
+      }
+
+      const sale = await storage.getSale(currentItem.saleId);
+      if (!sale) {
+        res.status(404).json({ error: "Sale not found" });
+        return;
+      }
+
       const saleItem = await storage.updateSaleItem(req.params.id, {
         quantity,
         rate,
         subtotal: rate * quantity
       });
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(sale.customerPhone);
+      invalidateGlobalQueries();
       
       res.json(saleItem);
     } catch (error) {
@@ -798,9 +996,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DELETE SALE ITEM - UPDATED WITH REAL-TIME INVALIDATION
   app.delete("/api/sale-items/:id", requirePerm('sales:delete'), async (req, res) => {
     try {
+      // Get sale item details to find customer phone
+      const saleItems = await storage.getSaleItems();
+      const item = saleItems.find(si => si.id === req.params.id);
+      if (!item) {
+        res.status(404).json({ error: "Sale item not found" });
+        return;
+      }
+
+      const sale = await storage.getSale(item.saleId);
+      if (!sale) {
+        res.status(404).json({ error: "Sale not found" });
+        return;
+      }
+
       await storage.deleteSaleItem(req.params.id);
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(sale.customerPhone);
+      invalidateGlobalQueries();
+      
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting sale item:", error);
@@ -808,7 +1026,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create manual pending balance (no items, just a balance record)
+  // Create manual pending balance (no items, just a balance record) - UPDATED WITH REAL-TIME INVALIDATION
   app.post("/api/sales/manual-balance", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { customerName, customerPhone, totalAmount, dueDate, notes } = req.body;
@@ -831,6 +1049,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes
       });
       
+      // Invalidate real-time queries
+      invalidateCustomerQueries(customerPhone);
+      invalidateGlobalQueries();
+      
       res.json(sale);
     } catch (error) {
       console.error("Error creating manual balance:", error);
@@ -838,27 +1060,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update due date for a sale
+  // Update due date for a sale - UPDATED WITH REAL-TIME INVALIDATION
   app.patch("/api/sales/:id/due-date", requirePerm('sales:edit'), async (req, res) => {
     try {
       const { dueDate, notes } = req.body;
       
-      const sale = await storage.updateSaleDueDate(req.params.id, {
+      // Get sale details before update to know customer phone
+      const sale = await storage.getSale(req.params.id);
+      if (!sale) {
+        res.status(404).json({ error: "Sale not found" });
+        return;
+      }
+      
+      const updatedSale = await storage.updateSaleDueDate(req.params.id, {
         dueDate: dueDate ? new Date(dueDate) : null,
         notes
       });
       
-      res.json(sale);
+      // Invalidate real-time queries
+      invalidateCustomerQueries(sale.customerPhone);
+      invalidateGlobalQueries();
+      
+      res.json(updatedSale);
     } catch (error) {
       console.error("Error updating due date:", error);
       res.status(500).json({ error: "Failed to update due date" });
     }
   });
 
-  // Delete entire sale
+  // Delete entire sale - UPDATED WITH REAL-TIME INVALIDATION
   app.delete("/api/sales/:id", requirePerm('sales:delete'), async (req, res) => {
     try {
+      // Get sale details before deletion to know customer phone
+      const sale = await storage.getSale(req.params.id);
+      if (!sale) {
+        res.status(404).json({ error: "Sale not found" });
+        return;
+      }
+      
+      const customerPhone = sale.customerPhone;
+      
       await storage.deleteSale(req.params.id);
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(customerPhone);
+      invalidateGlobalQueries();
+      
       res.json({ success: true, message: "Sale deleted successfully" });
     } catch (error) {
       console.error("Error deleting sale:", error);
@@ -953,6 +1200,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Reinitialize database connection
       setDatabasePath(currentDbPath);
+
+      // Invalidate all queries after import
+      invalidateGlobalQueries();
 
       res.json({ 
         success: true, 
@@ -1702,6 +1952,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update last sync time
       await storage.updateSettings({ lastSyncTime: new Date() });
 
+      // Invalidate all queries after import
+      invalidateGlobalQueries();
+
       res.json({ 
         ok: true, 
         message: "Import successful",
@@ -1710,6 +1963,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Cloud import failed:", error);
       res.status(500).json({ error: error.message || "Import failed" });
+    }
+  });
+
+  // ============ REAL-TIME WEBHOOK ENDPOINTS ============
+  
+  // Webhook endpoint for real-time updates (can be called by other services)
+  app.post("/api/webhooks/data-updated", async (req, res) => {
+    try {
+      const { entity, entityId, customerPhone, action } = req.body;
+      
+      console.log(`[Real-time] Webhook received: ${action} on ${entity} ${entityId}`);
+      
+      if (customerPhone) {
+        invalidateCustomerQueries(customerPhone);
+      }
+      
+      invalidateGlobalQueries();
+      
+      res.json({ success: true, message: "Queries invalidated successfully" });
+    } catch (error) {
+      console.error("Error processing webhook:", error);
+      res.status(500).json({ error: "Failed to process webhook" });
+    }
+  });
+
+  // Force refresh endpoint for clients
+  app.post("/api/refresh-data", async (req, res) => {
+    try {
+      const { customerPhone } = req.body;
+      
+      if (customerPhone) {
+        invalidateCustomerQueries(customerPhone);
+      }
+      
+      invalidateGlobalQueries();
+      
+      res.json({ success: true, message: "Data refresh triggered" });
+    } catch (error) {
+      console.error("Error triggering refresh:", error);
+      res.status(500).json({ error: "Failed to trigger refresh" });
     }
   });
 

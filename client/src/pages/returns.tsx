@@ -3,8 +3,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useDateFormat } from "@/hooks/use-date-format";
-import { usePermissions } from "@/hooks/use-permissions";
-import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -25,25 +24,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, RotateCcw, FileText, Package, Minus, Plus, Loader2, Eye, Download, User, Phone, DollarSign, AlertTriangle, CheckCircle, Calendar } from "lucide-react";
+import { Search, RotateCcw, FileText, Package, Minus, Plus, Loader2, Eye, Download, User, Phone, DollarSign, AlertTriangle, CheckCircle, Calendar, X } from "lucide-react";
 import jsPDF from "jspdf";
-import type { SaleWithItems, ReturnWithItems, Color, Variant, Product } from "@shared/schema";
-
-type ColorWithDetails = Color & {
-  variant?: Variant & {
-    product?: Product;
-  };
-};
-
-type SaleItem = {
-  id: string;
-  saleId: string;
-  colorId: string;
-  quantity: number;
-  rate: string;
-  subtotal: string;
-  color?: ColorWithDetails;
-};
+import type { SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema";
 
 interface ReturnStats {
   totalReturns: number;
@@ -52,29 +35,53 @@ interface ReturnStats {
   billReturns: number;
 }
 
+interface QuickReturnForm {
+  customerName: string;
+  customerPhone: string;
+  colorId: string;
+  quantity: number;
+  rate: number;
+  reason: string;
+  restoreStock: boolean;
+}
+
 export default function Returns() {
   const { toast } = useToast();
   const { formatDate, formatDateShort } = useDateFormat();
-  const { receiptSettings } = useReceiptSettings();
   const [activeTab, setActiveTab] = useState("bill");
   const [searchPhone, setSearchPhone] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSale, setSelectedSale] = useState<SaleWithItems | null>(null);
   const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null);
   const [showReturnDialog, setShowReturnDialog] = useState(false);
+  const [showQuickReturnDialog, setShowQuickReturnDialog] = useState(false);
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
   const [returnReason, setReturnReason] = useState("");
   const [returnType, setReturnType] = useState<"full" | "partial">("full");
   const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
   const [restockItems, setRestockItems] = useState<Record<string, boolean>>({});
+  
+  // Quick return form state
+  const [quickReturnForm, setQuickReturnForm] = useState<QuickReturnForm>({
+    customerName: "",
+    customerPhone: "",
+    colorId: "",
+    quantity: 1,
+    rate: 0,
+    reason: "",
+    restoreStock: true,
+  });
 
-  const { data: returns = [], isLoading: returnsLoading } = useQuery<ReturnWithItems[]>({
+  const { data: returns = [], isLoading: returnsLoading, refetch: refetchReturns } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
   });
 
-  const { data: sales = [], isLoading: salesLoading, refetch: refetchSales } = useQuery<SaleWithItems[]>({
+  const { data: sales = [], isLoading: salesLoading } = useQuery<SaleWithItems[]>({
     queryKey: ["/api/sales"],
-    enabled: false,
+  });
+
+  const { data: colors = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
+    queryKey: ["/api/colors"],
   });
 
   const filteredReturns = useMemo(() => {
@@ -94,33 +101,13 @@ export default function Returns() {
     };
   }, [returns]);
 
-  const searchMutation = useMutation({
-    mutationFn: async (phone: string) => {
-      const response = await fetch(`/api/sales`);
-      if (!response.ok) throw new Error("Failed to fetch sales");
-      const allSales: SaleWithItems[] = await response.json();
-      return allSales.filter(sale => 
-        sale.customerPhone.includes(phone) || 
-        sale.customerName.toLowerCase().includes(phone.toLowerCase())
-      );
-    },
-    onSuccess: (data) => {
-      if (data.length === 0) {
-        toast({
-          title: "No Sales Found",
-          description: "No sales found for this search criteria",
-          variant: "destructive",
-        });
-      }
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to search sales",
-        variant: "destructive",
-      });
-    },
-  });
+  const searchResults = useMemo(() => {
+    if (!searchPhone.trim()) return [];
+    return sales.filter(sale => 
+      sale.customerPhone.includes(searchPhone) || 
+      sale.customerName.toLowerCase().includes(searchPhone.toLowerCase())
+    );
+  }, [sales, searchPhone]);
 
   const createReturnMutation = useMutation({
     mutationFn: async (data: { returnData: any; items: any[] }) => {
@@ -141,26 +128,46 @@ export default function Returns() {
         description: "Return has been successfully processed",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: "Failed to process return",
+        description: error.message || "Failed to process return",
         variant: "destructive",
       });
     },
   });
 
-  const handleSearch = () => {
-    if (searchPhone.trim().length < 3) {
+  const quickReturnMutation = useMutation({
+    mutationFn: async (data: QuickReturnForm) => {
+      const response = await apiRequest("POST", "/api/returns/quick", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/returns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+      setShowQuickReturnDialog(false);
+      setQuickReturnForm({
+        customerName: "",
+        customerPhone: "",
+        colorId: "",
+        quantity: 1,
+        rate: 0,
+        reason: "",
+        restoreStock: true,
+      });
       toast({
-        title: "Search Required",
-        description: "Enter at least 3 characters to search",
+        title: "Quick Return Processed",
+        description: "Item has been returned successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to process quick return",
         variant: "destructive",
       });
-      return;
-    }
-    searchMutation.mutate(searchPhone.trim());
-  };
+    },
+  });
 
   const handleSelectSale = (sale: SaleWithItems) => {
     setSelectedSale(sale);
@@ -170,6 +177,7 @@ export default function Returns() {
     setRestockItems({});
     setReturnReason("");
     
+    // Pre-select all items for full return
     if (sale.saleItems) {
       const items: Record<string, number> = {};
       const restock: Record<string, boolean> = {};
@@ -246,9 +254,43 @@ export default function Returns() {
     });
   };
 
-  const formatItemDetails = (item: SaleItem) => {
+  const handleQuickReturnSubmit = () => {
+    if (!quickReturnForm.customerName || !quickReturnForm.customerPhone || !quickReturnForm.colorId) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (quickReturnForm.quantity <= 0) {
+      toast({
+        title: "Invalid Quantity",
+        description: "Quantity must be greater than 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    quickReturnMutation.mutate(quickReturnForm);
+  };
+
+  const handleColorSelect = (colorId: string) => {
+    const selectedColor = colors.find(c => c.id === colorId);
+    if (selectedColor) {
+      const rate = selectedColor.rateOverride ? parseFloat(selectedColor.rateOverride) : parseFloat(selectedColor.variant.rate);
+      setQuickReturnForm(prev => ({
+        ...prev,
+        colorId,
+        rate,
+      }));
+    }
+  };
+
+  const formatItemDetails = (item: any) => {
     if (!item.color) return `Item #${item.colorId}`;
-    const color = item.color as ColorWithDetails;
+    const color = item.color;
     const variant = color.variant;
     const product = variant?.product;
     return `${product?.company || ""} ${product?.productName || ""} - ${variant?.packingSize || ""} - ${color.colorCode} ${color.colorName}`;
@@ -279,7 +321,7 @@ export default function Returns() {
     pdf.setFont("helvetica", "bold");
     pdf.text("RETURN DOCUMENT", pageWidth / 2, 12, { align: "center" });
     pdf.setFontSize(9);
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 20, { align: "center" });
+    pdf.text("PaintPulse", pageWidth / 2, 20, { align: "center" });
 
     pdf.setTextColor(0, 0, 0);
     yPos = 40;
@@ -311,18 +353,6 @@ export default function Returns() {
     yPos += 5;
     pdf.text(`Phone: ${returnRecord.customerPhone}`, margin, yPos);
     yPos += 10;
-
-    if (returnRecord.sale) {
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Original Sale:", margin, yPos);
-      yPos += 5;
-      
-      pdf.setFont("helvetica", "normal");
-      pdf.text(`Sale ID: ${returnRecord.sale.id.slice(0, 8).toUpperCase()}`, margin, yPos);
-      yPos += 5;
-      pdf.text(`Sale Date: ${formatDateShort(returnRecord.sale.createdAt)}`, margin, yPos);
-      yPos += 10;
-    }
 
     // Returned Items Table
     pdf.setFont("helvetica", "bold");
@@ -377,15 +407,6 @@ export default function Returns() {
     pdf.text(`Total Items Returned: ${returnRecord.returnItems.length}`, margin, yPos);
     yPos += 5;
     pdf.text(`Total Refund Amount: Rs.${Math.round(parseFloat(returnRecord.totalRefund || "0"))}`, margin, yPos);
-    yPos += 10;
-
-    if (returnRecord.reason) {
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Reason:", margin, yPos);
-      yPos += 5;
-      pdf.setFont("helvetica", "normal");
-      pdf.text(returnRecord.reason, margin, yPos);
-    }
 
     pdf.save(`Return-${returnRecord.id.slice(0, 8).toUpperCase()}-${formatDateShort(returnRecord.createdAt).replace(/\//g, "-")}.pdf`);
     toast({
@@ -394,28 +415,26 @@ export default function Returns() {
     });
   };
 
-  const searchResults = searchMutation.data || [];
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-returns-title">Returns Management</h1>
-        <p className="text-muted-foreground">Process bill returns and item returns with stock restoration</p>
+        <h1 className="text-2xl font-bold tracking-tight">Returns Management</h1>
+        <p className="text-muted-foreground">Process bill returns and quick item returns with stock restoration</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full max-w-md grid-cols-3">
-          <TabsTrigger value="bill" data-testid="tab-bill-returns">
+          <TabsTrigger value="bill">
             <FileText className="w-4 h-4 mr-2" />
             Bill Returns
           </TabsTrigger>
-          <TabsTrigger value="history" data-testid="tab-return-history">
+          <TabsTrigger value="quick">
             <RotateCcw className="w-4 h-4 mr-2" />
-            Return History
+            Quick Return
           </TabsTrigger>
-          <TabsTrigger value="analytics" data-testid="tab-return-analytics">
+          <TabsTrigger value="history">
             <AlertTriangle className="w-4 h-4 mr-2" />
-            Analytics
+            History
           </TabsTrigger>
         </TabsList>
 
@@ -432,16 +451,13 @@ export default function Returns() {
                     placeholder="Enter customer phone or name..."
                     value={searchPhone}
                     onChange={(e) => setSearchPhone(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                    data-testid="input-search-return"
                   />
                 </div>
                 <Button 
-                  onClick={handleSearch} 
-                  disabled={searchMutation.isPending}
-                  data-testid="button-search-return"
+                  onClick={() => setSearchPhone(searchPhone)}
+                  disabled={salesLoading}
                 >
-                  {searchMutation.isPending ? (
+                  {salesLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Search className="w-4 h-4" />
@@ -458,9 +474,8 @@ export default function Returns() {
                       {searchResults.map((sale) => (
                         <Card 
                           key={sale.id} 
-                          className="cursor-pointer hover-elevate"
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
                           onClick={() => handleSelectSale(sale)}
-                          data-testid={`card-sale-${sale.id}`}
                         >
                           <CardContent className="p-4">
                             <div className="flex items-center justify-between gap-4">
@@ -494,65 +509,119 @@ export default function Returns() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="history" className="space-y-4 mt-4">
+        <TabsContent value="quick" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Return History</CardTitle>
-              <CardDescription>View all processed returns</CardDescription>
+              <CardTitle className="text-lg">Quick Item Return</CardTitle>
+              <CardDescription>Return individual items without searching for a specific bill</CardDescription>
             </CardHeader>
-            <CardContent>
-              {returnsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="customerName">Customer Name *</Label>
+                  <Input
+                    id="customerName"
+                    placeholder="Enter customer name"
+                    value={quickReturnForm.customerName}
+                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerName: e.target.value }))}
+                  />
                 </div>
-              ) : returns.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <RotateCcw className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No returns processed yet</p>
+                <div className="space-y-2">
+                  <Label htmlFor="customerPhone">Customer Phone *</Label>
+                  <Input
+                    id="customerPhone"
+                    placeholder="Enter customer phone"
+                    value={quickReturnForm.customerPhone}
+                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+                  />
                 </div>
-              ) : (
-                <ScrollArea className="h-[400px]">
-                  <div className="space-y-2">
-                    {returns.map((ret) => (
-                      <Card key={ret.id} data-testid={`card-return-${ret.id}`}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium">{ret.customerName}</span>
-                                <Badge variant="outline">{ret.customerPhone}</Badge>
-                                <Badge variant={ret.returnType === "full_bill" ? "destructive" : "secondary"}>
-                                  {ret.returnType === "full_bill" ? "Full Bill" : "Items"}
-                                </Badge>
-                              </div>
-                              <div className="text-sm text-muted-foreground mt-1">
-                                {formatDate(new Date(ret.createdAt))}
-                                {ret.reason && ` - ${ret.reason}`}
-                              </div>
-                              <div className="text-sm mt-1">
-                                {ret.returnItems?.length || 0} item(s) returned
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <div className="font-medium text-destructive">
-                                - Rs. {parseFloat(ret.totalRefund).toLocaleString()}
-                              </div>
-                              <Badge variant="default" className="mt-1">
-                                {ret.status}
-                              </Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="colorSelect">Select Item *</Label>
+                <Select onValueChange={handleColorSelect} value={quickReturnForm.colorId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an item to return" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {colors.map((color) => (
+                      <SelectItem key={color.id} value={color.id}>
+                        {color.variant.product.company} {color.variant.product.productName} - {color.variant.packingSize} - {color.colorCode} {color.colorName}
+                      </SelectItem>
                     ))}
-                  </div>
-                </ScrollArea>
-              )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantity *</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    value={quickReturnForm.quantity}
+                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="rate">Rate (Rs.) *</Label>
+                  <Input
+                    id="rate"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={quickReturnForm.rate}
+                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, rate: parseFloat(e.target.value) || 0 }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subtotal">Subtotal (Rs.)</Label>
+                  <Input
+                    id="subtotal"
+                    value={(quickReturnForm.quantity * quickReturnForm.rate).toFixed(2)}
+                    readOnly
+                    className="bg-muted"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reason">Return Reason</Label>
+                <Textarea
+                  id="reason"
+                  placeholder="Enter reason for return..."
+                  value={quickReturnForm.reason}
+                  onChange={(e) => setQuickReturnForm(prev => ({ ...prev, reason: e.target.value }))}
+                />
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="restoreStock"
+                  checked={quickReturnForm.restoreStock}
+                  onCheckedChange={(checked) => 
+                    setQuickReturnForm(prev => ({ ...prev, restoreStock: checked as boolean }))
+                  }
+                />
+                <Label htmlFor="restoreStock" className="cursor-pointer">
+                  Restore item to stock inventory
+                </Label>
+              </div>
+
+              <Button 
+                onClick={handleQuickReturnSubmit}
+                disabled={quickReturnMutation.isPending || !quickReturnForm.customerName || !quickReturnForm.customerPhone || !quickReturnForm.colorId}
+                className="w-full"
+              >
+                {quickReturnMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Process Quick Return
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="analytics" className="space-y-4 mt-4">
+        <TabsContent value="history" className="space-y-4 mt-4">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
@@ -775,7 +844,6 @@ export default function Returns() {
                                 className="h-7 w-7"
                                 onClick={() => handleItemQuantityChange(item.id, item.quantity, -1)}
                                 disabled={returnQty === 0}
-                                data-testid={`button-decrease-${item.id}`}
                               >
                                 <Minus className="h-3 w-3" />
                               </Button>
@@ -788,7 +856,6 @@ export default function Returns() {
                                 className="h-7 w-7"
                                 onClick={() => handleItemQuantityChange(item.id, item.quantity, 1)}
                                 disabled={returnQty >= item.quantity}
-                                data-testid={`button-increase-${item.id}`}
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
@@ -825,7 +892,6 @@ export default function Returns() {
                   value={returnReason}
                   onChange={(e) => setReturnReason(e.target.value)}
                   className="mt-1"
-                  data-testid="input-return-reason"
                 />
               </div>
 
@@ -854,7 +920,6 @@ export default function Returns() {
             <Button 
               variant="outline" 
               onClick={() => setShowReturnDialog(false)}
-              data-testid="button-cancel-return"
             >
               Cancel
             </Button>
@@ -862,7 +927,6 @@ export default function Returns() {
               variant="destructive"
               onClick={handleSubmitReturn}
               disabled={createReturnMutation.isPending || Object.keys(selectedItems).length === 0}
-              data-testid="button-confirm-return"
             >
               {createReturnMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Process Return
