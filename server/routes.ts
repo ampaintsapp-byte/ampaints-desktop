@@ -670,8 +670,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Filtered Stock In History
-  app.get("/api/stock-in/history/filtered", async (req, res) {
+  // Filtered Stock In History - FIXED: Corrected arrow function syntax
+  app.get("/api/stock-in/history/filtered", async (req, res) => {
     try {
       const { startDate, endDate, company, product, colorCode, colorName } = req.query;
       
