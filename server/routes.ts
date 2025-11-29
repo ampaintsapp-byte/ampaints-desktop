@@ -1383,7 +1383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Database Export/Import
+  // Database Export/Import - FIXED: Proper SQLite validation
   app.get("/api/database/export", async (_req, res) => {
     try {
       const { getDatabasePath } = await import("./db");
@@ -1435,11 +1435,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const buffer = Buffer.from(fileData, 'base64');
       await fs.writeFile(tempPath, buffer);
 
-      // Validate it's a SQLite database (basic check)
-      const header = await fs.readFile(tempPath, { encoding: 'utf8', flag: 'r' });
-      if (!header.startsWith('SQLite format 3')) {
+      // FIXED: Proper SQLite binary validation
+      const headerBuffer = await fs.readFile(tempPath, { end: 15 });
+      const header = headerBuffer.toString('ascii', 0, 15);
+      
+      if (header !== 'SQLite format 3\0') {
         await fs.unlink(tempPath);
-        res.status(400).json({ error: "Invalid database file format" });
+        res.status(400).json({ error: "Invalid SQLite database file" });
         return;
       }
 
@@ -1480,29 +1482,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(settings);
     } catch (error) {
       console.error("[API] Error getting settings:", error);
-      res.status(200).json({ 
-        id: 'default',
-        storeName: 'PaintPulse',
-        dateFormat: 'DD-MM-YYYY',
-        cardBorderStyle: 'shadow',
-        cardShadowSize: 'sm',
-        cardButtonColor: 'gray-900',
-        cardPriceColor: 'blue-600',
-        showStockBadgeBorder: false,
-        auditPinHash: null,
-        auditPinSalt: null,
-        permStockDelete: true,
-        permStockEdit: true,
-        permStockHistoryDelete: true,
-        permSalesDelete: true,
-        permSalesEdit: true,
-        permPaymentEdit: true,
-        permPaymentDelete: true,
-        permDatabaseAccess: true,
-        cloudDatabaseUrl: null,
-        cloudSyncEnabled: false,
-        lastSyncTime: null,
-        updatedAt: new Date(),
+      // Return proper error response instead of default settings
+      res.status(500).json({ 
+        error: "Failed to fetch settings",
+        message: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });
@@ -1524,9 +1507,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/audit/has-pin", async (req, res) => {
     try {
       const settings = await storage.getSettings();
+      // FIXED: Proper default PIN logic
+      const hasPin = !!(settings.auditPinHash && settings.auditPinSalt);
+      const isDefault = !hasPin; // Only default if no PIN is set
+      
       res.json({ 
-        hasPin: !!(settings.auditPinHash && settings.auditPinSalt),
-        isDefault: !settings.auditPinHash // If no hash, default PIN is active
+        hasPin,
+        isDefault
       });
     } catch (error) {
       console.error("[API] Error checking PIN:", error);
@@ -1566,7 +1553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         auditTokens.set(token, { createdAt: Date.now() });
         return res.json({ 
           ok: true, 
-            isDefault: false, 
+          isDefault: false, 
           auditToken: token 
         });
       } else {

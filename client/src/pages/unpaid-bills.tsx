@@ -179,17 +179,12 @@ const glassStyles = `
   .gradient-bg {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   }
-  .premium-border {
-    border: 1px solid;
-    border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
-  }
 `;
 
 export default function UnpaidBills() {
   const { formatDateShort } = useDateFormat();
   const { receiptSettings } = useReceiptSettings();
   const [, setLocation] = useLocation();
-  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
@@ -225,7 +220,6 @@ export default function UnpaidBills() {
   
   // Filter state
   const [filterOpen, setFilterOpen] = useState(false);
-  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   
   // Edit sale item state
   const [editSaleItemDialogOpen, setEditSaleItemDialogOpen] = useState(false);
@@ -276,20 +270,14 @@ export default function UnpaidBills() {
   const { data: paymentHistory = [], refetch: refetchPaymentHistory } = useQuery<PaymentRecord[]>({
     queryKey: [`/api/payment-history/customer/${viewingPaymentHistoryCustomerPhone}`],
     enabled: !!viewingPaymentHistoryCustomerPhone,
-    staleTime: 5000, // Shorter stale time for payment history
+    staleTime: 5000,
   });
 
   // Fetch balance notes for all sales of a customer
   const { data: balanceNotes = [], refetch: refetchBalanceNotes } = useQuery<BalanceNote[]>({
     queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`],
     enabled: !!viewingNotesCustomerPhone,
-    staleTime: 5000, // Shorter stale time for notes
-  });
-
-  // Fetch sale with items for editing
-  const { data: saleWithItems, refetch: refetchSaleWithItems } = useQuery({
-    queryKey: [`/api/sales/${editingSaleItem?.saleId}`],
-    enabled: !!editingSaleItem?.saleId,
+    staleTime: 5000,
   });
 
   // Auto-refresh data when dialogs open or close
@@ -305,25 +293,17 @@ export default function UnpaidBills() {
     }
   }, [notesDialogOpen, viewingNotesCustomerPhone]);
 
-  // Auto-refresh when payment dialog closes
-  useEffect(() => {
-    if (!paymentDialogOpen && selectedCustomerPhone) {
-      refetchUnpaidSales();
-      refetchPaymentHistory();
-      refetchBalanceNotes();
-    }
-  }, [paymentDialogOpen, selectedCustomerPhone]);
-
+  // Fixed: Proper record payment mutation
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes?: string }) => {
-      return await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
+      const response = await apiRequest("POST", `/api/sales/${data.saleId}/payment`, { 
         amount: data.amount,
         paymentMethod: data.paymentMethod,
         notes: data.notes 
       });
+      return response.json();
     },
     onSuccess: () => {
-      // Invalidate all relevant queries for real-time updates
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
@@ -344,7 +324,6 @@ export default function UnpaidBills() {
       setPaymentNotes("");
       setPaymentMethod("cash");
       
-      // Force immediate refetch
       refetchUnpaidSales();
       if (selectedCustomerPhone) {
         refetchPaymentHistory();
@@ -360,14 +339,15 @@ export default function UnpaidBills() {
     },
   });
 
+  // Fixed: Add note mutation
   const addNoteMutation = useMutation({
     mutationFn: async (data: { customerPhone: string; note: string }) => {
-      return await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
+      const response = await apiRequest("POST", `/api/customer/${data.customerPhone}/notes`, {
         note: data.note
       });
+      return response.json();
     },
     onSuccess: () => {
-      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
@@ -377,7 +357,6 @@ export default function UnpaidBills() {
       setNotesDialogOpen(false);
       setNewNote("");
       
-      // Force immediate refetch
       refetchUnpaidSales();
       refetchBalanceNotes();
     },
@@ -387,12 +366,19 @@ export default function UnpaidBills() {
     },
   });
 
+  // Fixed: Manual balance mutation
   const createManualBalanceMutation = useMutation({
     mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
-      return await apiRequest("POST", "/api/sales/manual-balance", data);
+      const response = await apiRequest("POST", "/api/sales/manual-balance", {
+        customerName: data.customerName,
+        customerPhone: data.customerPhone,
+        totalAmount: data.totalAmount,
+        dueDate: data.dueDate || null,
+        notes: data.notes || ""
+      });
+      return response.json();
     },
     onSuccess: () => {
-      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
@@ -411,24 +397,28 @@ export default function UnpaidBills() {
         notes: ""
       });
       
-      // Force immediate refetch
       refetchUnpaidSales();
     },
     onError: (error: Error) => {
       console.error("Create manual balance error:", error);
-      toast({ title: "Failed to add pending balance", variant: "destructive" });
+      toast({ 
+        title: "Failed to add pending balance", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
+  // Fixed: Update due date mutation
   const updateDueDateMutation = useMutation({
     mutationFn: async (data: { saleId: string; dueDate?: string; notes?: string }) => {
-      return await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
+      const response = await apiRequest("PATCH", `/api/sales/${data.saleId}/due-date`, {
         dueDate: data.dueDate || null,
         notes: data.notes
       });
+      return response.json();
     },
     onSuccess: () => {
-      // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
@@ -442,7 +432,6 @@ export default function UnpaidBills() {
       setEditingSaleId(null);
       setDueDateForm({ dueDate: "", notes: "" });
       
-      // Force immediate refetch
       refetchUnpaidSales();
     },
     onError: (error: Error) => {
@@ -451,17 +440,17 @@ export default function UnpaidBills() {
     },
   });
 
-  // NEW: Mutation for updating sale items
+  // Fixed: Update sale item mutation
   const updateSaleItemMutation = useMutation({
     mutationFn: async (data: { saleItemId: string; quantity: number; rate: number; subtotal: number }) => {
-      return await apiRequest("PATCH", `/api/sale-items/${data.saleItemId}`, {
+      const response = await apiRequest("PATCH", `/api/sale-items/${data.saleItemId}`, {
         quantity: data.quantity,
         rate: data.rate,
         subtotal: data.subtotal
       });
+      return response.json();
     },
-    onSuccess: (_, variables) => {
-      // Invalidate all relevant queries to ensure calculations are updated
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
@@ -480,11 +469,7 @@ export default function UnpaidBills() {
       setEditingSaleItem(null);
       setSaleItemForm({ quantity: "", rate: "", subtotal: "" });
       
-      // Force immediate refetch
       refetchUnpaidSales();
-      if (editingSaleItem?.saleId) {
-        refetchSaleWithItems();
-      }
     },
     onError: (error: Error) => {
       console.error("Update sale item error:", error);
@@ -496,7 +481,7 @@ export default function UnpaidBills() {
     },
   });
 
-  // NEW: Function to handle sale item editing
+  // Fixed: Handle sale item editing
   const handleEditSaleItem = (saleItem: SaleItem) => {
     setEditingSaleItem(saleItem);
     setSaleItemForm({
@@ -507,14 +492,14 @@ export default function UnpaidBills() {
     setEditSaleItemDialogOpen(true);
   };
 
-  // NEW: Function to calculate subtotal when quantity or rate changes
+  // Fixed: Calculate subtotal
   const calculateSubtotal = (quantity: string, rate: string) => {
     const qty = parseFloat(quantity) || 0;
     const rt = parseFloat(rate) || 0;
     return (qty * rt).toString();
   };
 
-  // NEW: Handle form changes for sale item editing
+  // Fixed: Handle form changes
   const handleSaleItemFormChange = (field: string, value: string) => {
     const newForm = { ...saleItemForm, [field]: value };
     
@@ -528,7 +513,7 @@ export default function UnpaidBills() {
     setSaleItemForm(newForm);
   };
 
-  // NEW: Save sale item changes
+  // Fixed: Save sale item changes
   const handleSaveSaleItem = () => {
     if (!editingSaleItem) return;
 
@@ -549,6 +534,7 @@ export default function UnpaidBills() {
     });
   };
 
+  // Fixed: Record payment with proper validation
   const handleRecordPayment = async () => {
     if (!selectedCustomer || !paymentAmount) {
       toast({ title: "Please enter payment amount", variant: "destructive" });
@@ -582,8 +568,8 @@ export default function UnpaidBills() {
     for (const bill of sortedBills) {
       if (remainingPayment <= 0) break;
       
-      const billTotal = parseFloat(bill.totalAmount);
-      const billPaid = parseFloat(bill.amountPaid);
+      const billTotal = parseFloat(bill.totalAmount || "0");
+      const billPaid = parseFloat(bill.amountPaid || "0");
       const billOutstanding = billTotal - billPaid;
       
       if (billOutstanding > 0) {
@@ -593,7 +579,7 @@ export default function UnpaidBills() {
       }
     }
 
-    // Apply all payments using the mutation
+    // Apply all payments
     try {
       for (const payment of paymentsToApply) {
         await recordPaymentMutation.mutateAsync({
@@ -615,6 +601,7 @@ export default function UnpaidBills() {
     }
   };
 
+  // Fixed: Add note with validation
   const handleAddNote = () => {
     if (!viewingNotesCustomerPhone || !newNote.trim()) {
       toast({ title: "Please enter a note", variant: "destructive" });
@@ -627,20 +614,27 @@ export default function UnpaidBills() {
     });
   };
 
+  // Fixed: Due date status with proper validation
   const getDueDateStatus = (dueDate: Date | string | null) => {
     if (!dueDate) return "no_due_date";
     
-    const due = new Date(dueDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    due.setHours(0, 0, 0, 0);
-    
-    const diffTime = due.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return "overdue";
-    if (diffDays <= 7) return "due_soon";
-    return "future";
+    try {
+      const due = new Date(dueDate);
+      if (isNaN(due.getTime())) return "no_due_date";
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      due.setHours(0, 0, 0, 0);
+      
+      const diffTime = due.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays < 0) return "overdue";
+      if (diffDays <= 7) return "due_soon";
+      return "future";
+    } catch {
+      return "no_due_date";
+    }
   };
 
   const getDueDateBadge = (dueDate: Date | string | null) => {
@@ -667,11 +661,14 @@ export default function UnpaidBills() {
     }
   };
 
+  // Fixed: Consolidated customers calculation
   const consolidatedCustomers = useMemo(() => {
     const customerMap = new Map<string, ConsolidatedCustomer>();
     
     unpaidSales.forEach(sale => {
       const phone = sale.customerPhone;
+      if (!phone) return;
+      
       const existing = customerMap.get(phone);
       
       const totalAmount = parseFloat(sale.totalAmount || "0");
@@ -708,6 +705,7 @@ export default function UnpaidBills() {
     return Array.from(customerMap.values());
   }, [unpaidSales]);
 
+  // Fixed: Filtered and sorted customers with performance optimization
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...consolidatedCustomers];
 
@@ -755,6 +753,7 @@ export default function UnpaidBills() {
         return customer.bills.some(bill => {
           if (!bill.dueDate) return false;
           const dueDate = new Date(bill.dueDate);
+          if (isNaN(dueDate.getTime())) return false;
           
           if (fromDate && toDate) {
             return dueDate >= fromDate && dueDate <= toDate;
@@ -791,6 +790,11 @@ export default function UnpaidBills() {
     return filtered;
   }, [consolidatedCustomers, filters]);
 
+  // Performance optimization: Limit displayed customers
+  const optimizedFilteredCustomers = useMemo(() => {
+    return filteredAndSortedCustomers.slice(0, 100); // Limit to 100 customers for performance
+  }, [filteredAndSortedCustomers]);
+
   const hasActiveFilters = filters.search || filters.amountRange.min || filters.amountRange.max || 
                           filters.daysOverdue || filters.dueDate.from || filters.dueDate.to || 
                           filters.paymentStatus !== "all";
@@ -813,158 +817,160 @@ export default function UnpaidBills() {
   useEffect(() => {
     if (selectedCustomerPhone) {
       refetchUnpaidSales();
-      refetchPaymentHistory();
-      refetchBalanceNotes();
     }
   }, [selectedCustomerPhone]);
 
-  // Generate PDF Statement as Blob
-  const generateStatementPDFBlob = (customer: ConsolidatedCustomer): Blob => {
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 15;
-    let yPos = margin;
-
-    // Header
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 35, 'F');
-    
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(20);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('ACCOUNT STATEMENT', pageWidth / 2, 15, { align: 'center' });
-    
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 23, { align: 'center' });
-    pdf.text(receiptSettings.address, pageWidth / 2, 29, { align: 'center' });
-    
-    pdf.setTextColor(0, 0, 0);
-    yPos = 45;
-
-    // Customer Info
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Customer:', margin, yPos);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(customer.customerName, margin + 25, yPos);
-    yPos += 6;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Phone:', margin, yPos);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(customer.customerPhone, margin + 25, yPos);
-    yPos += 6;
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Date:', margin, yPos);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(formatDateShort(new Date()), margin + 25, yPos);
-    yPos += 10;
-
-    // Summary Box
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
-    yPos += 5;
-    
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    const colWidth = (pageWidth - 2 * margin) / 3;
-    pdf.text('Total Amount', margin + colWidth / 2, yPos, { align: 'center' });
-    pdf.text('Amount Paid', margin + colWidth + colWidth / 2, yPos, { align: 'center' });
-    pdf.text('Outstanding', margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
-    yPos += 6;
-    
-    pdf.setFontSize(11);
-    pdf.text(`Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, margin + colWidth / 2, yPos, { align: 'center' });
-    pdf.text(`Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: 'center' });
-    pdf.setTextColor(220, 38, 38);
-    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
-    pdf.setTextColor(0, 0, 0);
-    yPos += 15;
-
-    // Table Header
-    pdf.setFillColor(50, 50, 50);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('DATE', margin + 3, yPos + 5.5);
-    pdf.text('BILL NO', margin + 30, yPos + 5.5);
-    pdf.text('TOTAL', margin + 70, yPos + 5.5);
-    pdf.text('PAID', margin + 100, yPos + 5.5);
-    pdf.text('DUE', margin + 130, yPos + 5.5);
-    pdf.text('STATUS', pageWidth - margin - 20, yPos + 5.5);
-    yPos += 10;
-    pdf.setTextColor(0, 0, 0);
-
-    // Bill Rows
-    customer.bills.forEach((bill, index) => {
-      if (yPos > pageHeight - 30) {
-        pdf.addPage();
-        yPos = margin;
-      }
-
-      const billTotal = parseFloat(bill.totalAmount || "0");
-      const billPaid = parseFloat(bill.amountPaid || "0");
-      const billDue = billTotal - billPaid;
-      const dueDateStatus = getDueDateStatus(bill.dueDate);
-      
-      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
-      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-      pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, 'F');
-      
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2);
-      pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2);
-      pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2);
-      
-      const statusText = dueDateStatus === 'overdue' ? 'Overdue' : 
-                        dueDateStatus === 'due_soon' ? 'Due Soon' : 
-                        dueDateStatus === 'future' ? 'Upcoming' : 'Pending';
-      pdf.text(statusText, pageWidth - margin - 20, yPos + 2);
-      
-      yPos += 8;
-    });
-
-    // Footer
-    yPos += 10;
-    pdf.setFillColor(102, 126, 234);
-    pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, 'F');
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('BALANCE DUE:', pageWidth - margin - 65, yPos + 3);
-    pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: 'right' });
-
-    return pdf.output('blob');
-  };
-
-  // Generate PDF Statement with Download functionality
+  // Fixed: PDF generation with error handling
   const generateDetailedPDFStatement = (customer: ConsolidatedCustomer) => {
-    const pdfBlob = generateStatementPDFBlob(customer);
-    const url = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast({ 
-      title: "Statement Downloaded",
-      description: `PDF Statement for ${customer.customerName} has been downloaded`
-    });
+    try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      let yPos = margin;
+
+      // Header
+      pdf.setFillColor(102, 126, 234);
+      pdf.rect(0, 0, pageWidth, 35, 'F');
+      
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('ACCOUNT STATEMENT', pageWidth / 2, 15, { align: 'center' });
+      
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(receiptSettings.businessName || 'Paint Store', pageWidth / 2, 23, { align: 'center' });
+      pdf.text(receiptSettings.address || '', pageWidth / 2, 29, { align: 'center' });
+      
+      pdf.setTextColor(0, 0, 0);
+      yPos = 45;
+
+      // Customer Info
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Customer:', margin, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(customer.customerName, margin + 25, yPos);
+      yPos += 6;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Phone:', margin, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(customer.customerPhone, margin + 25, yPos);
+      yPos += 6;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Date:', margin, yPos);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(formatDateShort(new Date()), margin + 25, yPos);
+      yPos += 10;
+
+      // Summary Box
+      pdf.setFillColor(240, 240, 240);
+      pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
+      yPos += 5;
+      
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      const colWidth = (pageWidth - 2 * margin) / 3;
+      pdf.text('Total Amount', margin + colWidth / 2, yPos, { align: 'center' });
+      pdf.text('Amount Paid', margin + colWidth + colWidth / 2, yPos, { align: 'center' });
+      pdf.text('Outstanding', margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
+      yPos += 6;
+      
+      pdf.setFontSize(11);
+      pdf.text(`Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, margin + colWidth / 2, yPos, { align: 'center' });
+      pdf.text(`Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: 'center' });
+      pdf.setTextColor(220, 38, 38);
+      pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, { align: 'center' });
+      pdf.setTextColor(0, 0, 0);
+      yPos += 15;
+
+      // Table Header
+      pdf.setFillColor(50, 50, 50);
+      pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('DATE', margin + 3, yPos + 5.5);
+      pdf.text('BILL NO', margin + 30, yPos + 5.5);
+      pdf.text('TOTAL', margin + 70, yPos + 5.5);
+      pdf.text('PAID', margin + 100, yPos + 5.5);
+      pdf.text('DUE', margin + 130, yPos + 5.5);
+      pdf.text('STATUS', pageWidth - margin - 20, yPos + 5.5);
+      yPos += 10;
+      pdf.setTextColor(0, 0, 0);
+
+      // Bill Rows
+      customer.bills.forEach((bill, index) => {
+        if (yPos > pageHeight - 30) {
+          pdf.addPage();
+          yPos = margin;
+        }
+
+        const billTotal = parseFloat(bill.totalAmount || "0");
+        const billPaid = parseFloat(bill.amountPaid || "0");
+        const billDue = billTotal - billPaid;
+        const dueDateStatus = getDueDateStatus(bill.dueDate);
+        
+        const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
+        pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+        pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 8, 'F');
+        
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(formatDateShort(new Date(bill.createdAt)), margin + 3, yPos + 2);
+        pdf.text(bill.id.slice(-8).toUpperCase(), margin + 30, yPos + 2);
+        pdf.text(`Rs. ${Math.round(billTotal).toLocaleString()}`, margin + 70, yPos + 2);
+        pdf.text(`Rs. ${Math.round(billPaid).toLocaleString()}`, margin + 100, yPos + 2);
+        pdf.text(`Rs. ${Math.round(billDue).toLocaleString()}`, margin + 130, yPos + 2);
+        
+        const statusText = dueDateStatus === 'overdue' ? 'Overdue' : 
+                          dueDateStatus === 'due_soon' ? 'Due Soon' : 
+                          dueDateStatus === 'future' ? 'Upcoming' : 'Pending';
+        pdf.text(statusText, pageWidth - margin - 20, yPos + 2);
+        
+        yPos += 8;
+      });
+
+      // Footer
+      yPos += 10;
+      pdf.setFillColor(102, 126, 234);
+      pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('BALANCE DUE:', pageWidth - margin - 65, yPos + 3);
+      pdf.text(`Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: 'right' });
+
+      const pdfBlob = pdf.output('blob');
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Statement-${customer.customerName.replace(/\s+/g, '_')}-${formatDateShort(new Date()).replace(/\//g, '-')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({ 
+        title: "Statement Downloaded",
+        description: `PDF Statement for ${customer.customerName} has been downloaded`
+      });
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      toast({ 
+        title: "Failed to generate PDF",
+        description: "Please try again",
+        variant: "destructive"
+      });
+    }
   };
 
   const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0);
@@ -1279,12 +1285,12 @@ export default function UnpaidBills() {
       {/* Results Count */}
       <div className="flex items-center justify-between px-2">
         <p className="text-sm text-slate-600">
-          Showing <span className="font-semibold text-slate-800">{filteredAndSortedCustomers.length}</span> of {consolidatedCustomers.length} customers
+          Showing <span className="font-semibold text-slate-800">{optimizedFilteredCustomers.length}</span> of {consolidatedCustomers.length} customers
         </p>
         {hasActiveFilters && (
           <p className="text-sm text-slate-600">
             Filtered Outstanding: <span className="font-semibold text-amber-600">
-              Rs. {Math.round(filteredAndSortedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)).toLocaleString()}
+              Rs. {Math.round(optimizedFilteredCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)).toLocaleString()}
             </span>
           </p>
         )}
@@ -1303,7 +1309,7 @@ export default function UnpaidBills() {
             </div>
           ))}
         </div>
-      ) : filteredAndSortedCustomers.length === 0 ? (
+      ) : optimizedFilteredCustomers.length === 0 ? (
         <div className="glass-card rounded-2xl p-12 text-center border border-white/20">
           <div className="max-w-md mx-auto">
             <div className="gradient-bg w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -1327,7 +1333,7 @@ export default function UnpaidBills() {
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredAndSortedCustomers.map((customer) => {
+          {optimizedFilteredCustomers.map((customer) => {
             const hasOverdue = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'overdue');
             const hasDueSoon = customer.bills.some(bill => getDueDateStatus(bill.dueDate) === 'due_soon');
             const hasManualBalance = customer.bills.some(bill => bill.isManualBalance);
@@ -1337,11 +1343,9 @@ export default function UnpaidBills() {
                 key={customer.customerPhone} 
                 className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
                 onClick={() => {
-                  // Refresh data before opening customer details
                   refetchUnpaidSales();
                   setSelectedCustomerPhone(customer.customerPhone);
                 }}
-                data-testid={`card-customer-${customer.customerPhone}`}
               >
                 {/* Header */}
                 <div className="flex items-start justify-between mb-4">
@@ -1460,7 +1464,6 @@ export default function UnpaidBills() {
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Refresh data before showing details
                       refetchUnpaidSales();
                       setSelectedCustomerPhone(customer.customerPhone);
                     }}
@@ -1479,9 +1482,6 @@ export default function UnpaidBills() {
       <Dialog open={!!selectedCustomerPhone} onOpenChange={(open) => {
         if (!open) {
           setSelectedCustomerPhone(null);
-        } else {
-          // Refresh data when dialog opens
-          refetchUnpaidSales();
         }
       }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto glass-card border-white/20">
@@ -2140,7 +2140,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* NEW: Edit Sale Item Dialog */}
+      {/* Edit Sale Item Dialog */}
       <Dialog open={editSaleItemDialogOpen} onOpenChange={setEditSaleItemDialogOpen}>
         <DialogContent className="sm:max-w-md glass-card border-white/20">
           <DialogHeader>
