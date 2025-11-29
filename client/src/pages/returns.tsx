@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -25,30 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  Search, 
-  RotateCcw, 
-  FileText, 
-  Package, 
-  Minus, 
-  Plus, 
-  Loader2, 
-  Eye, 
-  Download, 
-  User, 
-  Phone, 
-  DollarSign, 
-  AlertTriangle, 
-  CheckCircle, 
-  Calendar,
-  X,
-  RefreshCw,
-  CheckSquare,
-  Check,
-  List,
-  ArrowLeft,
-  ArrowRight
-} from "lucide-react";
+import { Search, RotateCcw, FileText, Package, Minus, Plus, Loader2, Eye, Download, User, Phone, DollarSign, AlertTriangle, CheckCircle, Calendar } from "lucide-react";
 import jsPDF from "jspdf";
 import type { SaleWithItems, ReturnWithItems, Color, Variant, Product } from "@shared/schema";
 
@@ -75,13 +52,6 @@ interface ReturnStats {
   billReturns: number;
 }
 
-interface ReturnFormData {
-  returnType: "full" | "partial";
-  selectedItems: Record<string, number>;
-  restockItems: Record<string, boolean>;
-  reason: string;
-}
-
 export default function Returns() {
   const { toast } = useToast();
   const { formatDate, formatDateShort } = useDateFormat();
@@ -93,17 +63,10 @@ export default function Returns() {
   const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null);
   const [showReturnDialog, setShowReturnDialog] = useState(false);
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-
-  const returnFormInitialState: ReturnFormData = {
-    returnType: "full",
-    selectedItems: {},
-    restockItems: {},
-    reason: ""
-  };
-
-  const [returnForm, setReturnForm] = useState<ReturnFormData>(returnFormInitialState);
+  const [returnReason, setReturnReason] = useState("");
+  const [returnType, setReturnType] = useState<"full" | "partial">("full");
+  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
+  const [restockItems, setRestockItems] = useState<Record<string, boolean>>({});
 
   const { data: returns = [], isLoading: returnsLoading } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
@@ -113,22 +76,6 @@ export default function Returns() {
     queryKey: ["/api/sales"],
     enabled: false,
   });
-
-  // Reset form when dialog closes
-  useEffect(() => {
-    if (!showReturnDialog) {
-      setReturnForm(returnFormInitialState);
-    }
-  }, [showReturnDialog]);
-
-  // Paginate returns for history tab
-  const paginatedReturns = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return filteredReturns.slice(startIndex, endIndex);
-  }, [filteredReturns, currentPage, itemsPerPage]);
-
-  const totalPages = Math.ceil(filteredReturns.length / itemsPerPage);
 
   const filteredReturns = useMemo(() => {
     return returns.filter(ret =>
@@ -186,16 +133,18 @@ export default function Returns() {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       setShowReturnDialog(false);
       setSelectedSale(null);
+      setSelectedItems({});
+      setRestockItems({});
+      setReturnReason("");
       toast({
         title: "Return Processed",
         description: "Return has been successfully processed",
       });
     },
-    onError: (error: any) => {
-      console.error("Return error:", error);
+    onError: () => {
       toast({
         title: "Error",
-        description: error.message || "Failed to process return",
+        description: "Failed to process return",
         variant: "destructive",
       });
     },
@@ -216,126 +165,47 @@ export default function Returns() {
   const handleSelectSale = (sale: SaleWithItems) => {
     setSelectedSale(sale);
     setShowReturnDialog(true);
+    setReturnType("full");
+    setSelectedItems({});
+    setRestockItems({});
+    setReturnReason("");
     
-    // Initialize form with all items selected for full return
     if (sale.saleItems) {
-      const selectedItems: Record<string, number> = {};
-      const restockItems: Record<string, boolean> = {};
-      
+      const items: Record<string, number> = {};
+      const restock: Record<string, boolean> = {};
       sale.saleItems.forEach(item => {
-        selectedItems[item.id] = item.quantity;
-        restockItems[item.id] = true;
+        items[item.id] = item.quantity;
+        restock[item.id] = true;
       });
-      
-      setReturnForm({
-        returnType: "full",
-        selectedItems,
-        restockItems,
-        reason: ""
-      });
+      setSelectedItems(items);
+      setRestockItems(restock);
     }
   };
 
   const handleItemQuantityChange = (itemId: string, maxQty: number, delta: number) => {
-    setReturnForm(prev => {
-      const current = prev.selectedItems[itemId] || 0;
+    setSelectedItems(prev => {
+      const current = prev[itemId] || 0;
       const newQty = Math.max(0, Math.min(maxQty, current + delta));
-      
-      const updatedItems = { ...prev.selectedItems };
       if (newQty === 0) {
-        delete updatedItems[itemId];
-      } else {
-        updatedItems[itemId] = newQty;
+        const { [itemId]: _, ...rest } = prev;
+        return rest;
       }
-
-      // Auto-detect return type based on selected quantities
-      const totalItems = Object.keys(prev.selectedItems).length;
-      const selectedItemsCount = Object.keys(updatedItems).length;
-      const isFullReturn = selectedItemsCount === totalItems && 
-        Object.values(updatedItems).every((qty, index) => 
-          qty === selectedSale?.saleItems?.[index]?.quantity
-        );
-
-      return {
-        ...prev,
-        returnType: isFullReturn ? "full" : "partial",
-        selectedItems: updatedItems
-      };
+      return { ...prev, [itemId]: newQty };
     });
+    setReturnType("partial");
   };
 
   const handleToggleRestock = (itemId: string) => {
-    setReturnForm(prev => ({
+    setRestockItems(prev => ({
       ...prev,
-      restockItems: {
-        ...prev.restockItems,
-        [itemId]: !prev.restockItems[itemId]
-      }
-    }));
-  };
-
-  const handleSelectAllItems = () => {
-    if (!selectedSale?.saleItems) return;
-
-    const selectedItems: Record<string, number> = {};
-    const restockItems: Record<string, boolean> = {};
-    
-    selectedSale.saleItems.forEach(item => {
-      selectedItems[item.id] = item.quantity;
-      restockItems[item.id] = true;
-    });
-
-    setReturnForm(prev => ({
-      ...prev,
-      returnType: "full",
-      selectedItems,
-      restockItems
-    }));
-  };
-
-  const handleDeselectAllItems = () => {
-    setReturnForm(prev => ({
-      ...prev,
-      returnType: "partial",
-      selectedItems: {},
-      restockItems: {}
-    }));
-  };
-
-  const handleQuickSelect = (percentage: number) => {
-    if (!selectedSale?.saleItems) return;
-
-    const selectedItems: Record<string, number> = {};
-    const restockItems: Record<string, boolean> = {};
-    
-    selectedSale.saleItems.forEach(item => {
-      const qty = Math.max(1, Math.floor(item.quantity * percentage / 100));
-      selectedItems[item.id] = qty;
-      restockItems[item.id] = true;
-    });
-
-    setReturnForm(prev => ({
-      ...prev,
-      returnType: "partial",
-      selectedItems,
-      restockItems
-    }));
-  };
-
-  const handleResetItem = (itemId: string) => {
-    setReturnForm(prev => ({
-      ...prev,
-      selectedItems: {
-        ...prev.selectedItems,
-        [itemId]: selectedSale?.saleItems?.find(i => i.id === itemId)?.quantity || 0
-      }
+      [itemId]: !prev[itemId],
     }));
   };
 
   const handleSubmitReturn = () => {
     if (!selectedSale) return;
 
-    const itemsToReturn = Object.entries(returnForm.selectedItems)
+    const itemsToReturn = Object.entries(selectedItems)
       .filter(([_, qty]) => qty > 0)
       .map(([itemId, quantity]) => {
         const saleItem = selectedSale.saleItems?.find(i => i.id === itemId);
@@ -346,7 +216,7 @@ export default function Returns() {
           quantity,
           rate: parseFloat(saleItem.rate),
           subtotal: quantity * parseFloat(saleItem.rate),
-          stockRestored: returnForm.restockItems[itemId] ?? true,
+          stockRestored: restockItems[itemId] ?? true,
         };
       })
       .filter(Boolean);
@@ -367,9 +237,9 @@ export default function Returns() {
         saleId: selectedSale.id,
         customerName: selectedSale.customerName,
         customerPhone: selectedSale.customerPhone,
-        returnType: returnForm.returnType === "full" ? "full_bill" : "item",
+        returnType: returnType === "full" ? "full_bill" : "item",
         totalRefund,
-        reason: returnForm.reason || null,
+        reason: returnReason || null,
         status: "completed",
       },
       items: itemsToReturn,
@@ -525,13 +395,6 @@ export default function Returns() {
   };
 
   const searchResults = searchMutation.data || [];
-  const totalRefundAmount = Object.entries(returnForm.selectedItems).reduce((sum, [itemId, qty]) => {
-    const item = selectedSale?.saleItems?.find(i => i.id === itemId);
-    return sum + (qty * parseFloat(item?.rate || "0"));
-  }, 0);
-
-  const selectedItemsCount = Object.keys(returnForm.selectedItems).length;
-  const totalItemsCount = selectedSale?.saleItems?.length || 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -595,7 +458,7 @@ export default function Returns() {
                       {searchResults.map((sale) => (
                         <Card 
                           key={sale.id} 
-                          className="cursor-pointer hover:shadow-md transition-shadow"
+                          className="cursor-pointer hover-elevate"
                           onClick={() => handleSelectSale(sale)}
                           data-testid={`card-sale-${sale.id}`}
                         >
@@ -762,7 +625,7 @@ export default function Returns() {
             </div>
           </div>
 
-          {/* Returns Table with Pagination */}
+          {/* Returns Table */}
           <Card>
             <CardHeader>
               <CardTitle>Return History</CardTitle>
@@ -789,7 +652,7 @@ export default function Returns() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    paginatedReturns.map((ret) => (
+                    filteredReturns.map((ret) => (
                       <TableRow key={ret.id}>
                         <TableCell>{formatDateShort(ret.createdAt)}</TableCell>
                         <TableCell className="font-mono font-semibold">
@@ -847,36 +710,6 @@ export default function Returns() {
                   )}
                 </TableBody>
               </Table>
-
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <div className="text-sm text-muted-foreground">
-                    Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredReturns.length)} of {filteredReturns.length} entries
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                      disabled={currentPage === 1}
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                    </Button>
-                    <span className="text-sm font-medium">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                      disabled={currentPage === totalPages}
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -884,7 +717,7 @@ export default function Returns() {
 
       {/* Process Return Dialog */}
       <Dialog open={showReturnDialog} onOpenChange={setShowReturnDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Process Return</DialogTitle>
             <DialogDescription>
@@ -894,7 +727,6 @@ export default function Returns() {
 
           {selectedSale && (
             <div className="space-y-4">
-              {/* Customer Info */}
               <div className="grid grid-cols-2 gap-4 p-3 rounded-md bg-muted/50">
                 <div>
                   <Label className="text-xs text-muted-foreground">Customer</Label>
@@ -916,150 +748,68 @@ export default function Returns() {
 
               <Separator />
 
-              {/* Quick Actions */}
-              <div className="flex flex-wrap gap-2 p-3 bg-blue-50 rounded-lg">
-                <Label className="text-sm font-medium w-full mb-2">Quick Actions:</Label>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={handleSelectAllItems}
-                  disabled={selectedItemsCount === totalItemsCount}
-                >
-                  <CheckSquare className="h-4 w-4 mr-1" />
-                  Select All
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={handleDeselectAllItems}
-                  disabled={selectedItemsCount === 0}
-                >
-                  <X className="h-4 w-4 mr-1" />
-                  Deselect All
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => handleQuickSelect(25)}
-                >
-                  <List className="h-4 w-4 mr-1" />
-                  25% Items
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => handleQuickSelect(50)}
-                >
-                  <List className="h-4 w-4 mr-1" />
-                  50% Items
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => handleQuickSelect(75)}
-                >
-                  <List className="h-4 w-4 mr-1" />
-                  75% Items
-                </Button>
-              </div>
-
-              {/* Items Selection */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-sm font-medium">
-                    Items to Return ({selectedItemsCount}/{totalItemsCount} selected)
-                  </Label>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Returning</span>
-                    <div className="w-2 h-2 bg-gray-200 rounded-full"></div>
-                    <span>Not Returning</span>
-                  </div>
-                </div>
-                <ScrollArea className="h-[300px] rounded-md border">
+                <Label className="text-sm font-medium mb-2 block">Items to Return</Label>
+                <ScrollArea className="h-[200px] rounded-md border">
                   <div className="p-2 space-y-2">
                     {selectedSale.saleItems?.map((item) => {
-                      const returnQty = returnForm.selectedItems[item.id] || 0;
+                      const returnQty = selectedItems[item.id] || 0;
                       const isReturning = returnQty > 0;
-                      const maxQty = item.quantity;
                       
                       return (
                         <div 
                           key={item.id} 
-                          className={`p-3 rounded-md border transition-all ${
-                            isReturning 
-                              ? 'bg-destructive/5 border-destructive/30 shadow-sm' 
-                              : 'bg-muted/30 border-muted'
-                          }`}
+                          className={`p-3 rounded-md border ${isReturning ? 'bg-destructive/5 border-destructive/30' : 'bg-muted/30'}`}
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            {/* Item Info */}
+                          <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-sm truncate">{formatItemDetails(item)}</p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Rate: Rs. {parseFloat(item.rate).toLocaleString()} × {item.quantity} = Rs. {parseFloat(item.subtotal).toLocaleString()}
+                              <p className="text-xs text-muted-foreground">
+                                Rate: Rs. {parseFloat(item.rate).toLocaleString()} x {item.quantity} = Rs. {parseFloat(item.subtotal).toLocaleString()}
                               </p>
-                              {isReturning && (
-                                <div className="flex items-center gap-4 mt-2">
-                                  <div className="flex items-center gap-2">
-                                    <Checkbox
-                                      id={`restock-${item.id}`}
-                                      checked={returnForm.restockItems[item.id] ?? true}
-                                      onCheckedChange={() => handleToggleRestock(item.id)}
-                                    />
-                                    <Label htmlFor={`restock-${item.id}`} className="text-xs cursor-pointer flex items-center gap-1">
-                                      <Package className="h-3 w-3" />
-                                      Restore to stock
-                                    </Label>
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => handleResetItem(item.id)}
-                                    className="h-6 text-xs"
-                                  >
-                                    <RefreshCw className="h-3 w-3 mr-1" />
-                                    Reset
-                                  </Button>
-                                </div>
-                              )}
                             </div>
-
-                            {/* Quantity Controls */}
-                            <div className="flex items-center gap-3 shrink-0">
-                              <div className="text-right mr-2">
-                                <div className="text-sm font-medium">
-                                  {returnQty}/{maxQty}
-                                </div>
-                                {isReturning && (
-                                  <div className="text-xs text-destructive font-semibold">
-                                    - Rs. {(returnQty * parseFloat(item.rate)).toLocaleString()}
-                                  </div>
-                                )}
-                              </div>
-                              
-                              <div className="flex flex-col gap-1">
-                                <Button 
-                                  size="icon" 
-                                  variant="outline"
-                                  className="h-6 w-6"
-                                  onClick={() => handleItemQuantityChange(item.id, maxQty, 1)}
-                                  disabled={returnQty >= maxQty}
-                                >
-                                  <Plus className="h-3 w-3" />
-                                </Button>
-                                <Button 
-                                  size="icon" 
-                                  variant="outline"
-                                  className="h-6 w-6"
-                                  onClick={() => handleItemQuantityChange(item.id, maxQty, -1)}
-                                  disabled={returnQty === 0}
-                                >
-                                  <Minus className="h-3 w-3" />
-                                </Button>
-                              </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Button 
+                                size="icon" 
+                                variant="outline"
+                                className="h-7 w-7"
+                                onClick={() => handleItemQuantityChange(item.id, item.quantity, -1)}
+                                disabled={returnQty === 0}
+                                data-testid={`button-decrease-${item.id}`}
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="w-8 text-center text-sm font-medium">
+                                {returnQty}
+                              </span>
+                              <Button 
+                                size="icon" 
+                                variant="outline"
+                                className="h-7 w-7"
+                                onClick={() => handleItemQuantityChange(item.id, item.quantity, 1)}
+                                disabled={returnQty >= item.quantity}
+                                data-testid={`button-increase-${item.id}`}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
                             </div>
                           </div>
+                          {isReturning && (
+                            <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                              <Checkbox
+                                id={`restock-${item.id}`}
+                                checked={restockItems[item.id] ?? true}
+                                onCheckedChange={() => handleToggleRestock(item.id)}
+                              />
+                              <Label htmlFor={`restock-${item.id}`} className="text-xs cursor-pointer">
+                                <Package className="h-3 w-3 inline mr-1" />
+                                Restore to stock ({returnQty} units)
+                              </Label>
+                              <span className="text-xs text-destructive ml-auto">
+                                - Rs. {(returnQty * parseFloat(item.rate)).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1067,34 +817,35 @@ export default function Returns() {
                 </ScrollArea>
               </div>
 
-              {/* Return Reason */}
               <div>
                 <Label htmlFor="reason" className="text-sm font-medium">Return Reason (Optional)</Label>
                 <Textarea
                   id="reason"
                   placeholder="Enter reason for return..."
-                  value={returnForm.reason}
-                  onChange={(e) => setReturnForm(prev => ({ ...prev, reason: e.target.value }))}
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
                   className="mt-1"
+                  data-testid="input-return-reason"
                 />
               </div>
 
               <Separator />
 
-              {/* Summary */}
-              <div className="flex items-center justify-between p-4 rounded-md bg-muted/50">
+              <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
                 <div>
-                  <p className="text-sm text-muted-foreground">Return Type</p>
-                  <Badge variant={returnForm.returnType === "full" ? "destructive" : "secondary"} className="mt-1">
-                    {returnForm.returnType === "full" ? "Full Bill Return" : "Partial Return"}
-                  </Badge>
-                </div>
-                <div className="text-right">
                   <p className="text-sm text-muted-foreground">Total Refund Amount</p>
-                  <p className="text-2xl font-bold text-destructive">
-                    Rs. {totalRefundAmount.toLocaleString()}
+                  <p className="text-xl font-bold text-destructive">
+                    Rs. {Object.entries(selectedItems)
+                      .reduce((sum, [itemId, qty]) => {
+                        const item = selectedSale.saleItems?.find(i => i.id === itemId);
+                        return sum + (qty * parseFloat(item?.rate || "0"));
+                      }, 0)
+                      .toLocaleString()}
                   </p>
                 </div>
+                <Badge variant={returnType === "full" ? "destructive" : "secondary"}>
+                  {returnType === "full" ? "Full Bill Return" : "Partial Return"}
+                </Badge>
               </div>
             </div>
           )}
@@ -1103,13 +854,15 @@ export default function Returns() {
             <Button 
               variant="outline" 
               onClick={() => setShowReturnDialog(false)}
+              data-testid="button-cancel-return"
             >
               Cancel
             </Button>
             <Button 
               variant="destructive"
               onClick={handleSubmitReturn}
-              disabled={createReturnMutation.isPending || selectedItemsCount === 0}
+              disabled={createReturnMutation.isPending || Object.keys(selectedItems).length === 0}
+              data-testid="button-confirm-return"
             >
               {createReturnMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Process Return
