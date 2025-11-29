@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, RotateCcw, FileText, Package, Minus, Plus, Loader2, Eye, Download, User, Phone, DollarSign, AlertTriangle, CheckCircle, Calendar, X } from "lucide-react";
+import { Search, RotateCcw, FileText, Package, Minus, Plus, Loader2, Eye, Download, User, Phone, DollarSign, AlertTriangle, CheckCircle, Calendar, X, ArrowLeft } from "lucide-react";
 import jsPDF from "jspdf";
 import type { SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema";
 
@@ -125,7 +125,7 @@ export default function Returns() {
       setReturnReason("");
       toast({
         title: "Return Processed",
-        description: "Return has been successfully processed",
+        description: "Return has been successfully processed and stock has been updated",
       });
     },
     onError: (error: any) => {
@@ -157,7 +157,7 @@ export default function Returns() {
       });
       toast({
         title: "Quick Return Processed",
-        description: "Item has been returned successfully",
+        description: "Item has been returned successfully and stock has been updated",
       });
     },
     onError: (error: any) => {
@@ -208,6 +208,28 @@ export default function Returns() {
       ...prev,
       [itemId]: !prev[itemId],
     }));
+  };
+
+  const handleSelectAllItems = () => {
+    if (!selectedSale) return;
+    
+    const items: Record<string, number> = {};
+    const restock: Record<string, boolean> = {};
+    
+    selectedSale.saleItems?.forEach(item => {
+      items[item.id] = item.quantity;
+      restock[item.id] = true;
+    });
+    
+    setSelectedItems(items);
+    setRestockItems(restock);
+    setReturnType("full");
+  };
+
+  const handleDeselectAllItems = () => {
+    setSelectedItems({});
+    setRestockItems({});
+    setReturnType("partial");
   };
 
   const handleSubmitReturn = () => {
@@ -423,14 +445,10 @@ export default function Returns() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-3">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="bill">
             <FileText className="w-4 h-4 mr-2" />
             Bill Returns
-          </TabsTrigger>
-          <TabsTrigger value="quick">
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Quick Return
           </TabsTrigger>
           <TabsTrigger value="history">
             <AlertTriangle className="w-4 h-4 mr-2" />
@@ -439,186 +457,102 @@ export default function Returns() {
         </TabsList>
 
         <TabsContent value="bill" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Search Bill to Return</CardTitle>
-              <CardDescription>Search by customer phone number or name to find the bill</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Input
-                    placeholder="Enter customer phone or name..."
-                    value={searchPhone}
-                    onChange={(e) => setSearchPhone(e.target.value)}
-                  />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Search Bill Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Search Bill to Return</CardTitle>
+                <CardDescription>Search by customer phone number or name to find the bill</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Input
+                      placeholder="Enter customer phone or name..."
+                      value={searchPhone}
+                      onChange={(e) => setSearchPhone(e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    onClick={() => setSearchPhone(searchPhone)}
+                    disabled={salesLoading}
+                  >
+                    {salesLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                    <span className="ml-2">Search</span>
+                  </Button>
                 </div>
+
+                {searchResults.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Found Sales ({searchResults.length})</Label>
+                    <ScrollArea className="h-[300px] rounded-md border">
+                      <div className="p-2 space-y-2">
+                        {searchResults.map((sale) => (
+                          <Card 
+                            key={sale.id} 
+                            className="cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => handleSelectSale(sale)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-medium truncate">{sale.customerName}</span>
+                                    <Badge variant="outline" className="shrink-0">{sale.customerPhone}</Badge>
+                                  </div>
+                                  <div className="text-sm text-muted-foreground mt-1">
+                                    {formatDate(new Date(sale.createdAt))} - {sale.saleItems?.length || 0} items
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="font-medium">Rs. {parseFloat(sale.totalAmount).toLocaleString()}</div>
+                                  <Badge 
+                                    variant={sale.paymentStatus === "paid" ? "default" : "secondary"}
+                                    className="mt-1"
+                                  >
+                                    {sale.paymentStatus}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Quick Return Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Quick Item Return</CardTitle>
+                <CardDescription>Return individual items without searching for a specific bill</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <Button 
-                  onClick={() => setSearchPhone(searchPhone)}
-                  disabled={salesLoading}
+                  onClick={() => setShowQuickReturnDialog(true)}
+                  className="w-full"
+                  size="lg"
                 >
-                  {salesLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Search className="w-4 h-4" />
-                  )}
-                  <span className="ml-2">Search</span>
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Open Quick Return Form
                 </Button>
-              </div>
-
-              {searchResults.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Found Sales ({searchResults.length})</Label>
-                  <ScrollArea className="h-[300px] rounded-md border">
-                    <div className="p-2 space-y-2">
-                      {searchResults.map((sale) => (
-                        <Card 
-                          key={sale.id} 
-                          className="cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => handleSelectSale(sale)}
-                        >
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between gap-4">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-medium truncate">{sale.customerName}</span>
-                                  <Badge variant="outline" className="shrink-0">{sale.customerPhone}</Badge>
-                                </div>
-                                <div className="text-sm text-muted-foreground mt-1">
-                                  {formatDate(new Date(sale.createdAt))} - {sale.saleItems?.length || 0} items
-                                </div>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <div className="font-medium">Rs. {parseFloat(sale.totalAmount).toLocaleString()}</div>
-                                <Badge 
-                                  variant={sale.paymentStatus === "paid" ? "default" : "secondary"}
-                                  className="mt-1"
-                                >
-                                  {sale.paymentStatus}
-                                </Badge>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  </ScrollArea>
+                
+                <div className="text-sm text-muted-foreground space-y-2">
+                  <p>• Return individual items without bill reference</p>
+                  <p>• Automatic stock restoration</p>
+                  <p>• Customer refund processing</p>
+                  <p>• Complete return history tracking</p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="quick" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Quick Item Return</CardTitle>
-              <CardDescription>Return individual items without searching for a specific bill</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="customerName">Customer Name *</Label>
-                  <Input
-                    id="customerName"
-                    placeholder="Enter customer name"
-                    value={quickReturnForm.customerName}
-                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerName: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="customerPhone">Customer Phone *</Label>
-                  <Input
-                    id="customerPhone"
-                    placeholder="Enter customer phone"
-                    value={quickReturnForm.customerPhone}
-                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerPhone: e.target.value }))}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="colorSelect">Select Item *</Label>
-                <Select onValueChange={handleColorSelect} value={quickReturnForm.colorId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select an item to return" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {colors.map((color) => (
-                      <SelectItem key={color.id} value={color.id}>
-                        {color.variant.product.company} {color.variant.product.productName} - {color.variant.packingSize} - {color.colorCode} {color.colorName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="quantity">Quantity *</Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    min="1"
-                    value={quickReturnForm.quantity}
-                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="rate">Rate (Rs.) *</Label>
-                  <Input
-                    id="rate"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={quickReturnForm.rate}
-                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, rate: parseFloat(e.target.value) || 0 }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="subtotal">Subtotal (Rs.)</Label>
-                  <Input
-                    id="subtotal"
-                    value={(quickReturnForm.quantity * quickReturnForm.rate).toFixed(2)}
-                    readOnly
-                    className="bg-muted"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="reason">Return Reason</Label>
-                <Textarea
-                  id="reason"
-                  placeholder="Enter reason for return..."
-                  value={quickReturnForm.reason}
-                  onChange={(e) => setQuickReturnForm(prev => ({ ...prev, reason: e.target.value }))}
-                />
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="restoreStock"
-                  checked={quickReturnForm.restoreStock}
-                  onCheckedChange={(checked) => 
-                    setQuickReturnForm(prev => ({ ...prev, restoreStock: checked as boolean }))
-                  }
-                />
-                <Label htmlFor="restoreStock" className="cursor-pointer">
-                  Restore item to stock inventory
-                </Label>
-              </div>
-
-              <Button 
-                onClick={handleQuickReturnSubmit}
-                disabled={quickReturnMutation.isPending || !quickReturnForm.customerName || !quickReturnForm.customerPhone || !quickReturnForm.colorId}
-                className="w-full"
-              >
-                {quickReturnMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Process Quick Return
-              </Button>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4 mt-4">
@@ -817,72 +751,81 @@ export default function Returns() {
 
               <Separator />
 
-              <div>
-                <Label className="text-sm font-medium mb-2 block">Items to Return</Label>
-                <ScrollArea className="h-[200px] rounded-md border">
-                  <div className="p-2 space-y-2">
-                    {selectedSale.saleItems?.map((item) => {
-                      const returnQty = selectedItems[item.id] || 0;
-                      const isReturning = returnQty > 0;
-                      
-                      return (
-                        <div 
-                          key={item.id} 
-                          className={`p-3 rounded-md border ${isReturning ? 'bg-destructive/5 border-destructive/30' : 'bg-muted/30'}`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{formatItemDetails(item)}</p>
-                              <p className="text-xs text-muted-foreground">
-                                Rate: Rs. {parseFloat(item.rate).toLocaleString()} x {item.quantity} = Rs. {parseFloat(item.subtotal).toLocaleString()}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <Button 
-                                size="icon" 
-                                variant="outline"
-                                className="h-7 w-7"
-                                onClick={() => handleItemQuantityChange(item.id, item.quantity, -1)}
-                                disabled={returnQty === 0}
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
-                              <span className="w-8 text-center text-sm font-medium">
-                                {returnQty}
-                              </span>
-                              <Button 
-                                size="icon" 
-                                variant="outline"
-                                className="h-7 w-7"
-                                onClick={() => handleItemQuantityChange(item.id, item.quantity, 1)}
-                                disabled={returnQty >= item.quantity}
-                              >
-                                <Plus className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                          {isReturning && (
-                            <div className="flex items-center gap-2 mt-2 pt-2 border-t">
-                              <Checkbox
-                                id={`restock-${item.id}`}
-                                checked={restockItems[item.id] ?? true}
-                                onCheckedChange={() => handleToggleRestock(item.id)}
-                              />
-                              <Label htmlFor={`restock-${item.id}`} className="text-xs cursor-pointer">
-                                <Package className="h-3 w-3 inline mr-1" />
-                                Restore to stock ({returnQty} units)
-                              </Label>
-                              <span className="text-xs text-destructive ml-auto">
-                                - Rs. {(returnQty * parseFloat(item.rate)).toLocaleString()}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
+              <div className="flex justify-between items-center">
+                <Label className="text-sm font-medium">Items to Return</Label>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleSelectAllItems}>
+                    Select All
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleDeselectAllItems}>
+                    Deselect All
+                  </Button>
+                </div>
               </div>
+
+              <ScrollArea className="h-[200px] rounded-md border">
+                <div className="p-2 space-y-2">
+                  {selectedSale.saleItems?.map((item) => {
+                    const returnQty = selectedItems[item.id] || 0;
+                    const isReturning = returnQty > 0;
+                    
+                    return (
+                      <div 
+                        key={item.id} 
+                        className={`p-3 rounded-md border ${isReturning ? 'bg-destructive/5 border-destructive/30' : 'bg-muted/30'}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{formatItemDetails(item)}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Rate: Rs. {parseFloat(item.rate).toLocaleString()} x {item.quantity} = Rs. {parseFloat(item.subtotal).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button 
+                              size="icon" 
+                              variant="outline"
+                              className="h-7 w-7"
+                              onClick={() => handleItemQuantityChange(item.id, item.quantity, -1)}
+                              disabled={returnQty === 0}
+                            >
+                              <Minus className="h-3 w-3" />
+                            </Button>
+                            <span className="w-8 text-center text-sm font-medium">
+                              {returnQty}
+                            </span>
+                            <Button 
+                              size="icon" 
+                              variant="outline"
+                              className="h-7 w-7"
+                              onClick={() => handleItemQuantityChange(item.id, item.quantity, 1)}
+                              disabled={returnQty >= item.quantity}
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        {isReturning && (
+                          <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                            <Checkbox
+                              id={`restock-${item.id}`}
+                              checked={restockItems[item.id] ?? true}
+                              onCheckedChange={() => handleToggleRestock(item.id)}
+                            />
+                            <Label htmlFor={`restock-${item.id}`} className="text-xs cursor-pointer">
+                              <Package className="h-3 w-3 inline mr-1" />
+                              Restore to stock ({returnQty} units)
+                            </Label>
+                            <span className="text-xs text-destructive ml-auto">
+                              - Rs. {(returnQty * parseFloat(item.rate)).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
 
               <div>
                 <Label htmlFor="reason" className="text-sm font-medium">Return Reason (Optional)</Label>
@@ -930,6 +873,237 @@ export default function Returns() {
             >
               {createReturnMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Process Return
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Return Dialog - Full Page */}
+      <Dialog open={showQuickReturnDialog} onOpenChange={setShowQuickReturnDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowQuickReturnDialog(false)}
+                className="h-8 w-8"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <div>
+                <DialogTitle>Quick Item Return</DialogTitle>
+                <DialogDescription>
+                  Return individual items without bill reference
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Customer Information */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Customer Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="customerName">Customer Name *</Label>
+                  <Input
+                    id="customerName"
+                    placeholder="Enter customer name"
+                    value={quickReturnForm.customerName}
+                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerName: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="customerPhone">Customer Phone *</Label>
+                  <Input
+                    id="customerPhone"
+                    placeholder="Enter customer phone"
+                    value={quickReturnForm.customerPhone}
+                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Item Selection */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Item Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="colorSelect">Select Item *</Label>
+                  <Select onValueChange={handleColorSelect} value={quickReturnForm.colorId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an item to return" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {colors.map((color) => (
+                        <SelectItem key={color.id} value={color.id}>
+                          {color.variant.product.company} {color.variant.product.productName} - {color.variant.packingSize} - {color.colorCode} {color.colorName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="quantity">Quantity *</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setQuickReturnForm(prev => ({ 
+                          ...prev, 
+                          quantity: Math.max(1, prev.quantity - 1) 
+                        }))}
+                      >
+                        <Minus className="h-4 w-4" />
+                      </Button>
+                      <Input
+                        id="quantity"
+                        type="number"
+                        min="1"
+                        value={quickReturnForm.quantity}
+                        onChange={(e) => setQuickReturnForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                        className="text-center"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setQuickReturnForm(prev => ({ 
+                          ...prev, 
+                          quantity: prev.quantity + 1 
+                        }))}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="rate">Rate (Rs.) *</Label>
+                    <Input
+                      id="rate"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={quickReturnForm.rate}
+                      onChange={(e) => setQuickReturnForm(prev => ({ ...prev, rate: parseFloat(e.target.value) || 0 }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="subtotal">Subtotal (Rs.)</Label>
+                    <Input
+                      id="subtotal"
+                      value={(quickReturnForm.quantity * quickReturnForm.rate).toFixed(2)}
+                      readOnly
+                      className="bg-muted font-semibold"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Additional Information */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-lg">Additional Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="reason">Return Reason</Label>
+                  <Textarea
+                    id="reason"
+                    placeholder="Enter reason for return..."
+                    value={quickReturnForm.reason}
+                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, reason: e.target.value }))}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2 p-3 bg-muted/50 rounded-lg">
+                  <Checkbox
+                    id="restoreStock"
+                    checked={quickReturnForm.restoreStock}
+                    onCheckedChange={(checked) => 
+                      setQuickReturnForm(prev => ({ ...prev, restoreStock: checked as boolean }))
+                    }
+                  />
+                  <Label htmlFor="restoreStock" className="cursor-pointer text-sm">
+                    <div className="font-medium">Restore item to stock inventory</div>
+                    <div className="text-muted-foreground">
+                      This will add {quickReturnForm.quantity} units back to the stock quantity
+                    </div>
+                  </Label>
+                </div>
+
+                {/* Summary */}
+                <div className="p-4 bg-blue-50 rounded-lg border">
+                  <h3 className="font-semibold mb-2">Return Summary</h3>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>Customer:</div>
+                    <div className="font-medium">{quickReturnForm.customerName || "Not specified"}</div>
+                    
+                    <div>Phone:</div>
+                    <div className="font-medium">{quickReturnForm.customerPhone || "Not specified"}</div>
+                    
+                    <div>Item:</div>
+                    <div className="font-medium">
+                      {quickReturnForm.colorId 
+                        ? colors.find(c => c.id === quickReturnForm.colorId)?.colorName 
+                        : "Not selected"}
+                    </div>
+                    
+                    <div>Quantity:</div>
+                    <div className="font-medium">{quickReturnForm.quantity} units</div>
+                    
+                    <div>Refund Amount:</div>
+                    <div className="font-bold text-red-600">
+                      Rs. {(quickReturnForm.quantity * quickReturnForm.rate).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <DialogFooter className="gap-2 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setQuickReturnForm({
+                  customerName: "",
+                  customerPhone: "",
+                  colorId: "",
+                  quantity: 1,
+                  rate: 0,
+                  reason: "",
+                  restoreStock: true,
+                });
+              }}
+            >
+              Reset Form
+            </Button>
+            <Button 
+              onClick={handleQuickReturnSubmit}
+              disabled={quickReturnMutation.isPending || !quickReturnForm.customerName || !quickReturnForm.customerPhone || !quickReturnForm.colorId}
+              className="min-w-32"
+            >
+              {quickReturnMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Process Return
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

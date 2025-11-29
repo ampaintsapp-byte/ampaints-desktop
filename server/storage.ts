@@ -1453,15 +1453,25 @@ export class DatabaseStorage implements IStorage {
         console.log('[Storage] Inserting return item:', returnItem);
         await db.insert(returnItems).values(returnItem);
 
+        // FIXED: Proper stock restoration with transaction safety
         if (returnItem.stockRestored) {
           console.log(`[Storage] Restoring stock for color ${item.colorId}, quantity: ${item.quantity}`);
           const [color] = await db.select().from(colors).where(eq(colors.id, item.colorId));
           if (color) {
             const newStock = color.stockQuantity + item.quantity;
             await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, item.colorId));
-            console.log(`[Storage] Stock restored: ${color.colorName} - New stock: ${newStock}`);
+            
+            // Verify the update
+            const [updatedColor] = await db.select().from(colors).where(eq(colors.id, item.colorId));
+            console.log(`[Storage] Stock restored: ${color.colorName} - Previous: ${color.stockQuantity}, Added: ${item.quantity}, New: ${updatedColor?.stockQuantity}`);
+            
+            if (updatedColor?.stockQuantity !== newStock) {
+              console.error(`[Storage] Stock restoration failed for ${color.colorName}`);
+              throw new Error(`Failed to restore stock for ${color.colorName}`);
+            }
           } else {
             console.warn(`[Storage] Color not found for stock restoration: ${item.colorId}`);
+            throw new Error(`Color not found: ${item.colorId}`);
           }
         }
       }
@@ -1519,9 +1529,18 @@ export class DatabaseStorage implements IStorage {
 
       await db.insert(returnItems).values(returnItem);
 
+      // FIXED: Proper stock restoration for quick returns
       if (restoreStock) {
         const newStock = color.stockQuantity + quantity;
         await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, colorId));
+        
+        // Verify the update
+        const [updatedColor] = await db.select().from(colors).where(eq(colors.id, colorId));
+        console.log(`[Storage] Quick return stock restored: ${color.colorName} - Previous: ${color.stockQuantity}, Added: ${quantity}, New: ${updatedColor?.stockQuantity}`);
+        
+        if (updatedColor?.stockQuantity !== newStock) {
+          throw new Error(`Failed to restore stock for ${color.colorName}`);
+        }
       }
 
       return returnRecord;

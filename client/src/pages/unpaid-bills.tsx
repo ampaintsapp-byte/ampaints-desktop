@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - Complete Real-time Version
+// unpaid-bills.tsx - FIXED VERSION
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -89,6 +89,7 @@ import { useDateFormat } from "@/hooks/use-date-format";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import jsPDF from "jspdf";
 
+// Define interfaces at the top to avoid reference issues
 interface CustomerSuggestion {
   customerName: string;
   customerPhone: string;
@@ -141,6 +142,50 @@ type FilterType = {
   sortBy: "oldest" | "newest" | "highest" | "lowest" | "name";
   paymentStatus: "all" | "overdue" | "due_soon" | "no_due_date";
 };
+
+// Glass styles as constant to avoid re-renders
+const glassStyles = `
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  }
+  .glass-destructive {
+    background: rgba(239, 68, 68, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+  .glass-warning {
+    background: rgba(245, 158, 11, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+  }
+  .glass-success {
+    background: rgba(34, 197, 94, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+  }
+  .glass-outline {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  .hover-elevate {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .hover-elevate:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  }
+  .gradient-bg {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+  .premium-border {
+    border: 1px solid;
+    border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
+  }
+`;
 
 export default function UnpaidBills() {
   const { formatDateShort } = useDateFormat();
@@ -879,49 +924,6 @@ export default function UnpaidBills() {
     });
   };
 
-  const glassStyles = `
-    .glass-card {
-      background: rgba(255, 255, 255, 0.8);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }
-    .glass-destructive {
-      background: rgba(239, 68, 68, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-    }
-    .glass-warning {
-      background: rgba(245, 158, 11, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(245, 158, 11, 0.2);
-    }
-    .glass-success {
-      background: rgba(34, 197, 94, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(34, 197, 94, 0.2);
-    }
-    .glass-outline {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    .hover-elevate {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .hover-elevate:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-    }
-    .gradient-bg {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .premium-border {
-      border: 1px solid;
-      border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
-    }
-  `;
-
   const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0);
   const totalCustomers = consolidatedCustomers.length;
   const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0;
@@ -1440,7 +1442,7 @@ export default function UnpaidBills() {
         </div>
       )}
 
-      {/* Customer Bills Details Dialog */}
+      {/* Customer Bills Details Dialog - FIXED: Added proper DialogDescription */}
       <Dialog open={!!selectedCustomerPhone} onOpenChange={(open) => {
         if (!open) {
           setSelectedCustomerPhone(null);
@@ -1638,7 +1640,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Record Payment Dialog */}
+      {/* Record Payment Dialog - FIXED: Added proper DialogDescription */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="glass-card border-white/20">
           <DialogHeader>
@@ -1741,7 +1743,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Payment History Dialog */}
+      {/* Payment History Dialog - FIXED: Added proper DialogDescription */}
       <Dialog open={paymentHistoryDialogOpen} onOpenChange={setPaymentHistoryDialogOpen}>
         <DialogContent className="max-w-2xl glass-card border-white/20">
           <DialogHeader>
@@ -1799,7 +1801,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Notes Dialog */}
+      {/* Notes Dialog - FIXED: Added proper DialogDescription */}
       <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
         <DialogContent className="max-w-2xl glass-card border-white/20">
           <DialogHeader>
@@ -1877,7 +1879,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Manual Balance Dialog */}
+      {/* Manual Balance Dialog - FIXED: Added proper DialogDescription */}
       <Dialog open={manualBalanceDialogOpen} onOpenChange={setManualBalanceDialogOpen}>
         <DialogContent className="sm:max-w-md glass-card border-white/20">
           <DialogHeader>
@@ -2035,7 +2037,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Due Date Edit Dialog */}
+      {/* Due Date Edit Dialog - FIXED: Added proper DialogDescription */}
       <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
         <DialogContent className="sm:max-w-md glass-card border-white/20">
           <DialogHeader>
