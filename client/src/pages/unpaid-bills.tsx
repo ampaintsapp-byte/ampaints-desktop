@@ -1,4 +1,4 @@
-// unpaid-bills.tsx - FIXED VERSION
+// unpaid-bills.tsx - Fixed Calculation Version with Real-time Updates
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -67,14 +67,13 @@ import {
   IndianRupee,
   SortAsc,
   SortDesc,
-  RefreshCw,
   Edit,
   Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { Sale } from "@shared/schema";
+import type { Sale, SaleItem } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import {
@@ -89,7 +88,6 @@ import { useDateFormat } from "@/hooks/use-date-format";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import jsPDF from "jspdf";
 
-// Define interfaces at the top to avoid reference issues
 interface CustomerSuggestion {
   customerName: string;
   customerPhone: string;
@@ -229,9 +227,15 @@ export default function UnpaidBills() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   
-  // Refresh state
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
+  // Edit sale item state
+  const [editSaleItemDialogOpen, setEditSaleItemDialogOpen] = useState(false);
+  const [editingSaleItem, setEditingSaleItem] = useState<SaleItem | null>(null);
+  const [saleItemForm, setSaleItemForm] = useState({
+    quantity: "",
+    rate: "",
+    subtotal: ""
+  });
+
   const { toast } = useToast();
   const { canEditPayment, canDeletePayment, canEditSales } = usePermissions();
   const queryClient = useQueryClient();
@@ -282,25 +286,11 @@ export default function UnpaidBills() {
     staleTime: 5000, // Shorter stale time for notes
   });
 
-  // Manual refresh function
-  const handleManualRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await Promise.all([
-        refetchUnpaidSales(),
-        viewingPaymentHistoryCustomerPhone && refetchPaymentHistory(),
-        viewingNotesCustomerPhone && refetchBalanceNotes(),
-        queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] }),
-        queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
-      ]);
-      toast({ title: "Data refreshed successfully" });
-    } catch (error) {
-      console.error("Refresh error:", error);
-      toast({ title: "Failed to refresh data", variant: "destructive" });
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+  // Fetch sale with items for editing
+  const { data: saleWithItems, refetch: refetchSaleWithItems } = useQuery({
+    queryKey: [`/api/sales/${editingSaleItem?.saleId}`],
+    enabled: !!editingSaleItem?.saleId,
+  });
 
   // Auto-refresh data when dialogs open or close
   useEffect(() => {
@@ -318,7 +308,6 @@ export default function UnpaidBills() {
   // Auto-refresh when payment dialog closes
   useEffect(() => {
     if (!paymentDialogOpen && selectedCustomerPhone) {
-      // Refresh all relevant data when payment dialog closes
       refetchUnpaidSales();
       refetchPaymentHistory();
       refetchBalanceNotes();
@@ -333,7 +322,7 @@ export default function UnpaidBills() {
         notes: data.notes 
       });
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       // Invalidate all relevant queries for real-time updates
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
@@ -377,11 +366,11 @@ export default function UnpaidBills() {
         note: data.note
       });
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/customer/${variables.customerPhone}/notes`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/customer/${viewingNotesCustomerPhone}/notes`] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
       
       toast({ title: "Note added successfully" });
@@ -402,13 +391,12 @@ export default function UnpaidBills() {
     mutationFn: async (data: { customerName: string; customerPhone: string; totalAmount: string; dueDate?: string; notes?: string }) => {
       return await apiRequest("POST", "/api/sales/manual-balance", data);
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers/suggestions"] });
-      queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${variables.customerPhone}`] });
       
       toast({ 
         title: "New pending balance added successfully",
@@ -439,7 +427,7 @@ export default function UnpaidBills() {
         notes: data.notes
       });
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       // Invalidate all relevant queries
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
@@ -463,12 +451,17 @@ export default function UnpaidBills() {
     },
   });
 
-  const deleteSaleMutation = useMutation({
-    mutationFn: async (saleId: string) => {
-      return await apiRequest("DELETE", `/api/sales/${saleId}`);
+  // NEW: Mutation for updating sale items
+  const updateSaleItemMutation = useMutation({
+    mutationFn: async (data: { saleItemId: string; quantity: number; rate: number; subtotal: number }) => {
+      return await apiRequest("PATCH", `/api/sale-items/${data.saleItemId}`, {
+        quantity: data.quantity,
+        rate: data.rate,
+        subtotal: data.subtotal
+      });
     },
-    onSuccess: (_, saleId) => {
-      // Invalidate all relevant queries
+    onSuccess: (_, variables) => {
+      // Invalidate all relevant queries to ensure calculations are updated
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
@@ -476,22 +469,85 @@ export default function UnpaidBills() {
       
       if (selectedCustomerPhone) {
         queryClient.invalidateQueries({ queryKey: [`/api/sales/customer/${selectedCustomerPhone}`] });
-        queryClient.invalidateQueries({ queryKey: [`/api/payment-history/customer/${selectedCustomerPhone}`] });
       }
       
-      toast({ title: "Sale deleted successfully" });
+      toast({ 
+        title: "Sale item updated successfully",
+        description: "The sale item has been updated and totals recalculated."
+      });
+      
+      setEditSaleItemDialogOpen(false);
+      setEditingSaleItem(null);
+      setSaleItemForm({ quantity: "", rate: "", subtotal: "" });
       
       // Force immediate refetch
       refetchUnpaidSales();
-      if (selectedCustomerPhone) {
-        refetchPaymentHistory();
+      if (editingSaleItem?.saleId) {
+        refetchSaleWithItems();
       }
     },
     onError: (error: Error) => {
-      console.error("Delete sale error:", error);
-      toast({ title: "Failed to delete sale", variant: "destructive" });
+      console.error("Update sale item error:", error);
+      toast({ 
+        title: "Failed to update sale item", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
+
+  // NEW: Function to handle sale item editing
+  const handleEditSaleItem = (saleItem: SaleItem) => {
+    setEditingSaleItem(saleItem);
+    setSaleItemForm({
+      quantity: saleItem.quantity.toString(),
+      rate: parseFloat(saleItem.rate).toString(),
+      subtotal: parseFloat(saleItem.subtotal).toString()
+    });
+    setEditSaleItemDialogOpen(true);
+  };
+
+  // NEW: Function to calculate subtotal when quantity or rate changes
+  const calculateSubtotal = (quantity: string, rate: string) => {
+    const qty = parseFloat(quantity) || 0;
+    const rt = parseFloat(rate) || 0;
+    return (qty * rt).toString();
+  };
+
+  // NEW: Handle form changes for sale item editing
+  const handleSaleItemFormChange = (field: string, value: string) => {
+    const newForm = { ...saleItemForm, [field]: value };
+    
+    if (field === 'quantity' || field === 'rate') {
+      newForm.subtotal = calculateSubtotal(
+        field === 'quantity' ? value : saleItemForm.quantity,
+        field === 'rate' ? value : saleItemForm.rate
+      );
+    }
+    
+    setSaleItemForm(newForm);
+  };
+
+  // NEW: Save sale item changes
+  const handleSaveSaleItem = () => {
+    if (!editingSaleItem) return;
+
+    const quantity = parseFloat(saleItemForm.quantity);
+    const rate = parseFloat(saleItemForm.rate);
+    const subtotal = parseFloat(saleItemForm.subtotal);
+
+    if (quantity <= 0 || rate <= 0 || subtotal <= 0) {
+      toast({ title: "Please enter valid positive values", variant: "destructive" });
+      return;
+    }
+
+    updateSaleItemMutation.mutate({
+      saleItemId: editingSaleItem.id,
+      quantity,
+      rate,
+      subtotal
+    });
+  };
 
   const handleRecordPayment = async () => {
     if (!selectedCustomer || !paymentAmount) {
@@ -548,8 +604,10 @@ export default function UnpaidBills() {
         });
       }
       
-      // Additional refresh to ensure data is updated
-      handleManualRefresh();
+      toast({ 
+        title: `Payment recorded successfully`,
+        description: `Payment of Rs. ${Math.round(amount).toLocaleString()} has been applied to ${paymentsToApply.length} bill(s).`
+      });
       
     } catch (error) {
       console.error("Payment processing error:", error);
@@ -567,21 +625,6 @@ export default function UnpaidBills() {
       customerPhone: viewingNotesCustomerPhone,
       note: newNote.trim()
     });
-  };
-
-  const handleDeleteSale = (saleId: string) => {
-    if (window.confirm("Are you sure you want to delete this sale? This action cannot be undone.")) {
-      deleteSaleMutation.mutate(saleId);
-    }
-  };
-
-  const handleEditDueDate = (saleId: string, currentDueDate: string | null) => {
-    setEditingSaleId(saleId);
-    setDueDateForm({
-      dueDate: currentDueDate ? new Date(currentDueDate).toISOString().split('T')[0] : "",
-      notes: ""
-    });
-    setDueDateDialogOpen(true);
   };
 
   const getDueDateStatus = (dueDate: Date | string | null) => {
@@ -932,8 +975,8 @@ export default function UnpaidBills() {
     recordPaymentMutation.isPending || 
     addNoteMutation.isPending || 
     createManualBalanceMutation.isPending || 
-    updateDueDateMutation.isPending || 
-    deleteSaleMutation.isPending;
+    updateDueDateMutation.isPending ||
+    updateSaleItemMutation.isPending;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
@@ -981,16 +1024,6 @@ export default function UnpaidBills() {
           </div>
           
           <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={handleManualRefresh}
-              disabled={isRefreshing || isAnyMutationLoading}
-              className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
-            >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              {isRefreshing ? 'Refreshing...' : 'Refresh'}
-            </Button>
-
             {canEditSales && (
               <Button 
                 variant="outline" 
@@ -1186,10 +1219,10 @@ export default function UnpaidBills() {
       </div>
 
       {/* Loading Overlay */}
-      {(isAnyMutationLoading || isRefreshing) && (
+      {(isAnyMutationLoading || isRefetching) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="glass-card rounded-2xl p-6 flex items-center gap-3">
-            <RefreshCw className="h-6 w-6 animate-spin text-purple-600" />
+            <Loader2 className="h-6 w-6 animate-spin text-purple-600" />
             <span className="text-slate-800 font-medium">
               {isAnyMutationLoading ? "Processing..." : "Refreshing data..."}
             </span>
@@ -1442,7 +1475,7 @@ export default function UnpaidBills() {
         </div>
       )}
 
-      {/* Customer Bills Details Dialog - FIXED: Added proper DialogDescription */}
+      {/* Customer Bills Details Dialog */}
       <Dialog open={!!selectedCustomerPhone} onOpenChange={(open) => {
         if (!open) {
           setSelectedCustomerPhone(null);
@@ -1582,7 +1615,14 @@ export default function UnpaidBills() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleEditDueDate(bill.id, bill.dueDate)}
+                                onClick={() => {
+                                  setEditingSaleId(bill.id);
+                                  setDueDateForm({
+                                    dueDate: bill.dueDate ? new Date(bill.dueDate).toISOString().split('T')[0] : "",
+                                    notes: bill.notes || ""
+                                  });
+                                  setDueDateDialogOpen(true);
+                                }}
                                 className="glass-card border-white/20"
                               >
                                 <Edit className="h-3 w-3" />
@@ -1595,16 +1635,6 @@ export default function UnpaidBills() {
                                   Print
                                 </Button>
                               </Link>
-                            )}
-                            {canEditSales && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDeleteSale(bill.id)}
-                                className="glass-card border-white/20 text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
                             )}
                           </div>
                         </div>
@@ -1640,7 +1670,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Record Payment Dialog - FIXED: Added proper DialogDescription */}
+      {/* Record Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="glass-card border-white/20">
           <DialogHeader>
@@ -1743,7 +1773,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Payment History Dialog - FIXED: Added proper DialogDescription */}
+      {/* Payment History Dialog */}
       <Dialog open={paymentHistoryDialogOpen} onOpenChange={setPaymentHistoryDialogOpen}>
         <DialogContent className="max-w-2xl glass-card border-white/20">
           <DialogHeader>
@@ -1801,7 +1831,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Notes Dialog - FIXED: Added proper DialogDescription */}
+      {/* Notes Dialog */}
       <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
         <DialogContent className="max-w-2xl glass-card border-white/20">
           <DialogHeader>
@@ -1879,7 +1909,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Manual Balance Dialog - FIXED: Added proper DialogDescription */}
+      {/* Manual Balance Dialog */}
       <Dialog open={manualBalanceDialogOpen} onOpenChange={setManualBalanceDialogOpen}>
         <DialogContent className="sm:max-w-md glass-card border-white/20">
           <DialogHeader>
@@ -2037,7 +2067,7 @@ export default function UnpaidBills() {
         </DialogContent>
       </Dialog>
 
-      {/* Due Date Edit Dialog - FIXED: Added proper DialogDescription */}
+      {/* Due Date Edit Dialog */}
       <Dialog open={dueDateDialogOpen} onOpenChange={setDueDateDialogOpen}>
         <DialogContent className="sm:max-w-md glass-card border-white/20">
           <DialogHeader>
@@ -2103,6 +2133,89 @@ export default function UnpaidBills() {
                   </>
                 ) : (
                   "Update Due Date"
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* NEW: Edit Sale Item Dialog */}
+      <Dialog open={editSaleItemDialogOpen} onOpenChange={setEditSaleItemDialogOpen}>
+        <DialogContent className="sm:max-w-md glass-card border-white/20">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5" />
+              Edit Sale Item
+            </DialogTitle>
+            <DialogDescription>
+              Update the quantity, rate, and subtotal for this sale item
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="quantity">Quantity</Label>
+              <Input
+                id="quantity"
+                type="number"
+                min="1"
+                value={saleItemForm.quantity}
+                onChange={(e) => handleSaleItemFormChange('quantity', e.target.value)}
+                className="glass-card border-white/20"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rate">Rate (Rs.)</Label>
+              <Input
+                id="rate"
+                type="number"
+                min="0"
+                step="0.01"
+                value={saleItemForm.rate}
+                onChange={(e) => handleSaleItemFormChange('rate', e.target.value)}
+                className="glass-card border-white/20"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="subtotal">Subtotal (Rs.)</Label>
+              <Input
+                id="subtotal"
+                type="number"
+                min="0"
+                step="0.01"
+                value={saleItemForm.subtotal}
+                onChange={(e) => handleSaleItemFormChange('subtotal', e.target.value)}
+                className="glass-card border-white/20 bg-slate-50"
+                readOnly
+              />
+              <p className="text-xs text-slate-600">
+                Subtotal is automatically calculated from quantity × rate
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditSaleItemDialogOpen(false);
+                  setEditingSaleItem(null);
+                  setSaleItemForm({ quantity: "", rate: "", subtotal: "" });
+                }}
+                className="glass-card border-white/20"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveSaleItem}
+                disabled={updateSaleItemMutation.isPending}
+                className="gradient-bg text-white"
+              >
+                {updateSaleItemMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  "Update Item"
                 )}
               </Button>
             </DialogFooter>

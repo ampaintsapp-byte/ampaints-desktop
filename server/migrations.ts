@@ -10,6 +10,10 @@ export function migrateDatabase(db: Database.Database): void {
   console.log('[Migration] Starting database schema migration...');
   
   try {
+    // Enable foreign keys and WAL mode for better performance
+    db.pragma("foreign_keys = ON");
+    db.pragma("journal_mode = WAL");
+    
     // Check and add missing columns to sales table (added in v0.1.7)
     const salesColumns = db.pragma('table_info(sales)') as Array<{ name: string; type: string }>;
     const salesColumnNames = salesColumns.map((col) => col.name);
@@ -80,46 +84,55 @@ export function migrateDatabase(db: Database.Database): void {
         card_button_color TEXT NOT NULL DEFAULT 'gray-900',
         card_price_color TEXT NOT NULL DEFAULT 'blue-600',
         show_stock_badge_border INTEGER NOT NULL DEFAULT 0,
+        audit_pin_hash TEXT,
+        audit_pin_salt TEXT,
+        perm_stock_delete INTEGER NOT NULL DEFAULT 1,
+        perm_stock_edit INTEGER NOT NULL DEFAULT 1,
+        perm_stock_history_delete INTEGER NOT NULL DEFAULT 1,
+        perm_sales_delete INTEGER NOT NULL DEFAULT 1,
+        perm_sales_edit INTEGER NOT NULL DEFAULT 1,
+        perm_payment_edit INTEGER NOT NULL DEFAULT 1,
+        perm_payment_delete INTEGER NOT NULL DEFAULT 1,
+        perm_database_access INTEGER NOT NULL DEFAULT 1,
+        cloud_database_url TEXT,
+        cloud_sync_enabled INTEGER NOT NULL DEFAULT 0,
+        last_sync_time INTEGER,
         updated_at INTEGER NOT NULL
       );
     `);
     
-    // Check and add date_format column if missing (added in v0.2.2)
+    // Check and add missing columns to settings table
     const settingsColumns = db.pragma('table_info(settings)') as Array<{ name: string; type: string }>;
     const settingsColumnNames = settingsColumns.map((col) => col.name);
     
-    if (!settingsColumnNames.includes('date_format')) {
-      console.log('[Migration] Adding date_format column to settings table');
-      db.exec("ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'");
-    }
+    console.log('[Migration] Current settings columns:', settingsColumnNames);
     
-    // Add audit PIN columns if missing (added for Audit Reports security)
-    if (!settingsColumnNames.includes('audit_pin_hash')) {
-      console.log('[Migration] Adding audit_pin_hash column to settings table');
-      db.exec("ALTER TABLE settings ADD COLUMN audit_pin_hash TEXT");
-    }
-    
-    if (!settingsColumnNames.includes('audit_pin_salt')) {
-      console.log('[Migration] Adding audit_pin_salt column to settings table');
-      db.exec("ALTER TABLE settings ADD COLUMN audit_pin_salt TEXT");
-    }
-    
-    // Add permission columns if missing (added for Role-Based Access Control)
-    const permissionColumns = [
-      { name: 'perm_stock_delete', default: 1 },
-      { name: 'perm_stock_edit', default: 1 },
-      { name: 'perm_stock_history_delete', default: 1 },
-      { name: 'perm_sales_delete', default: 1 },
-      { name: 'perm_sales_edit', default: 1 },
-      { name: 'perm_payment_edit', default: 1 },
-      { name: 'perm_payment_delete', default: 1 },
-      { name: 'perm_database_access', default: 1 },
+    // Add missing columns to settings table
+    const missingSettingsColumns = [
+      { name: 'date_format', sql: "ALTER TABLE settings ADD COLUMN date_format TEXT NOT NULL DEFAULT 'DD-MM-YYYY'" },
+      { name: 'audit_pin_hash', sql: 'ALTER TABLE settings ADD COLUMN audit_pin_hash TEXT' },
+      { name: 'audit_pin_salt', sql: 'ALTER TABLE settings ADD COLUMN audit_pin_salt TEXT' },
+      { name: 'perm_stock_delete', sql: 'ALTER TABLE settings ADD COLUMN perm_stock_delete INTEGER NOT NULL DEFAULT 1' },
+      { name: 'perm_stock_edit', sql: 'ALTER TABLE settings ADD COLUMN perm_stock_edit INTEGER NOT NULL DEFAULT 1' },
+      { name: 'perm_stock_history_delete', sql: 'ALTER TABLE settings ADD COLUMN perm_stock_history_delete INTEGER NOT NULL DEFAULT 1' },
+      { name: 'perm_sales_delete', sql: 'ALTER TABLE settings ADD COLUMN perm_sales_delete INTEGER NOT NULL DEFAULT 1' },
+      { name: 'perm_sales_edit', sql: 'ALTER TABLE settings ADD COLUMN perm_sales_edit INTEGER NOT NULL DEFAULT 1' },
+      { name: 'perm_payment_edit', sql: 'ALTER TABLE settings ADD COLUMN perm_payment_edit INTEGER NOT NULL DEFAULT 1' },
+      { name: 'perm_payment_delete', sql: 'ALTER TABLE settings ADD COLUMN perm_payment_delete INTEGER NOT NULL DEFAULT 1' },
+      { name: 'perm_database_access', sql: 'ALTER TABLE settings ADD COLUMN perm_database_access INTEGER NOT NULL DEFAULT 1' },
+      { name: 'cloud_database_url', sql: 'ALTER TABLE settings ADD COLUMN cloud_database_url TEXT' },
+      { name: 'cloud_sync_enabled', sql: 'ALTER TABLE settings ADD COLUMN cloud_sync_enabled INTEGER NOT NULL DEFAULT 0' },
+      { name: 'last_sync_time', sql: 'ALTER TABLE settings ADD COLUMN last_sync_time INTEGER' }
     ];
     
-    for (const col of permissionColumns) {
+    for (const col of missingSettingsColumns) {
       if (!settingsColumnNames.includes(col.name)) {
         console.log(`[Migration] Adding ${col.name} column to settings table`);
-        db.exec(`ALTER TABLE settings ADD COLUMN ${col.name} INTEGER NOT NULL DEFAULT ${col.default}`);
+        try {
+          db.exec(col.sql);
+        } catch (error) {
+          console.log(`[Migration] Column ${col.name} might already exist:`, error);
+        }
       }
     }
     
@@ -127,10 +140,53 @@ export function migrateDatabase(db: Database.Database): void {
     const settingsExists = db.prepare('SELECT COUNT(*) as count FROM settings WHERE id = ?').get('default') as { count: number };
     if (settingsExists.count === 0) {
       console.log('[Migration] Inserting default settings row');
-      db.prepare(`
-        INSERT INTO settings (id, store_name, date_format, card_border_style, card_shadow_size, card_button_color, card_price_color, show_stock_badge_border, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run('default', 'PaintPulse', 'DD-MM-YYYY', 'shadow', 'sm', 'gray-900', 'blue-600', 0, Date.now());
+      const timestamp = Date.now();
+      try {
+        db.prepare(`
+          INSERT INTO settings (
+            id, store_name, date_format, card_border_style, card_shadow_size, 
+            card_button_color, card_price_color, show_stock_badge_border, 
+            audit_pin_hash, audit_pin_salt,
+            perm_stock_delete, perm_stock_edit, perm_stock_history_delete,
+            perm_sales_delete, perm_sales_edit, perm_payment_edit, 
+            perm_payment_delete, perm_database_access,
+            cloud_database_url, cloud_sync_enabled, last_sync_time,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          'default', 'PaintPulse', 'DD-MM-YYYY', 'shadow', 'sm', 
+          'gray-900', 'blue-600', 0,
+          null, null, // audit_pin_hash, audit_pin_salt
+          1, 1, 1, 1, 1, 1, 1, 1, // permissions
+          null, 0, null, // cloud settings
+          timestamp
+        );
+      } catch (error) {
+        console.log('[Migration] Error inserting default settings, might already exist:', error);
+      }
+    } else {
+      // Update existing settings with default values for new columns
+      console.log('[Migration] Updating existing settings with default values');
+      const updateStmt = db.prepare(`
+        UPDATE settings SET 
+          date_format = COALESCE(date_format, 'DD-MM-YYYY'),
+          audit_pin_hash = COALESCE(audit_pin_hash, NULL),
+          audit_pin_salt = COALESCE(audit_pin_salt, NULL),
+          perm_stock_delete = COALESCE(perm_stock_delete, 1),
+          perm_stock_edit = COALESCE(perm_stock_edit, 1),
+          perm_stock_history_delete = COALESCE(perm_stock_history_delete, 1),
+          perm_sales_delete = COALESCE(perm_sales_delete, 1),
+          perm_sales_edit = COALESCE(perm_sales_edit, 1),
+          perm_payment_edit = COALESCE(perm_payment_edit, 1),
+          perm_payment_delete = COALESCE(perm_payment_delete, 1),
+          perm_database_access = COALESCE(perm_database_access, 1),
+          cloud_database_url = COALESCE(cloud_database_url, NULL),
+          cloud_sync_enabled = COALESCE(cloud_sync_enabled, 0),
+          last_sync_time = COALESCE(last_sync_time, NULL),
+          updated_at = ?
+        WHERE id = 'default'
+      `);
+      updateStmt.run(Date.now());
     }
 
     // Create payment_history table if it doesn't exist (added in v0.2.1)
@@ -153,95 +209,356 @@ export function migrateDatabase(db: Database.Database): void {
     // Create indexes for payment_history table
     console.log('[Migration] Creating/verifying payment_history indexes...');
     
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_customer_created ON payment_history(customer_phone, created_at)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_payment_history_customer_created'); }
+    const paymentIndexes = [
+      'CREATE INDEX IF NOT EXISTS idx_payment_history_customer_created ON payment_history(customer_phone, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_payment_history_sale ON payment_history(sale_id)',
+      'CREATE INDEX IF NOT EXISTS idx_payment_history_customer_method ON payment_history(customer_phone, payment_method)',
+      'CREATE INDEX IF NOT EXISTS idx_payment_history_created ON payment_history(created_at)'
+    ];
     
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_sale ON payment_history(sale_id)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_payment_history_sale'); }
+    for (const indexSql of paymentIndexes) {
+      try {
+        db.exec(indexSql);
+      } catch (e) { 
+        console.log('[Migration] Index might already exist:', indexSql); 
+      }
+    }
+
+    // ============ RETURNS TABLES MIGRATION ============
+    // Create returns and return_items tables if they don't exist (added for Returns functionality)
+    console.log('[Migration] Creating/verifying returns tables...');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS returns (
+        id TEXT PRIMARY KEY,
+        sale_id TEXT,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT NOT NULL,
+        return_type TEXT NOT NULL DEFAULT 'item',
+        total_refund TEXT NOT NULL DEFAULT '0',
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'completed',
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL
+      );
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS return_items (
+        id TEXT PRIMARY KEY,
+        return_id TEXT NOT NULL,
+        color_id TEXT NOT NULL,
+        sale_item_id TEXT,
+        quantity INTEGER NOT NULL,
+        rate TEXT NOT NULL,
+        subtotal TEXT NOT NULL,
+        stock_restored INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE,
+        FOREIGN KEY (color_id) REFERENCES colors(id),
+        FOREIGN KEY (sale_item_id) REFERENCES sale_items(id) ON DELETE SET NULL
+      );
+    `);
     
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_payment_history_customer_method ON payment_history(customer_phone, payment_method)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_payment_history_customer_method'); }
+    // Create indexes for returns tables
+    console.log('[Migration] Creating/verifying returns indexes...');
+    
+    const returnsIndexes = [
+      'CREATE INDEX IF NOT EXISTS idx_returns_customer_phone ON returns(customer_phone)',
+      'CREATE INDEX IF NOT EXISTS idx_returns_sale_id ON returns(sale_id)',
+      'CREATE INDEX IF NOT EXISTS idx_returns_created ON returns(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_returns_status ON returns(status)',
+      'CREATE INDEX IF NOT EXISTS idx_return_items_return_id ON return_items(return_id)',
+      'CREATE INDEX IF NOT EXISTS idx_return_items_color_id ON return_items(color_id)',
+      'CREATE INDEX IF NOT EXISTS idx_return_items_sale_item ON return_items(sale_item_id)'
+    ];
+    
+    for (const indexSql of returnsIndexes) {
+      try {
+        db.exec(indexSql);
+      } catch (e) { 
+        console.log('[Migration] Returns index might already exist:', indexSql); 
+      }
+    }
+    // ============ END RETURNS TABLES MIGRATION ============
+    
+    // ============ SALE ITEMS TABLE ENHANCEMENTS ============
+    // Check and add missing columns to sale_items table for editing functionality
+    const saleItemsColumns = db.pragma('table_info(sale_items)') as Array<{ name: string; type: string }>;
+    const saleItemsColumnNames = saleItemsColumns.map((col) => col.name);
+    
+    console.log('[Migration] Current sale_items columns:', saleItemsColumnNames);
+    
+    // Add editable columns if missing (for inline editing in unpaid bills)
+    const saleItemEnhancements = [
+      { name: 'is_edited', sql: 'ALTER TABLE sale_items ADD COLUMN is_edited INTEGER NOT NULL DEFAULT 0' },
+      { name: 'original_quantity', sql: 'ALTER TABLE sale_items ADD COLUMN original_quantity INTEGER' },
+      { name: 'original_rate', sql: 'ALTER TABLE sale_items ADD COLUMN original_rate TEXT' },
+      { name: 'edit_notes', sql: 'ALTER TABLE sale_items ADD COLUMN edit_notes TEXT' }
+    ];
+    
+    for (const col of saleItemEnhancements) {
+      if (!saleItemsColumnNames.includes(col.name)) {
+        console.log(`[Migration] Adding ${col.name} column to sale_items table`);
+        try {
+          db.exec(col.sql);
+        } catch (error) {
+          console.log(`[Migration] Column ${col.name} might already exist:`, error);
+        }
+      }
+    }
+    // ============ END SALE ITEMS TABLE ENHANCEMENTS ============
+    
+    // ============ CLOUD SYNC COMPATIBILITY ENHANCEMENTS ============
+    // Ensure all tables have created_at for proper cloud sync
+    console.log('[Migration] Ensuring cloud sync compatibility...');
+    
+    // Add created_at to variants if missing (for consistent cloud sync)
+    const variantsColumns = db.pragma('table_info(variants)') as Array<{ name: string; type: string }>;
+    const variantsColumnNames = variantsColumns.map((col) => col.name);
+    
+    if (!variantsColumnNames.includes('created_at')) {
+      console.log('[Migration] Adding created_at column to variants table');
+      db.exec('ALTER TABLE variants ADD COLUMN created_at INTEGER');
+      
+      // Set default value for existing records
+      const timestamp = Date.now();
+      db.exec(`UPDATE variants SET created_at = ${timestamp} WHERE created_at IS NULL`);
+    }
+    
+    // Add created_at to sale_items if missing
+    const saleItemsCols = db.pragma('table_info(sale_items)') as Array<{ name: string; type: string }>;
+    const saleItemsColNames = saleItemsCols.map((col) => col.name);
+    
+    if (!saleItemsColNames.includes('created_at')) {
+      console.log('[Migration] Adding created_at column to sale_items table');
+      db.exec('ALTER TABLE sale_items ADD COLUMN created_at INTEGER');
+      
+      // Set default value for existing records
+      const timestamp = Date.now();
+      db.exec(`UPDATE sale_items SET created_at = ${timestamp} WHERE created_at IS NULL`);
+    }
+    // ============ END CLOUD SYNC COMPATIBILITY ENHANCEMENTS ============
     
     // Ensure all indexes exist (CREATE INDEX IF NOT EXISTS is safe)
     console.log('[Migration] Creating/verifying indexes...');
     
-    // Product indexes for fast lookups with duplicates
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_products_company_name ON products(company, product_name)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_products_company_name'); }
+    const allIndexes = [
+      // Product indexes
+      'CREATE INDEX IF NOT EXISTS idx_products_company_name ON products(company, product_name)',
+      'CREATE INDEX IF NOT EXISTS idx_products_company ON products(company)',
+      'CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at)',
+      
+      // Variant indexes
+      'CREATE INDEX IF NOT EXISTS idx_variants_product_created ON variants(product_id, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_variants_product_packing_rate ON variants(product_id, packing_size, rate)',
+      'CREATE INDEX IF NOT EXISTS idx_variants_packing_size ON variants(packing_size)',
+      'CREATE INDEX IF NOT EXISTS idx_variants_created ON variants(created_at)',
+      
+      // Color indexes
+      'CREATE INDEX IF NOT EXISTS idx_colors_variant_created ON colors(variant_id, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_colors_variant_code ON colors(variant_id, color_code)',
+      'CREATE INDEX IF NOT EXISTS idx_colors_code_lookup ON colors(color_code)',
+      'CREATE INDEX IF NOT EXISTS idx_colors_name_lookup ON colors(color_name)',
+      'CREATE INDEX IF NOT EXISTS idx_colors_code_name ON colors(color_code, color_name)',
+      'CREATE INDEX IF NOT EXISTS idx_colors_stock ON colors(stock_quantity)',
+      
+      // Sales indexes
+      'CREATE INDEX IF NOT EXISTS idx_sales_phone_status ON sales(customer_phone, payment_status)',
+      'CREATE INDEX IF NOT EXISTS idx_sales_status_created ON sales(payment_status, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_sales_due_date ON sales(due_date)',
+      'CREATE INDEX IF NOT EXISTS idx_sales_manual_balance ON sales(is_manual_balance)',
+      'CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_sales_customer_name ON sales(customer_name)',
+      
+      // Sale items indexes
+      'CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id)',
+      'CREATE INDEX IF NOT EXISTS idx_sale_items_edited ON sale_items(is_edited)',
+      'CREATE INDEX IF NOT EXISTS idx_sale_items_created ON sale_items(created_at)',
+      
+      // Stock in history indexes
+      'CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date)',
+      'CREATE INDEX IF NOT EXISTS idx_stock_history_quantity ON stock_in_history(quantity)'
+    ];
     
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_products_company ON products(company)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_products_company'); }
+    for (const indexSql of allIndexes) {
+      try {
+        db.exec(indexSql);
+      } catch (e) { 
+        console.log('[Migration] Index might already exist:', indexSql); 
+      }
+    }
+
+    // ============ DATA CONSISTENCY CHECKS ============
+    console.log('[Migration] Running data consistency checks...');
     
-    // Variant indexes for fast lookups with duplicates
+    // Ensure all sales have payment_status
     try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_variants_product_created ON variants(product_id, created_at)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_variants_product_created'); }
+      const invalidSales = db.prepare('SELECT COUNT(*) as count FROM sales WHERE payment_status IS NULL').get() as { count: number };
+      if (invalidSales.count > 0) {
+        console.log(`[Migration] Fixing ${invalidSales.count} sales with missing payment_status`);
+        db.exec("UPDATE sales SET payment_status = 'unpaid' WHERE payment_status IS NULL");
+      }
+    } catch (error) {
+      console.log('[Migration] Error fixing payment_status:', error);
+    }
     
+    // Ensure all sales have amount_paid
     try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_variants_product_packing_rate ON variants(product_id, packing_size, rate)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_variants_product_packing_rate'); }
+      const invalidPaid = db.prepare('SELECT COUNT(*) as count FROM sales WHERE amount_paid IS NULL').get() as { count: number };
+      if (invalidPaid.count > 0) {
+        console.log(`[Migration] Fixing ${invalidPaid.count} sales with missing amount_paid`);
+        db.exec("UPDATE sales SET amount_paid = '0' WHERE amount_paid IS NULL");
+      }
+    } catch (error) {
+      console.log('[Migration] Error fixing amount_paid:', error);
+    }
     
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_variants_packing_size ON variants(packing_size)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_variants_packing_size'); }
+    // ============ CLOUD SYNC READINESS ============
+    console.log('[Migration] Finalizing cloud sync readiness...');
     
-    // Color indexes for fast lookups with duplicates
+    // Update last sync time to indicate migration completion
     try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_variant_created ON colors(variant_id, created_at)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_colors_variant_created'); }
-    
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_variant_code ON colors(variant_id, color_code)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_colors_variant_code'); }
-    
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_code_lookup ON colors(color_code)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_colors_code_lookup'); }
-    
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_name_lookup ON colors(color_name)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_colors_name_lookup'); }
-    
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_colors_code_name ON colors(color_code, color_name)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_colors_code_name'); }
-    
-    // Sales indexes
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_sales_phone_status ON sales(customer_phone, payment_status)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_sales_phone_status'); }
-    
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_sales_status_created ON sales(payment_status, created_at)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_sales_status_created'); }
-    
-    // Sale items indexes
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_sale_items_sale_color ON sale_items(sale_id, color_id)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_sale_items_sale_color'); }
-    
-    // Stock in history indexes
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_color_created ON stock_in_history(color_id, created_at)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_stock_history_color_created'); }
-    
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_created ON stock_in_history(created_at)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_stock_history_created'); }
-    
-    try {
-      db.exec('CREATE INDEX IF NOT EXISTS idx_stock_history_stock_in_date ON stock_in_history(stock_in_date)');
-    } catch (e) { console.log('[Migration] Index already exists: idx_stock_history_stock_in_date'); }
+      db.prepare('UPDATE settings SET last_sync_time = ?, updated_at = ? WHERE id = ?')
+        .run(Date.now(), Date.now(), 'default');
+    } catch (error) {
+      console.log('[Migration] Error updating last_sync_time:', error);
+    }
     
     console.log('[Migration] ✅ Database migration completed successfully');
+    
+    // Log migration summary
+    try {
+      const tableCounts = {
+        products: db.prepare('SELECT COUNT(*) as count FROM products').get() as { count: number },
+        variants: db.prepare('SELECT COUNT(*) as count FROM variants').get() as { count: number },
+        colors: db.prepare('SELECT COUNT(*) as count FROM colors').get() as { count: number },
+        sales: db.prepare('SELECT COUNT(*) as count FROM sales').get() as { count: number },
+        returns: db.prepare('SELECT COUNT(*) as count FROM returns').get() as { count: number }
+      };
+      
+      console.log('[Migration] Database summary:', {
+        products: tableCounts.products.count,
+        variants: tableCounts.variants.count,
+        colors: tableCounts.colors.count,
+        sales: tableCounts.sales.count,
+        returns: tableCounts.returns.count
+      });
+    } catch (error) {
+      console.log('[Migration] Error getting table counts:', error);
+    }
+    
   } catch (error) {
     console.error('[Migration] ❌ ERROR during migration:', error);
     // Don't throw error - continue with application startup
     // This ensures the app still works even if migration fails
+  }
+}
+
+/**
+ * Validates database integrity and fixes common issues
+ */
+export function validateDatabase(db: Database.Database): void {
+  console.log('[Validation] Starting database validation...');
+  
+  try {
+    // Check for foreign key violations
+    const fkCheck = db.prepare('PRAGMA foreign_key_check').all() as Array<any>;
+    if (fkCheck.length > 0) {
+      console.warn('[Validation] Foreign key violations found:', fkCheck);
+      // Attempt to fix common foreign key issues
+      fixForeignKeyIssues(db);
+    }
+    
+    // Check for NULL in required fields
+    const nullChecks = [
+      { table: 'products', column: 'company', fix: "UPDATE products SET company = 'Unknown' WHERE company IS NULL" },
+      { table: 'products', column: 'product_name', fix: "UPDATE products SET product_name = 'Unnamed Product' WHERE product_name IS NULL" },
+      { table: 'sales', column: 'customer_name', fix: "UPDATE sales SET customer_name = 'Unknown Customer' WHERE customer_name IS NULL" },
+      { table: 'sales', column: 'customer_phone', fix: "UPDATE sales SET customer_phone = '0000000000' WHERE customer_phone IS NULL" }
+    ];
+    
+    for (const check of nullChecks) {
+      try {
+        const result = db.prepare(`SELECT COUNT(*) as count FROM ${check.table} WHERE ${check.column} IS NULL`).get() as { count: number };
+        if (result.count > 0) {
+          console.log(`[Validation] Fixing ${result.count} NULL values in ${check.table}.${check.column}`);
+          db.exec(check.fix);
+        }
+      } catch (error) {
+        console.log(`[Validation] Error checking ${check.table}.${check.column}:`, error);
+      }
+    }
+    
+    console.log('[Validation] ✅ Database validation completed');
+  } catch (error) {
+    console.error('[Validation] ❌ ERROR during validation:', error);
+  }
+}
+
+/**
+ * Fixes common foreign key issues
+ */
+function fixForeignKeyIssues(db: Database.Database): void {
+  console.log('[Validation] Attempting to fix foreign key issues...');
+  
+  try {
+    // Fix orphaned sale_items (where sale doesn't exist)
+    const orphanedSaleItems = db.prepare(`
+      SELECT si.id 
+      FROM sale_items si 
+      LEFT JOIN sales s ON si.sale_id = s.id 
+      WHERE s.id IS NULL
+    `).all() as Array<{ id: string }>;
+    
+    if (orphanedSaleItems.length > 0) {
+      console.log(`[Validation] Removing ${orphanedSaleItems.length} orphaned sale_items`);
+      const deleteStmt = db.prepare('DELETE FROM sale_items WHERE id = ?');
+      for (const item of orphanedSaleItems) {
+        deleteStmt.run(item.id);
+      }
+    }
+    
+    // Fix orphaned colors (where variant doesn't exist)
+    const orphanedColors = db.prepare(`
+      SELECT c.id 
+      FROM colors c 
+      LEFT JOIN variants v ON c.variant_id = v.id 
+      WHERE v.id IS NULL
+    `).all() as Array<{ id: string }>;
+    
+    if (orphanedColors.length > 0) {
+      console.log(`[Validation] Found ${orphanedColors.length} orphaned colors - these need manual review`);
+      // Don't auto-delete colors as they might be important
+    }
+    
+  } catch (error) {
+    console.error('[Validation] Error fixing foreign key issues:', error);
+  }
+}
+
+/**
+ * Backup current database before migration (safety measure)
+ */
+export function backupDatabase(db: Database.Database, backupPath: string): boolean {
+  try {
+    console.log(`[Backup] Creating backup at: ${backupPath}`);
+    
+    // Use better-sqlite3 backup API
+    const backupDb = new Database(backupPath);
+    db.backup(backupDb)
+      .then(() => {
+        console.log('[Backup] ✅ Database backup completed successfully');
+        backupDb.close();
+      })
+      .catch((error) => {
+        console.error('[Backup] ❌ Database backup failed:', error);
+        backupDb.close();
+      });
+    
+    return true;
+  } catch (error) {
+    console.error('[Backup] ❌ Backup initialization failed:', error);
+    return false;
   }
 }

@@ -22,6 +22,16 @@ import crypto from "crypto";
 // Audit token storage (in-memory for session management)
 const auditTokens = new Map<string, { createdAt: number }>();
 
+// Auto-sync state
+let autoSyncEnabled = false;
+let syncInterval: NodeJS.Timeout | null = null;
+const pendingChanges = {
+  products: false,
+  sales: false, 
+  colors: false,
+  payments: false
+};
+
 // Helper function to hash PIN
 function hashPin(pin: string, salt: string): string {
   return crypto
@@ -64,20 +74,240 @@ setInterval(() => {
 
 // Real-time query invalidation helper
 function invalidateCustomerQueries(customerPhone: string) {
-  // This would be connected to your WebSocket or SSE implementation
-  // For now, we'll log the invalidation
   console.log(`[Real-time] Invalidating queries for customer: ${customerPhone}`);
-  
-  // In a real implementation, you would broadcast to connected clients
-  // via WebSocket or Server-Sent Events to refetch their queries
 }
 
 // Global query invalidation helper
 function invalidateGlobalQueries() {
   console.log("[Real-time] Invalidating global queries");
+}
+
+// Auto-sync functions
+async function triggerAutoSync() {
+  if (!autoSyncEnabled) return;
   
-  // Invalidate dashboard and summary queries
-  // This would trigger refetch in all connected clients
+  try {
+    console.log("[Auto-Sync] Starting automatic sync...");
+    
+    const settings = await storage.getSettings();
+    if (!settings.cloudDatabaseUrl || !settings.cloudSyncEnabled) {
+      console.log("[Auto-Sync] Cloud sync not configured");
+      return;
+    }
+
+    // Import first, then export
+    await importFromCloud();
+    await exportToCloud();
+    
+    // Reset pending changes
+    Object.keys(pendingChanges).forEach(key => {
+      pendingChanges[key as keyof typeof pendingChanges] = false;
+    });
+    
+    // Update sync timestamp
+    await storage.updateSettings({ lastSyncTime: new Date() });
+    
+    console.log("[Auto-Sync] Automatic sync completed");
+  } catch (error) {
+    console.error("[Auto-Sync] Failed:", error);
+  }
+}
+
+// Detect changes for auto-sync
+function detectChanges(entity: keyof typeof pendingChanges) {
+  pendingChanges[entity] = true;
+  
+  // Auto-sync after 30 seconds if changes detected
+  if (Object.values(pendingChanges).some(changed => changed)) {
+    setTimeout(async () => {
+      if (pendingChanges[entity]) {
+        await triggerAutoSync();
+      }
+    }, 30000);
+  }
+}
+
+// Enhanced cloud export function
+async function exportToCloud() {
+  try {
+    const settings = await storage.getSettings();
+    if (!settings.cloudDatabaseUrl) return;
+
+    const { neon } = await import("@neondatabase/serverless");
+    const sql = neon(settings.cloudDatabaseUrl);
+
+    // Get all data from local storage
+    const products = await storage.getProducts();
+    const variants = await storage.getVariants();
+    const colorsData = await storage.getColors();
+    const sales = await storage.getSales();
+    const saleItems = await storage.getSaleItems();
+    const stockInHistory = await storage.getStockInHistory();
+    const paymentHistory = await storage.getAllPaymentHistory();
+    const returns = await storage.getReturns();
+    const returnItems = await storage.getReturnItems();
+
+    // Export all data
+    for (const p of products) {
+      await sql`
+        INSERT INTO products (id, company, product_name, created_at)
+        VALUES (${p.id}, ${p.company}, ${p.productName}, ${p.createdAt})
+        ON CONFLICT (id) DO UPDATE SET
+          company = EXCLUDED.company,
+          product_name = EXCLUDED.product_name
+      `;
+    }
+
+    for (const v of variants) {
+      await sql`
+        INSERT INTO variants (id, product_id, packing_size, rate, created_at)
+        VALUES (${v.id}, ${v.productId}, ${v.packingSize}, ${v.rate}, ${v.createdAt})
+        ON CONFLICT (id) DO UPDATE SET
+          product_id = EXCLUDED.product_id,
+          packing_size = EXCLUDED.packing_size,
+          rate = EXCLUDED.rate
+      `;
+    }
+
+    for (const c of colorsData) {
+      await sql`
+        INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
+        VALUES (${c.id}, ${c.variantId}, ${c.colorName}, ${c.colorCode}, ${c.stockQuantity}, ${c.rateOverride}, ${c.createdAt})
+        ON CONFLICT (id) DO UPDATE SET
+          variant_id = EXCLUDED.variant_id,
+          color_name = EXCLUDED.color_name,
+          color_code = EXCLUDED.color_code,
+          stock_quantity = EXCLUDED.stock_quantity,
+          rate_override = EXCLUDED.rate_override
+      `;
+    }
+
+    for (const s of sales) {
+      await sql`
+        INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
+        VALUES (${s.id}, ${s.customerName}, ${s.customerPhone}, ${s.totalAmount}, ${s.amountPaid}, ${s.paymentStatus}, ${s.dueDate}, ${s.isManualBalance}, ${s.notes}, ${s.createdAt})
+        ON CONFLICT (id) DO UPDATE SET
+          customer_name = EXCLUDED.customer_name,
+          customer_phone = EXCLUDED.customer_phone,
+          total_amount = EXCLUDED.total_amount,
+          amount_paid = EXCLUDED.amount_paid,
+          payment_status = EXCLUDED.payment_status,
+          due_date = EXCLUDED.due_date,
+          is_manual_balance = EXCLUDED.is_manual_balance,
+          notes = EXCLUDED.notes
+      `;
+    }
+
+    for (const si of saleItems) {
+      await sql`
+        INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
+        VALUES (${si.id}, ${si.saleId}, ${si.colorId}, ${si.quantity}, ${si.rate}, ${si.subtotal})
+        ON CONFLICT (id) DO UPDATE SET
+          sale_id = EXCLUDED.sale_id,
+          color_id = EXCLUDED.color_id,
+          quantity = EXCLUDED.quantity,
+          rate = EXCLUDED.rate,
+          subtotal = EXCLUDED.subtotal
+      `;
+    }
+
+    console.log("[Auto-Sync] Export completed");
+  } catch (error) {
+    console.error("[Auto-Sync] Export failed:", error);
+    throw error;
+  }
+}
+
+// Enhanced cloud import function
+async function importFromCloud() {
+  try {
+    const settings = await storage.getSettings();
+    if (!settings.cloudDatabaseUrl) return;
+
+    const { neon } = await import("@neondatabase/serverless");
+    const sql = neon(settings.cloudDatabaseUrl);
+
+    // Check if cloud tables exist
+    const tablesCheck = await sql`
+      SELECT table_name FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'products'
+    `;
+    
+    if (tablesCheck.length === 0) {
+      console.log("[Auto-Sync] No cloud data found");
+      return;
+    }
+
+    // Fetch all data from cloud
+    const cloudProducts = await sql`SELECT * FROM products`;
+    const cloudVariants = await sql`SELECT * FROM variants`;
+    const cloudColors = await sql`SELECT * FROM colors`;
+    const cloudSales = await sql`SELECT * FROM sales`;
+    const cloudSaleItems = await sql`SELECT * FROM sale_items`;
+
+    // Import all data
+    for (const p of cloudProducts) {
+      await storage.upsertProduct({
+        id: p.id,
+        company: p.company,
+        productName: p.product_name,
+        createdAt: new Date(p.created_at),
+      });
+    }
+
+    for (const v of cloudVariants) {
+      await storage.upsertVariant({
+        id: v.id,
+        productId: v.product_id,
+        packingSize: v.packing_size,
+        rate: v.rate,
+        createdAt: new Date(v.created_at),
+      });
+    }
+
+    for (const c of cloudColors) {
+      await storage.upsertColor({
+        id: c.id,
+        variantId: c.variant_id,
+        colorName: c.color_name,
+        colorCode: c.color_code,
+        stockQuantity: c.stock_quantity,
+        rateOverride: c.rate_override,
+        createdAt: new Date(c.created_at),
+      });
+    }
+
+    for (const s of cloudSales) {
+      await storage.upsertSale({
+        id: s.id,
+        customerName: s.customer_name,
+        customerPhone: s.customer_phone,
+        totalAmount: s.total_amount,
+        amountPaid: s.amount_paid,
+        paymentStatus: s.payment_status,
+        dueDate: s.due_date ? new Date(s.due_date) : null,
+        isManualBalance: s.is_manual_balance,
+        notes: s.notes,
+        createdAt: new Date(s.created_at),
+      });
+    }
+
+    for (const si of cloudSaleItems) {
+      await storage.upsertSaleItem({
+        id: si.id,
+        saleId: si.sale_id,
+        colorId: si.color_id,
+        quantity: si.quantity,
+        rate: si.rate,
+        subtotal: si.subtotal,
+      });
+    }
+
+    console.log("[Auto-Sync] Import completed");
+  } catch (error) {
+    console.error("[Auto-Sync] Import failed:", error);
+    throw error;
+  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -96,6 +326,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validated = insertProductSchema.parse(req.body);
       const product = await storage.createProduct(validated);
+      
+      // Auto-sync trigger
+      detectChanges('products');
+      
       res.json(product);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -115,6 +349,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       const product = await storage.updateProduct(req.params.id, { company, productName });
+      
+      // Auto-sync trigger
+      detectChanges('products');
+      
       res.json(product);
     } catch (error) {
       console.error("Error updating product:", error);
@@ -125,6 +363,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/products/:id", requirePerm('stock:delete'), async (req, res) => {
     try {
       await storage.deleteProduct(req.params.id);
+      
+      // Auto-sync trigger
+      detectChanges('products');
+      
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting product:", error);
@@ -147,6 +389,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validated = insertVariantSchema.parse(req.body);
       const variant = await storage.createVariant(validated);
+      
+      // Auto-sync trigger
+      detectChanges('products');
+      
       res.json(variant);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -170,6 +416,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         packingSize, 
         rate: parseFloat(rate) 
       });
+      
+      // Auto-sync trigger
+      detectChanges('products');
+      
       res.json(variant);
     } catch (error) {
       console.error("Error updating variant:", error);
@@ -185,6 +435,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       const variant = await storage.updateVariantRate(req.params.id, rate);
+      
+      // Auto-sync trigger
+      detectChanges('products');
+      
       res.json(variant);
     } catch (error) {
       console.error("Error updating variant rate:", error);
@@ -195,6 +449,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/variants/:id", requirePerm('stock:delete'), async (req, res) => {
     try {
       await storage.deleteVariant(req.params.id);
+      
+      // Auto-sync trigger
+      detectChanges('products');
+      
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting variant:", error);
@@ -218,6 +476,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertColorSchema.parse(req.body);
       validated.colorCode = validated.colorCode.trim().toUpperCase();
       const color = await storage.createColor(validated);
+      
+      // Auto-sync trigger
+      detectChanges('colors');
+      
       res.json(color);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -242,6 +504,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         colorCode: normalizedCode,
         stockQuantity: parseInt(stockQuantity)
       });
+      
+      // Auto-sync trigger
+      detectChanges('colors');
+      
       res.json(color);
     } catch (error) {
       console.error("Error updating color:", error);
@@ -257,6 +523,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       const color = await storage.updateColorStock(req.params.id, stockQuantity);
+      
+      // Auto-sync trigger
+      detectChanges('colors');
+      
       res.json(color);
     } catch (error) {
       console.error("Error updating color stock:", error);
@@ -272,6 +542,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       const color = await storage.updateColorRateOverride(req.params.id, rateOverride);
+      
+      // Auto-sync trigger
+      detectChanges('colors');
+      
       res.json(color);
     } catch (error) {
       console.error("Error updating color rate override:", error);
@@ -325,6 +599,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log(`[API] Stock in successful: ${color.colorName} - New stock: ${color.stockQuantity}`);
+      
+      // Auto-sync trigger
+      detectChanges('colors');
+      
       res.json({
         ...color,
         message: `Successfully added ${quantity} units to ${color.colorName}`
@@ -353,6 +631,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/colors/:id", requirePerm('stock:delete'), async (req, res) => {
     try {
       await storage.deleteColor(req.params.id);
+      
+      // Auto-sync trigger
+      detectChanges('colors');
+      
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting color:", error);
@@ -458,6 +740,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Use the fixed updateStockInHistory function that recalculates newStock
       const updatedRecord = await storage.updateStockInHistory(id, { quantity, notes, stockInDate });
+      
+      // Auto-sync trigger
+      detectChanges('colors');
+      
       res.json(updatedRecord);
     } catch (error) {
       console.error("[API] Error updating stock history:", error);
@@ -522,6 +808,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paymentMethod: validated.paymentMethod,
         notes: validated.notes ?? undefined
       });
+      
+      // Auto-sync trigger
+      detectChanges('payments');
+      
       res.json(paymentHistory);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -550,6 +840,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
+      // Auto-sync trigger
+      detectChanges('payments');
+      
       res.json(updated);
     } catch (error) {
       console.error("Error updating payment history:", error);
@@ -568,149 +861,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       
+      // Auto-sync trigger
+      detectChanges('payments');
+      
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting payment history:", error);
       res.status(500).json({ error: "Failed to delete payment history" });
-    }
-  });
-
-  // ============ FIXED RETURNS ENDPOINTS ============
-  
-  // Get all returns
-  app.get("/api/returns", async (_req, res) => {
-    try {
-      const returns = await storage.getReturns();
-      res.json(returns);
-    } catch (error) {
-      console.error("Error fetching returns:", error);
-      res.status(500).json({ error: "Failed to fetch returns" });
-    }
-  });
-
-  // Get return by ID
-  app.get("/api/returns/:id", async (req, res) => {
-    try {
-      const returnRecord = await storage.getReturn(req.params.id);
-      if (!returnRecord) {
-        return res.status(404).json({ error: "Return not found" });
-      }
-      res.json(returnRecord);
-    } catch (error) {
-      console.error("Error fetching return:", error);
-      res.status(500).json({ error: "Failed to fetch return" });
-    }
-  });
-
-  // Create return - FIXED WITH PROPER STOCK HANDLING
-  app.post("/api/returns", async (req, res) => {
-    try {
-      const { returnData, items } = req.body;
-      
-      console.log('[API] Creating return:', { returnData, items });
-
-      if (!returnData || !items || !Array.isArray(items)) {
-        return res.status(400).json({ 
-          error: "Invalid request data",
-          details: "returnData and items array are required" 
-        });
-      }
-
-      if (items.length === 0) {
-        return res.status(400).json({ 
-          error: "No items to return",
-          details: "At least one item is required for return" 
-        });
-      }
-
-      // Validate items
-      for (const item of items) {
-        if (!item.colorId || typeof item.quantity !== 'number' || item.quantity <= 0) {
-          return res.status(400).json({ 
-            error: "Invalid item data",
-            details: "Each item must have colorId and positive quantity" 
-          });
-        }
-      }
-
-      const returnRecord = await storage.createReturn(returnData, items);
-      
-      // Invalidate real-time queries
-      invalidateCustomerQueries(returnData.customerPhone);
-      invalidateGlobalQueries();
-      
-      res.json(returnRecord);
-    } catch (error) {
-      console.error("[API] Error creating return:", error);
-      res.status(500).json({ 
-        error: "Failed to create return",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Quick return endpoint for single items
-  app.post("/api/returns/quick", async (req, res) => {
-    try {
-      const { customerName, customerPhone, colorId, quantity, rate, reason, restoreStock } = req.body;
-      
-      if (!customerName || !customerPhone || !colorId || !quantity || !rate) {
-        return res.status(400).json({ 
-          error: "Missing required fields",
-          details: "customerName, customerPhone, colorId, quantity, and rate are required" 
-        });
-      }
-
-      if (quantity <= 0) {
-        return res.status(400).json({ 
-          error: "Invalid quantity",
-          details: "Quantity must be positive" 
-        });
-      }
-
-      const returnRecord = await storage.createQuickReturn({
-        customerName,
-        customerPhone,
-        colorId,
-        quantity,
-        rate,
-        reason,
-        restoreStock: restoreStock !== false,
-      });
-
-      // Invalidate real-time queries
-      invalidateCustomerQueries(customerPhone);
-      invalidateGlobalQueries();
-
-      res.json(returnRecord);
-    } catch (error) {
-      console.error("[API] Error creating quick return:", error);
-      res.status(500).json({ 
-        error: "Failed to create quick return",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Get return items
-  app.get("/api/return-items", async (_req, res) => {
-    try {
-      const returnItems = await storage.getReturnItems();
-      res.json(returnItems);
-    } catch (error) {
-      console.error("Error fetching return items:", error);
-      res.status(500).json({ error: "Failed to fetch return items" });
-    }
-  });
-
-  // Get returns by customer phone
-  app.get("/api/returns/customer/:phone", async (req, res) => {
-    try {
-      const returns = await storage.getReturnsByCustomerPhone(req.params.phone);
-      res.json(returns);
-    } catch (error) {
-      console.error("Error fetching customer returns:", error);
-      res.status(500).json({ error: "Failed to fetch customer returns" });
     }
   });
 
@@ -766,6 +923,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Invalidate real-time queries
       invalidateCustomerQueries(phone);
       invalidateGlobalQueries();
+      
+      // Auto-sync trigger
+      detectChanges('sales');
       
       res.json({ 
         success: true, 
@@ -894,6 +1054,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateCustomerQueries(sale.customerPhone);
       invalidateGlobalQueries();
       
+      // Auto-sync trigger
+      detectChanges('sales');
+      
       res.json(sale);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -928,6 +1091,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateCustomerQueries(sale.customerPhone);
       invalidateGlobalQueries();
       
+      // Auto-sync trigger
+      detectChanges('payments');
+      
       res.json(updatedSale);
     } catch (error) {
       console.error("Error recording payment:", error);
@@ -939,6 +1105,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validated = insertSaleItemSchema.parse(req.body);
       const saleItem = await storage.addSaleItem(req.params.id, validated);
+      
+      // Auto-sync trigger
+      detectChanges('sales');
+      
       res.json(saleItem);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -989,6 +1159,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateCustomerQueries(sale.customerPhone);
       invalidateGlobalQueries();
       
+      // Auto-sync trigger
+      detectChanges('sales');
+      
       res.json(saleItem);
     } catch (error) {
       console.error("Error updating sale item:", error);
@@ -1018,6 +1191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Invalidate real-time queries
       invalidateCustomerQueries(sale.customerPhone);
       invalidateGlobalQueries();
+      
+      // Auto-sync trigger
+      detectChanges('sales');
       
       res.json({ success: true });
     } catch (error) {
@@ -1053,6 +1229,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateCustomerQueries(customerPhone);
       invalidateGlobalQueries();
       
+      // Auto-sync trigger
+      detectChanges('sales');
+      
       res.json(sale);
     } catch (error) {
       console.error("Error creating manual balance:", error);
@@ -1081,6 +1260,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateCustomerQueries(sale.customerPhone);
       invalidateGlobalQueries();
       
+      // Auto-sync trigger
+      detectChanges('sales');
+      
       res.json(updatedSale);
     } catch (error) {
       console.error("Error updating due date:", error);
@@ -1105,6 +1287,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Invalidate real-time queries
       invalidateCustomerQueries(customerPhone);
       invalidateGlobalQueries();
+      
+      // Auto-sync trigger
+      detectChanges('sales');
       
       res.json({ success: true, message: "Sale deleted successfully" });
     } catch (error) {
@@ -1423,19 +1608,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
 
-      // Try to connect using @neondatabase/serverless
+      // Clean the URL - remove problematic parameters
+      let cleanUrl = connectionUrl;
+      if (cleanUrl.includes('channel_binding=require')) {
+        cleanUrl = cleanUrl.replace('&channel_binding=require', '');
+      }
+
       const { neon } = await import("@neondatabase/serverless");
-      const sql = neon(connectionUrl);
+      const sql = neon(cleanUrl);
       
       // Test with a simple query
-      await sql`SELECT 1 as test`;
+      const result = await sql`SELECT version() as db_version, now() as server_time`;
       
-      res.json({ ok: true, message: "Connection successful" });
+      console.log("[Cloud] Connection test successful:", result);
+      
+      res.json({ 
+        ok: true, 
+        message: "Connection successful",
+        details: {
+          version: result[0]?.db_version,
+          serverTime: result[0]?.server_time
+        }
+      });
     } catch (error: any) {
       console.error("Cloud connection test failed:", error);
+      
+      let errorMessage = "Connection failed";
+      if (error.message.includes("SSL")) {
+        errorMessage = "SSL connection failed. Try removing channel_binding parameter.";
+      } else if (error.message.includes("authentication")) {
+        errorMessage = "Authentication failed. Check username/password.";
+      } else if (error.message.includes("getaddrinfo")) {
+        errorMessage = "Cannot reach database server. Check hostname.";
+      }
+      
       res.status(400).json({ 
         ok: false, 
-        error: error.message || "Connection failed. Please check your connection URL." 
+        error: errorMessage,
+        details: error.message 
       });
     }
   });
@@ -1461,14 +1671,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/cloud/status", verifyAuditToken, async (_req, res) => {
     try {
       const settings = await storage.getSettings();
+      
+      // Test connection if configured
+      let connectionStatus = "not_configured";
+      let lastSync = settings.lastSyncTime;
+      
+      if (settings.cloudDatabaseUrl) {
+        try {
+          const { neon } = await import("@neondatabase/serverless");
+          const sql = neon(settings.cloudDatabaseUrl);
+          await sql`SELECT 1 as test`;
+          connectionStatus = "connected";
+        } catch (error) {
+          connectionStatus = "connection_failed";
+        }
+      }
+      
       res.json({
         hasConnection: !!settings.cloudDatabaseUrl,
+        connectionStatus,
         syncEnabled: settings.cloudSyncEnabled,
-        lastSyncTime: settings.lastSyncTime,
+        lastSyncTime: lastSync,
+        lastSyncFormatted: lastSync ? new Date(lastSync).toLocaleString() : null,
+        autoSyncEnabled: autoSyncEnabled
       });
     } catch (error) {
       console.error("Error getting cloud status:", error);
       res.status(500).json({ error: "Failed to get cloud status" });
+    }
+  });
+
+  // Auto-sync control
+  app.post("/api/cloud/auto-sync", verifyAuditToken, async (req, res) => {
+    try {
+      const { enabled, intervalMinutes } = req.body;
+      
+      autoSyncEnabled = enabled ?? autoSyncEnabled;
+      
+      // Clear existing interval
+      if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+      }
+      
+      // Start new interval if enabled
+      if (autoSyncEnabled && intervalMinutes) {
+        syncInterval = setInterval(triggerAutoSync, intervalMinutes * 60 * 1000);
+        console.log(`[Auto-Sync] Enabled with ${intervalMinutes} minute interval`);
+      }
+      
+      res.json({ 
+        ok: true, 
+        autoSyncEnabled,
+        message: autoSyncEnabled ? "Auto-sync enabled" : "Auto-sync disabled"
+      });
+    } catch (error: any) {
+      console.error("Error configuring auto-sync:", error);
+      res.status(500).json({ error: "Failed to configure auto-sync" });
+    }
+  });
+
+  // Manual auto-sync trigger
+  app.post("/api/cloud/trigger-sync", verifyAuditToken, async (_req, res) => {
+    try {
+      await triggerAutoSync();
+      res.json({ ok: true, message: "Manual sync triggered" });
+    } catch (error: any) {
+      console.error("Error triggering sync:", error);
+      res.status(500).json({ error: "Failed to trigger sync" });
     }
   });
 
