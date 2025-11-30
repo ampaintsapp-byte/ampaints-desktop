@@ -1,37 +1,21 @@
+"use client"
+
+import type React from "react"
+
 // audit.tsx - COMPLETE VERSION WITH ALL TABS IMPLEMENTED
-import { useState, useMemo, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { useState, useMemo, useEffect } from "react"
+import { useQuery, useMutation } from "@tanstack/react-query"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
   Search,
   Calendar,
@@ -39,13 +23,11 @@ import {
   TrendingUp,
   TrendingDown,
   Download,
-  Filter,
   X,
   Lock,
   Settings,
   Eye,
   EyeOff,
-  FileText,
   ShieldCheck,
   BarChart3,
   AlertTriangle,
@@ -53,7 +35,6 @@ import {
   CreditCard,
   Wallet,
   RotateCcw,
-  DollarSign,
   Receipt,
   Database,
   Trash2,
@@ -71,266 +52,274 @@ import {
   ArrowUp,
   ArrowDown,
   IndianRupee,
-} from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useDateFormat } from "@/hooks/use-date-format";
-import { useReceiptSettings } from "@/hooks/use-receipt-settings";
-import jsPDF from "jspdf";
-import type { ColorWithVariantAndProduct, Sale, StockInHistory, Product, PaymentHistory, Return, Settings as AppSettings } from "@shared/schema";
-import { format, startOfDay, endOfDay, isBefore, isAfter, parseISO } from "date-fns";
+} from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { apiRequest, queryClient } from "@/lib/queryClient"
+import { useDateFormat } from "@/hooks/use-date-format"
+import { useReceiptSettings } from "@/hooks/use-receipt-settings"
+import jsPDF from "jspdf"
+import type {
+  ColorWithVariantAndProduct,
+  Sale,
+  StockInHistory,
+  Product,
+  PaymentHistory,
+  Return,
+  Settings as AppSettings,
+} from "@shared/schema"
+import { format, startOfDay, endOfDay, isBefore, isAfter } from "date-fns"
 
 interface StockInHistoryWithColor extends StockInHistory {
-  color: ColorWithVariantAndProduct;
+  color: ColorWithVariantAndProduct
 }
 
 interface StockOutItem {
-  id: string;
-  saleId: string;
-  colorId: string;
-  quantity: number;
-  rate: string;
-  subtotal: string;
-  color: ColorWithVariantAndProduct;
-  sale: Sale;
-  soldAt: Date;
-  customerName: string;
-  customerPhone: string;
+  id: string
+  saleId: string
+  colorId: string
+  quantity: number
+  rate: string
+  subtotal: string
+  color: ColorWithVariantAndProduct
+  sale: Sale
+  soldAt: Date
+  customerName: string
+  customerPhone: string
 }
 
 interface PaymentHistoryWithSale extends PaymentHistory {
-  sale: Sale | null;
+  sale: Sale | null
 }
 
 interface ConsolidatedCustomer {
-  customerName: string;
-  customerPhone: string;
-  totalAmount: number;
-  totalPaid: number;
-  totalOutstanding: number;
-  sales: Sale[];
+  customerName: string
+  customerPhone: string
+  totalAmount: number
+  totalPaid: number
+  totalOutstanding: number
+  sales: Sale[]
 }
 
 // Helper function to format phone number for WhatsApp
 function formatPhoneForWhatsApp(phone: string): string | null {
-  if (!phone) return null;
-  
+  if (!phone) return null
+
   // Remove all non-digit characters
-  const cleaned = phone.replace(/\D/g, '');
-  
+  const cleaned = phone.replace(/\D/g, "")
+
   // Check if it's a valid Indian phone number (10 digits)
   if (cleaned.length === 10) {
-    return `91${cleaned}`;
+    return `91${cleaned}`
   }
-  
+
   // Check if it's already in international format
-  if (cleaned.length === 12 && cleaned.startsWith('91')) {
-    return cleaned;
+  if (cleaned.length === 12 && cleaned.startsWith("91")) {
+    return cleaned
   }
-  
-  return null;
+
+  return null
 }
 
 // Helper function to generate statement PDF blob
 function generateStatementPDFBlob(customer: ConsolidatedCustomer): Blob {
-  const pdf = new jsPDF();
-  
+  const pdf = new jsPDF()
+
   // Add basic statement content
-  pdf.text(`Statement for ${customer.customerName}`, 20, 20);
-  pdf.text(`Phone: ${customer.customerPhone}`, 20, 30);
-  pdf.text(`Total Amount: Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, 20, 40);
-  pdf.text(`Total Paid: Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, 20, 50);
-  pdf.text(`Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, 20, 60);
-  
+  pdf.text(`Statement for ${customer.customerName}`, 20, 20)
+  pdf.text(`Phone: ${customer.customerPhone}`, 20, 30)
+  pdf.text(`Total Amount: Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, 20, 40)
+  pdf.text(`Total Paid: Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, 20, 50)
+  pdf.text(`Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, 20, 60)
+
   // Convert to blob
-  const pdfBlob = pdf.output('blob');
-  return pdfBlob;
+  const pdfBlob = pdf.output("blob")
+  return pdfBlob
 }
 
 // Utility function to safely parse numbers
 const safeParseFloat = (value: string | number | null | undefined): number => {
-  if (value === null || value === undefined) return 0;
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  return isNaN(num) ? 0 : num;
-};
+  if (value === null || value === undefined) return 0
+  const num = typeof value === "string" ? Number.parseFloat(value) : value
+  return isNaN(num) ? 0 : num
+}
 
 // Utility function to round numbers for display
 const roundNumber = (num: number): number => {
-  return Math.round(num * 100) / 100;
-};
+  return Math.round(num * 100) / 100
+}
 
 // Custom hook for authenticated API calls
 function useAuditApiRequest() {
-  const [auditToken, setAuditToken] = useState<string | null>(null);
+  const [auditToken, setAuditToken] = useState<string | null>(null)
 
   useEffect(() => {
-    const storedToken = sessionStorage.getItem("auditToken");
+    const storedToken = sessionStorage.getItem("auditToken")
     if (storedToken) {
-      setAuditToken(storedToken);
+      setAuditToken(storedToken)
     }
-  }, []);
+  }, [])
 
   const authenticatedRequest = async (url: string, options: RequestInit = {}) => {
-    const token = auditToken || sessionStorage.getItem("auditToken");
+    const token = auditToken || sessionStorage.getItem("auditToken")
     if (!token) {
-      throw new Error("No audit token available");
+      throw new Error("No audit token available")
     }
 
     const headers = {
       "Content-Type": "application/json",
       "X-Audit-Token": token,
       ...options.headers,
-    };
+    }
 
     const response = await fetch(url, {
       ...options,
       headers,
-    });
+    })
 
     if (response.status === 401) {
       // Clear invalid token
-      sessionStorage.removeItem("auditToken");
-      sessionStorage.removeItem("auditVerified");
-      setAuditToken(null);
-      throw new Error("Authentication failed. Please re-enter your PIN.");
+      sessionStorage.removeItem("auditToken")
+      sessionStorage.removeItem("auditVerified")
+      setAuditToken(null)
+      throw new Error("Authentication failed. Please re-enter your PIN.")
     }
 
     if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
+      throw new Error(`Request failed with status ${response.status}`)
     }
 
-    return response.json();
-  };
+    return response.json()
+  }
 
-  return { authenticatedRequest, auditToken, setAuditToken };
+  return { authenticatedRequest, auditToken, setAuditToken }
 }
 
 export default function Audit() {
-  const { formatDateShort } = useDateFormat();
-  const { receiptSettings } = useReceiptSettings();
-  const { toast } = useToast();
-  const { authenticatedRequest, auditToken, setAuditToken } = useAuditApiRequest();
+  const { formatDateShort } = useDateFormat()
+  const { receiptSettings } = useReceiptSettings()
+  const { toast } = useToast()
+  const { authenticatedRequest, auditToken, setAuditToken } = useAuditApiRequest()
 
-  const [isVerified, setIsVerified] = useState(false);
-  const [pinInput, setPinInput] = useState(["", "", "", ""]);
-  const [pinError, setPinError] = useState("");
-  const [isDefaultPin, setIsDefaultPin] = useState(false);
-  const [showPinDialog, setShowPinDialog] = useState(true);
-  
-  const [activeTab, setActiveTab] = useState("stock");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [companyFilter, setCompanyFilter] = useState("all");
-  const [productFilter, setProductFilter] = useState("all");
-  const [movementTypeFilter, setMovementTypeFilter] = useState("all");
+  const [isVerified, setIsVerified] = useState(false)
+  const [pinInput, setPinInput] = useState(["", "", "", ""])
+  const [pinError, setPinError] = useState("")
+  const [isDefaultPin, setIsDefaultPin] = useState(false)
+  const [showPinDialog, setShowPinDialog] = useState(true)
+
+  const [activeTab, setActiveTab] = useState("stock")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+  const [companyFilter, setCompanyFilter] = useState("all")
+  const [productFilter, setProductFilter] = useState("all")
+  const [movementTypeFilter, setMovementTypeFilter] = useState("all")
 
   // Settings Tabs State
-  const [settingsTab, setSettingsTab] = useState("pin");
-  const [currentPin, setCurrentPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [showCurrentPin, setShowCurrentPin] = useState(false);
-  const [showNewPin, setShowNewPin] = useState(false);
-  const [showConfirmPin, setShowConfirmPin] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("pin")
+  const [currentPin, setCurrentPin] = useState("")
+  const [newPin, setNewPin] = useState("")
+  const [confirmPin, setConfirmPin] = useState("")
+  const [showCurrentPin, setShowCurrentPin] = useState(false)
+  const [showNewPin, setShowNewPin] = useState(false)
+  const [showConfirmPin, setShowConfirmPin] = useState(false)
 
   // Cloud Sync State
-  const [cloudUrl, setCloudUrl] = useState("");
-  const [showCloudUrl, setShowCloudUrl] = useState(false);
-  const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle");
-  const [lastExportCounts, setLastExportCounts] = useState<any>(null);
-  const [lastImportCounts, setLastImportCounts] = useState<any>(null);
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [syncInterval, setSyncInterval] = useState(5); // minutes
+  const [cloudUrl, setCloudUrl] = useState("")
+  const [showCloudUrl, setShowCloudUrl] = useState(false)
+  const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle")
+  const [lastExportCounts, setLastExportCounts] = useState<any>(null)
+  const [lastImportCounts, setLastImportCounts] = useState<any>(null)
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false)
+  const [syncInterval, setSyncInterval] = useState(5) // minutes
 
   const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
     queryKey: ["/api/audit/has-pin"],
     enabled: !isVerified,
-  });
+  })
 
   const { data: colors = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
     enabled: isVerified,
-  });
+  })
 
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"],
     enabled: isVerified,
-  });
+  })
 
   const { data: stockInHistory = [], isLoading: stockInLoading } = useQuery<StockInHistoryWithColor[]>({
     queryKey: ["/api/stock-in/history"],
     enabled: isVerified,
-  });
+  })
 
   // Fixed stock out query with proper authentication
   const { data: stockOutHistory = [], isLoading: stockOutLoading } = useQuery<StockOutItem[]>({
     queryKey: ["/api/audit/stock-out", auditToken],
     enabled: isVerified && !!auditToken,
     queryFn: () => authenticatedRequest("/api/audit/stock-out"),
-  });
+  })
 
   const { data: allSales = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
     enabled: isVerified,
-  });
+  })
 
   const { data: paymentHistory = [], isLoading: paymentsLoading } = useQuery<PaymentHistoryWithSale[]>({
     queryKey: ["/api/payment-history"],
     enabled: isVerified,
-  });
+  })
 
   // Fixed unpaid bills query with proper authentication
   const { data: unpaidBills = [], isLoading: unpaidLoading } = useQuery<Sale[]>({
     queryKey: ["/api/audit/unpaid-bills", auditToken],
     enabled: isVerified && !!auditToken,
     queryFn: () => authenticatedRequest("/api/audit/unpaid-bills"),
-  });
+  })
 
   // Fixed payments query with proper authentication
   const { data: auditPayments = [], isLoading: auditPaymentsLoading } = useQuery<PaymentHistoryWithSale[]>({
     queryKey: ["/api/audit/payments", auditToken],
     enabled: isVerified && !!auditToken,
     queryFn: () => authenticatedRequest("/api/audit/payments"),
-  });
+  })
 
   // Fixed returns query with proper authentication
   const { data: auditReturns = [], isLoading: returnsLoading } = useQuery<Return[]>({
     queryKey: ["/api/audit/returns", auditToken],
     enabled: isVerified && !!auditToken,
     queryFn: () => authenticatedRequest("/api/audit/returns"),
-  });
+  })
 
   const { data: appSettings } = useQuery<AppSettings>({
     queryKey: ["/api/settings"],
     enabled: isVerified,
-  });
+  })
 
   const updatePermissionsMutation = useMutation({
     mutationFn: async (permissions: Partial<AppSettings>) => {
-      const response = await apiRequest("PATCH", "/api/settings", permissions);
-      return response;
+      const response = await apiRequest("PATCH", "/api/settings", permissions)
+      return response
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
       toast({
         title: "Permissions Updated",
         description: "Access control settings have been saved.",
-      });
+      })
     },
     onError: () => {
       toast({
         title: "Failed to Update",
         description: "Could not save permission settings.",
         variant: "destructive",
-      });
+      })
     },
-  });
+  })
 
   const handlePermissionChange = (key: keyof AppSettings, value: boolean) => {
-    updatePermissionsMutation.mutate({ [key]: value });
-  };
+    updatePermissionsMutation.mutate({ [key]: value })
+  }
 
   const verifyPinMutation = useMutation({
     mutationFn: async (pin: string) => {
@@ -338,36 +327,36 @@ export default function Audit() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin }),
-      });
+      })
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "PIN verification failed");
+        const errorData = await response.json()
+        throw new Error(errorData.error || "PIN verification failed")
       }
-      return response.json();
+      return response.json()
     },
     onSuccess: (data: { ok: boolean; isDefault?: boolean; auditToken?: string }) => {
       if (data.ok && data.auditToken) {
-        setIsVerified(true);
-        setAuditToken(data.auditToken);
-        setShowPinDialog(false);
-        setIsDefaultPin(data.isDefault || false);
-        setPinError("");
+        setIsVerified(true)
+        setAuditToken(data.auditToken)
+        setShowPinDialog(false)
+        setIsDefaultPin(data.isDefault || false)
+        setPinError("")
         if (data.isDefault) {
           toast({
             title: "Default PIN Used",
             description: "Please change your PIN in the Settings tab for security.",
             variant: "destructive",
-          });
+          })
         }
-        sessionStorage.setItem("auditVerified", "true");
-        sessionStorage.setItem("auditToken", data.auditToken);
+        sessionStorage.setItem("auditVerified", "true")
+        sessionStorage.setItem("auditToken", data.auditToken)
       }
     },
     onError: (error: Error) => {
-      setPinError(error.message || "Invalid PIN. Please try again.");
-      setPinInput(["", "", "", ""]);
+      setPinError(error.message || "Invalid PIN. Please try again.")
+      setPinInput(["", "", "", ""])
     },
-  });
+  })
 
   const changePinMutation = useMutation({
     mutationFn: async ({ currentPin, newPin }: { currentPin: string; newPin: string }) => {
@@ -375,32 +364,32 @@ export default function Audit() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPin, newPin }),
-      });
+      })
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to change PIN");
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to change PIN")
       }
-      return response.json();
+      return response.json()
     },
     onSuccess: () => {
       toast({
         title: "PIN Changed",
         description: "Your audit PIN has been successfully updated.",
-      });
-      setCurrentPin("");
-      setNewPin("");
-      setConfirmPin("");
-      setIsDefaultPin(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/audit/has-pin"] });
+      })
+      setCurrentPin("")
+      setNewPin("")
+      setConfirmPin("")
+      setIsDefaultPin(false)
+      queryClient.invalidateQueries({ queryKey: ["/api/audit/has-pin"] })
     },
     onError: (error: Error) => {
       toast({
         title: "PIN Change Failed",
         description: error.message || "Failed to change PIN. Please check your current PIN.",
         variant: "destructive",
-      });
+      })
     },
-  });
+  })
 
   // Cloud Sync Functions - Fixed with proper authentication and error handling
   const handleTestConnection = async () => {
@@ -409,40 +398,40 @@ export default function Audit() {
         title: "Connection URL Required",
         description: "Please enter a PostgreSQL connection URL.",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
-    setCloudConnectionStatus("testing");
+    setCloudConnectionStatus("testing")
     try {
       const data = await authenticatedRequest("/api/cloud/test-connection", {
         method: "POST",
         body: JSON.stringify({ connectionUrl: cloudUrl }),
-      });
-      
+      })
+
       if (data.ok) {
-        setCloudConnectionStatus("success");
+        setCloudConnectionStatus("success")
         toast({
           title: "Connection Successful",
           description: "Successfully connected to cloud database.",
-        });
+        })
       } else {
-        setCloudConnectionStatus("error");
+        setCloudConnectionStatus("error")
         toast({
           title: "Connection Failed",
           description: data.error || "Could not connect to cloud database.",
           variant: "destructive",
-        });
+        })
       }
     } catch (error: any) {
-      setCloudConnectionStatus("error");
+      setCloudConnectionStatus("error")
       toast({
         title: "Connection Failed",
         description: error.message || "Could not connect to cloud database.",
         variant: "destructive",
-      });
+      })
     }
-  };
+  }
 
   const handleSaveCloudSettings = async () => {
     if (!cloudUrl.trim()) {
@@ -450,35 +439,35 @@ export default function Audit() {
         title: "Connection URL Required",
         description: "Please enter a PostgreSQL connection URL first.",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
     try {
       const data = await authenticatedRequest("/api/cloud/save-settings", {
         method: "POST",
-        body: JSON.stringify({ 
-          connectionUrl: cloudUrl, 
+        body: JSON.stringify({
+          connectionUrl: cloudUrl,
           syncEnabled: true,
-          cloudSyncEnabled: autoSyncEnabled 
+          cloudSyncEnabled: autoSyncEnabled,
         }),
-      });
-      
+      })
+
       if (data.ok) {
         toast({
           title: "Settings Saved",
           description: "Cloud database settings saved successfully.",
-        });
-        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+        })
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
       }
     } catch (error: any) {
       toast({
         title: "Failed to Save",
         description: error.message || "Could not save cloud settings.",
         variant: "destructive",
-      });
+      })
     }
-  };
+  }
 
   const handleExportToCloud = async () => {
     if (!cloudUrl.trim()) {
@@ -486,44 +475,45 @@ export default function Audit() {
         title: "Connection URL Required",
         description: "Please enter and save a PostgreSQL connection URL first.",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
     // First save settings if not already saved
-    await handleSaveCloudSettings();
+    await handleSaveCloudSettings()
 
-    setCloudSyncStatus("exporting");
+    setCloudSyncStatus("exporting")
     try {
       const data = await authenticatedRequest("/api/cloud/export", {
         method: "POST",
-      });
-      
+      })
+
       if (data.ok) {
-        setLastExportCounts(data.counts);
+        setLastExportCounts(data.counts)
         toast({
           title: "Export Successful",
           description: `Exported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales to cloud.`,
-        });
-        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+        })
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
       } else {
         toast({
           title: "Export Failed",
           description: data.error || "Could not export to cloud database.",
           variant: "destructive",
-        });
+        })
       }
     } catch (error: any) {
-      console.error("Export error:", error);
+      console.error("Export error:", error)
       toast({
         title: "Export Failed",
-        description: error.message || "Could not export to cloud database. Please check your connection URL and try again.",
+        description:
+          error.message || "Could not export to cloud database. Please check your connection URL and try again.",
         variant: "destructive",
-      });
+      })
     } finally {
-      setCloudSyncStatus("idle");
+      setCloudSyncStatus("idle")
     }
-  };
+  }
 
   const handleImportFromCloud = async () => {
     if (!cloudUrl.trim()) {
@@ -531,116 +521,149 @@ export default function Audit() {
         title: "Connection URL Required",
         description: "Please enter and save a PostgreSQL connection URL first.",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
     // First save settings if not already saved
-    await handleSaveCloudSettings();
+    await handleSaveCloudSettings()
 
-    setCloudSyncStatus("importing");
+    setCloudSyncStatus("importing")
     try {
       const data = await authenticatedRequest("/api/cloud/import", {
         method: "POST",
-      });
-      
+      })
+
       if (data.ok) {
-        setLastImportCounts(data.counts);
+        setLastImportCounts(data.counts)
         toast({
           title: "Import Successful",
           description: `Imported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales from cloud.`,
-        });
+        })
         // Invalidate all data queries to refresh
-        queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/products"] })
+        queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
+        queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
       } else {
         toast({
           title: "Import Failed",
           description: data.error || "Could not import from cloud database.",
           variant: "destructive",
-        });
+        })
       }
     } catch (error: any) {
-      console.error("Import error:", error);
+      console.error("Import error:", error)
       toast({
         title: "Import Failed",
-        description: error.message || "Could not import from cloud database. Please check your connection URL and try again.",
+        description:
+          error.message || "Could not import from cloud database. Please check your connection URL and try again.",
         variant: "destructive",
-      });
+      })
     } finally {
-      setCloudSyncStatus("idle");
+      setCloudSyncStatus("idle")
     }
-  };
+  }
 
   // Auto-sync functions
   const toggleAutoSync = async (enabled: boolean) => {
-    setAutoSyncEnabled(enabled);
-    await handleSaveCloudSettings();
-    
+    setAutoSyncEnabled(enabled)
+    await handleSaveCloudSettings()
+
     if (enabled) {
       toast({
         title: "Auto-Sync Enabled",
         description: `Data will sync automatically every ${syncInterval} minutes.`,
-      });
+      })
     } else {
       toast({
         title: "Auto-Sync Disabled",
         description: "Automatic synchronization has been turned off.",
-      });
+      })
     }
-  };
+  }
+
+  const startAutoSync = () => {
+    if (!autoSyncEnabled || cloudConnectionStatus !== "success" || !cloudUrl.trim()) {
+      return
+    }
+
+    const intervalId = setInterval(
+      async () => {
+        try {
+          // Alternate between export and import for bidirectional sync
+          const shouldExport = Math.random() > 0.5
+
+          if (shouldExport) {
+            await handleExportToCloud()
+          } else {
+            await handleImportFromCloud()
+          }
+        } catch (error) {
+          console.error("[Auto-Sync] Error:", error)
+          // Don't disable auto-sync, just log the error
+        }
+      },
+      syncInterval * 60 * 1000,
+    )
+
+    return () => clearInterval(intervalId)
+  }
 
   useEffect(() => {
-    const storedToken = sessionStorage.getItem("auditToken");
-    const storedVerified = sessionStorage.getItem("auditVerified");
-    
+    const cleanup = startAutoSync()
+    return cleanup
+  }, [autoSyncEnabled, syncInterval, cloudConnectionStatus, cloudUrl])
+
+  useEffect(() => {
+    const storedToken = sessionStorage.getItem("auditToken")
+    const storedVerified = sessionStorage.getItem("auditVerified")
+
     if (storedVerified === "true" && storedToken) {
-      setIsVerified(true);
-      setAuditToken(storedToken);
-      setShowPinDialog(false);
+      setIsVerified(true)
+      setAuditToken(storedToken)
+      setShowPinDialog(false)
     }
-  }, []);
+  }, [])
 
   // Initialize cloud URL from settings when they load
   useEffect(() => {
     if (appSettings?.cloudDatabaseUrl && !cloudUrl) {
-      setCloudUrl(appSettings.cloudDatabaseUrl);
+      setCloudUrl(appSettings.cloudDatabaseUrl)
       if (appSettings.cloudSyncEnabled) {
-        setCloudConnectionStatus("success");
-        setAutoSyncEnabled(true);
+        setCloudConnectionStatus("success")
+        setAutoSyncEnabled(true)
       }
     }
-  }, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled]);
+  }, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled])
 
   const handlePinInput = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-    
-    const newPinInput = [...pinInput];
-    newPinInput[index] = value.slice(-1);
-    setPinInput(newPinInput);
-    setPinError("");
+    if (!/^\d*$/.test(value)) return
+
+    const newPinInput = [...pinInput]
+    newPinInput[index] = value.slice(-1)
+    setPinInput(newPinInput)
+    setPinError("")
 
     if (value && index < 3) {
-      const nextInput = document.getElementById(`pin-${index + 1}`);
-      nextInput?.focus();
+      const nextInput = document.getElementById(`pin-${index + 1}`)
+      nextInput?.focus()
     }
 
     if (index === 3 && value) {
-      const fullPin = newPinInput.join("");
+      const fullPin = newPinInput.join("")
       if (fullPin.length === 4) {
-        verifyPinMutation.mutate(fullPin);
+        verifyPinMutation.mutate(fullPin)
       }
     }
-  };
+  }
 
   const handlePinKeyDown = (index: number, e: React.KeyboardEvent) => {
     if (e.key === "Backspace" && !pinInput[index] && index > 0) {
-      const prevInput = document.getElementById(`pin-${index - 1}`);
-      prevInput?.focus();
+      const prevInput = document.getElementById(`pin-${index - 1}`)
+      prevInput?.focus()
     }
-  };
+  }
 
   const handlePinChange = () => {
     if (newPin !== confirmPin) {
@@ -648,8 +671,8 @@ export default function Audit() {
         title: "PIN Mismatch",
         description: "New PIN and confirmation do not match.",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
     if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
@@ -657,45 +680,45 @@ export default function Audit() {
         title: "Invalid PIN",
         description: "PIN must be exactly 4 digits.",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
     changePinMutation.mutate({
       currentPin: currentPin || "0000",
       newPin: newPin,
-    });
-  };
+    })
+  }
 
   const companies = useMemo(() => {
-    const uniqueCompanies = new Set(products.map(p => p.company));
-    return Array.from(uniqueCompanies).sort();
-  }, [products]);
+    const uniqueCompanies = new Set(products.map((p) => p.company))
+    return Array.from(uniqueCompanies).sort()
+  }, [products])
 
   const filteredProducts = useMemo(() => {
-    if (companyFilter === "all") return products;
-    return products.filter(p => p.company === companyFilter);
-  }, [products, companyFilter]);
+    if (companyFilter === "all") return products
+    return products.filter((p) => p.company === companyFilter)
+  }, [products, companyFilter])
 
   const stockMovements = useMemo(() => {
     const movements: {
-      id: string;
-      date: Date;
-      type: "IN" | "OUT";
-      company: string;
-      product: string;
-      variant: string;
-      colorCode: string;
-      colorName: string;
-      quantity: number;
-      previousStock?: number;
-      newStock?: number;
-      reference: string;
-      customer?: string;
-      notes?: string;
-    }[] = [];
+      id: string
+      date: Date
+      type: "IN" | "OUT"
+      company: string
+      product: string
+      variant: string
+      colorCode: string
+      colorName: string
+      quantity: number
+      previousStock?: number
+      newStock?: number
+      reference: string
+      customer?: string
+      notes?: string
+    }[] = []
 
-    stockInHistory.forEach(record => {
+    stockInHistory.forEach((record) => {
       movements.push({
         id: record.id,
         date: new Date(record.createdAt),
@@ -710,10 +733,10 @@ export default function Audit() {
         newStock: record.newStock,
         reference: `Stock In: ${record.stockInDate}`,
         notes: record.notes || undefined,
-      });
-    });
+      })
+    })
 
-    stockOutHistory.forEach(record => {
+    stockOutHistory.forEach((record) => {
       movements.push({
         id: record.id,
         date: new Date(record.soldAt),
@@ -726,569 +749,612 @@ export default function Audit() {
         quantity: record.quantity,
         reference: `Bill #${record.saleId.slice(0, 8).toUpperCase()}`,
         customer: record.customerName,
-      });
-    });
+      })
+    })
 
-    return movements.sort((a, b) => b.date.getTime() - a.date.getTime());
-  }, [stockInHistory, stockOutHistory]);
+    return movements.sort((a, b) => b.date.getTime() - a.date.getTime())
+  }, [stockInHistory, stockOutHistory])
 
   const filteredStockMovements = useMemo(() => {
-    let filtered = [...stockMovements];
+    let filtered = [...stockMovements]
 
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(m =>
-        m.colorCode.toLowerCase().includes(query) ||
-        m.colorName.toLowerCase().includes(query) ||
-        m.product.toLowerCase().includes(query) ||
-        m.company.toLowerCase().includes(query) ||
-        (m.customer && m.customer.toLowerCase().includes(query))
-      );
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(
+        (m) =>
+          m.colorCode.toLowerCase().includes(query) ||
+          m.colorName.toLowerCase().includes(query) ||
+          m.product.toLowerCase().includes(query) ||
+          m.company.toLowerCase().includes(query) ||
+          (m.customer && m.customer.toLowerCase().includes(query)),
+      )
     }
 
     if (dateFrom) {
-      const fromDate = startOfDay(new Date(dateFrom));
-      filtered = filtered.filter(m => !isBefore(m.date, fromDate));
+      const fromDate = startOfDay(new Date(dateFrom))
+      filtered = filtered.filter((m) => !isBefore(m.date, fromDate))
     }
 
     if (dateTo) {
-      const toDate = endOfDay(new Date(dateTo));
-      filtered = filtered.filter(m => !isAfter(m.date, toDate));
+      const toDate = endOfDay(new Date(dateTo))
+      filtered = filtered.filter((m) => !isAfter(m.date, toDate))
     }
 
     if (companyFilter !== "all") {
-      filtered = filtered.filter(m => m.company === companyFilter);
+      filtered = filtered.filter((m) => m.company === companyFilter)
     }
 
     if (productFilter !== "all") {
-      filtered = filtered.filter(m => m.product === productFilter);
+      filtered = filtered.filter((m) => m.product === productFilter)
     }
 
     if (movementTypeFilter !== "all") {
-      filtered = filtered.filter(m => m.type === movementTypeFilter);
+      filtered = filtered.filter((m) => m.type === movementTypeFilter)
     }
 
-    return filtered;
-  }, [stockMovements, searchQuery, dateFrom, dateTo, companyFilter, productFilter, movementTypeFilter]);
+    return filtered
+  }, [stockMovements, searchQuery, dateFrom, dateTo, companyFilter, productFilter, movementTypeFilter])
 
   const filteredSales = useMemo(() => {
-    let filtered = [...allSales];
+    let filtered = [...allSales]
 
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(sale =>
-        sale.customerName.toLowerCase().includes(query) ||
-        sale.customerPhone.includes(query) ||
-        sale.id.toLowerCase().includes(query)
-      );
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(
+        (sale) =>
+          sale.customerName.toLowerCase().includes(query) ||
+          sale.customerPhone.includes(query) ||
+          sale.id.toLowerCase().includes(query),
+      )
     }
 
     if (dateFrom) {
-      const fromDate = startOfDay(new Date(dateFrom));
-      filtered = filtered.filter(sale => {
-        const saleDate = new Date(sale.createdAt);
-        return !isBefore(saleDate, fromDate);
-      });
+      const fromDate = startOfDay(new Date(dateFrom))
+      filtered = filtered.filter((sale) => {
+        const saleDate = new Date(sale.createdAt)
+        return !isBefore(saleDate, fromDate)
+      })
     }
 
     if (dateTo) {
-      const toDate = endOfDay(new Date(dateTo));
-      filtered = filtered.filter(sale => {
-        const saleDate = new Date(sale.createdAt);
-        return !isAfter(saleDate, toDate);
-      });
+      const toDate = endOfDay(new Date(dateTo))
+      filtered = filtered.filter((sale) => {
+        const saleDate = new Date(sale.createdAt)
+        return !isAfter(saleDate, toDate)
+      })
     }
 
-    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [allSales, searchQuery, dateFrom, dateTo]);
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }, [allSales, searchQuery, dateFrom, dateTo])
 
   const stockSummary = useMemo(() => {
-    const totalIn = stockInHistory.reduce((acc, r) => acc + r.quantity, 0);
-    const totalOut = stockOutHistory.reduce((acc, r) => acc + r.quantity, 0);
-    const currentStock = colors.reduce((acc, c) => acc + c.stockQuantity, 0);
-    return { totalIn, totalOut, currentStock };
-  }, [stockInHistory, stockOutHistory, colors]);
+    const totalIn = stockInHistory.reduce((acc, r) => acc + r.quantity, 0)
+    const totalOut = stockOutHistory.reduce((acc, r) => acc + r.quantity, 0)
+    const currentStock = colors.reduce((acc, c) => acc + c.stockQuantity, 0)
+    return { totalIn, totalOut, currentStock }
+  }, [stockInHistory, stockOutHistory, colors])
 
   const salesSummary = useMemo(() => {
-    const totalSales = allSales.reduce((acc, s) => acc + safeParseFloat(s.totalAmount), 0);
-    const totalPaid = allSales.reduce((acc, s) => acc + safeParseFloat(s.amountPaid), 0);
-    const totalOutstanding = Math.max(0, totalSales - totalPaid);
-    const totalBills = allSales.length;
-    const paidBills = allSales.filter(s => s.paymentStatus === "paid").length;
-    return { 
-      totalSales: roundNumber(totalSales), 
-      totalPaid: roundNumber(totalPaid), 
-      totalOutstanding: roundNumber(totalOutstanding), 
-      totalBills, 
-      paidBills 
-    };
-  }, [allSales]);
+    const totalSales = allSales.reduce((acc, s) => acc + safeParseFloat(s.totalAmount), 0)
+    const totalPaid = allSales.reduce((acc, s) => acc + safeParseFloat(s.amountPaid), 0)
+    const totalOutstanding = Math.max(0, totalSales - totalPaid)
+    const totalBills = allSales.length
+    const paidBills = allSales.filter((s) => s.paymentStatus === "paid").length
+    return {
+      totalSales: roundNumber(totalSales),
+      totalPaid: roundNumber(totalPaid),
+      totalOutstanding: roundNumber(totalOutstanding),
+      totalBills,
+      paidBills,
+    }
+  }, [allSales])
 
   const paymentsSummary = useMemo(() => {
-    const totalPayments = paymentHistory.reduce((acc, p) => acc + safeParseFloat(p.amount), 0);
-    const cashPayments = paymentHistory.filter(p => p.paymentMethod === 'cash').reduce((acc, p) => acc + safeParseFloat(p.amount), 0);
-    const onlinePayments = paymentHistory.filter(p => p.paymentMethod === 'online').reduce((acc, p) => acc + safeParseFloat(p.amount), 0);
-    return { 
-      totalPayments: roundNumber(totalPayments), 
-      cashPayments: roundNumber(cashPayments), 
-      onlinePayments: roundNumber(onlinePayments) 
-    };
-  }, [paymentHistory]);
+    const totalPayments = paymentHistory.reduce((acc, p) => acc + safeParseFloat(p.amount), 0)
+    const cashPayments = paymentHistory
+      .filter((p) => p.paymentMethod === "cash")
+      .reduce((acc, p) => acc + safeParseFloat(p.amount), 0)
+    const onlinePayments = paymentHistory
+      .filter((p) => p.paymentMethod === "online")
+      .reduce((acc, p) => acc + safeParseFloat(p.amount), 0)
+    return {
+      totalPayments: roundNumber(totalPayments),
+      cashPayments: roundNumber(cashPayments),
+      onlinePayments: roundNumber(onlinePayments),
+    }
+  }, [paymentHistory])
 
   const returnsSummary = useMemo(() => {
-    const totalReturns = auditReturns.reduce((acc, r) => acc + safeParseFloat(r.totalRefund || "0"), 0);
+    const totalReturns = auditReturns.reduce((acc, r) => acc + safeParseFloat(r.totalRefund || "0"), 0)
     const totalItemsReturned = auditReturns.reduce((acc, r) => {
       // This would need to be calculated from return items in a real implementation
-      return acc + 1; // Placeholder
-    }, 0);
-    return { 
-      totalReturns: roundNumber(totalReturns), 
-      totalItemsReturned 
-    };
-  }, [auditReturns]);
+      return acc + 1 // Placeholder
+    }, 0)
+    return {
+      totalReturns: roundNumber(totalReturns),
+      totalItemsReturned,
+    }
+  }, [auditReturns])
 
   const clearFilters = () => {
-    setSearchQuery("");
-    setDateFrom("");
-    setDateTo("");
-    setCompanyFilter("all");
-    setProductFilter("all");
-    setMovementTypeFilter("all");
-  };
+    setSearchQuery("")
+    setDateFrom("")
+    setDateTo("")
+    setCompanyFilter("all")
+    setProductFilter("all")
+    setMovementTypeFilter("all")
+  }
 
-  const hasActiveFilters = searchQuery || dateFrom || dateTo || companyFilter !== "all" || productFilter !== "all" || movementTypeFilter !== "all";
+  const hasActiveFilters =
+    searchQuery ||
+    dateFrom ||
+    dateTo ||
+    companyFilter !== "all" ||
+    productFilter !== "all" ||
+    movementTypeFilter !== "all"
 
   // PDF download functions
   const downloadStockAuditPDF = () => {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 10;
-    let yPos = margin;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 10
+    let yPos = margin
 
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 25, "F");
+    pdf.setFillColor(102, 126, 234)
+    pdf.rect(0, 0, pageWidth, 25, "F")
 
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
-    pdf.setFontSize(12);
-    pdf.text("STOCK AUDIT REPORT", pageWidth / 2, 18, { align: "center" });
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(18)
+    pdf.setFont("helvetica", "bold")
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" })
+    pdf.setFontSize(12)
+    pdf.text("STOCK AUDIT REPORT", pageWidth / 2, 18, { align: "center" })
 
-    pdf.setTextColor(0, 0, 0);
-    yPos = 35;
+    pdf.setTextColor(0, 0, 0)
+    yPos = 35
 
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos)
     if (dateFrom || dateTo) {
-      pdf.text(`Period: ${dateFrom || "Start"} to ${dateTo || "Present"}`, margin + 80, yPos);
+      pdf.text(`Period: ${dateFrom || "Start"} to ${dateTo || "Present"}`, margin + 80, yPos)
     }
-    yPos += 8;
+    yPos += 8
 
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, "F");
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(`Total Stock In: ${stockSummary.totalIn}`, margin + 5, yPos + 10);
-    pdf.text(`Total Stock Out: ${stockSummary.totalOut}`, margin + 70, yPos + 10);
-    pdf.text(`Current Stock: ${stockSummary.currentStock}`, margin + 140, yPos + 10);
-    pdf.text(`Net Movement: ${stockSummary.totalIn - stockSummary.totalOut}`, margin + 200, yPos + 10);
-    yPos += 22;
+    pdf.setFillColor(240, 240, 240)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, "F")
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "bold")
+    pdf.text(`Total Stock In: ${stockSummary.totalIn}`, margin + 5, yPos + 10)
+    pdf.text(`Total Stock Out: ${stockSummary.totalOut}`, margin + 70, yPos + 10)
+    pdf.text(`Current Stock: ${stockSummary.currentStock}`, margin + 140, yPos + 10)
+    pdf.text(`Net Movement: ${stockSummary.totalIn - stockSummary.totalOut}`, margin + 200, yPos + 10)
+    yPos += 22
 
-    pdf.setFillColor(50, 50, 50);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(8);
-    const headers = ["Date", "Type", "Company", "Product", "Size", "Color", "Qty", "Reference", "Customer"];
-    const colWidths = [25, 15, 35, 35, 25, 40, 15, 45, 40];
-    let xPos = margin + 2;
+    pdf.setFillColor(50, 50, 50)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(8)
+    const headers = ["Date", "Type", "Company", "Product", "Size", "Color", "Qty", "Reference", "Customer"]
+    const colWidths = [25, 15, 35, 35, 25, 40, 15, 45, 40]
+    let xPos = margin + 2
     headers.forEach((header, i) => {
-      pdf.text(header, xPos, yPos + 5.5);
-      xPos += colWidths[i];
-    });
-    yPos += 10;
-    pdf.setTextColor(0, 0, 0);
+      pdf.text(header, xPos, yPos + 5.5)
+      xPos += colWidths[i]
+    })
+    yPos += 10
+    pdf.setTextColor(0, 0, 0)
 
-    const maxRows = Math.min(filteredStockMovements.length, 25);
+    const maxRows = Math.min(filteredStockMovements.length, 25)
     for (let i = 0; i < maxRows; i++) {
-      const m = filteredStockMovements[i];
-      if (yPos > pageHeight - 20) break;
+      const m = filteredStockMovements[i]
+      if (yPos > pageHeight - 20) break
 
       if (i % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+        pdf.setFillColor(250, 250, 250)
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F")
       }
 
-      pdf.setFontSize(7);
-      xPos = margin + 2;
-      pdf.text(formatDateShort(m.date), xPos, yPos + 4); xPos += colWidths[0];
-      
+      pdf.setFontSize(7)
+      xPos = margin + 2
+      pdf.text(formatDateShort(m.date), xPos, yPos + 4)
+      xPos += colWidths[0]
+
       if (m.type === "IN") {
-        pdf.setTextColor(34, 197, 94);
+        pdf.setTextColor(34, 197, 94)
       } else {
-        pdf.setTextColor(239, 68, 68);
+        pdf.setTextColor(239, 68, 68)
       }
-      pdf.text(m.type, xPos, yPos + 4); xPos += colWidths[1];
-      pdf.setTextColor(0, 0, 0);
-      
-      pdf.text(m.company.substring(0, 15), xPos, yPos + 4); xPos += colWidths[2];
-      pdf.text(m.product.substring(0, 15), xPos, yPos + 4); xPos += colWidths[3];
-      pdf.text(m.variant, xPos, yPos + 4); xPos += colWidths[4];
-      pdf.text(`${m.colorCode} - ${m.colorName}`.substring(0, 20), xPos, yPos + 4); xPos += colWidths[5];
-      pdf.text(m.type === "IN" ? `+${m.quantity}` : `-${m.quantity}`, xPos, yPos + 4); xPos += colWidths[6];
-      pdf.text(m.reference.substring(0, 22), xPos, yPos + 4); xPos += colWidths[7];
-      pdf.text((m.customer || "-").substring(0, 18), xPos, yPos + 4);
-      yPos += 6;
+      pdf.text(m.type, xPos, yPos + 4)
+      xPos += colWidths[1]
+      pdf.setTextColor(0, 0, 0)
+
+      pdf.text(m.company.substring(0, 15), xPos, yPos + 4)
+      xPos += colWidths[2]
+      pdf.text(m.product.substring(0, 15), xPos, yPos + 4)
+      xPos += colWidths[3]
+      pdf.text(m.variant, xPos, yPos + 4)
+      xPos += colWidths[4]
+      pdf.text(`${m.colorCode} - ${m.colorName}`.substring(0, 20), xPos, yPos + 4)
+      xPos += colWidths[5]
+      pdf.text(m.type === "IN" ? `+${m.quantity}` : `-${m.quantity}`, xPos, yPos + 4)
+      xPos += colWidths[6]
+      pdf.text(m.reference.substring(0, 22), xPos, yPos + 4)
+      xPos += colWidths[7]
+      pdf.text((m.customer || "-").substring(0, 18), xPos, yPos + 4)
+      yPos += 6
     }
 
     if (filteredStockMovements.length > maxRows) {
-      pdf.setFontSize(8);
-      pdf.text(`... and ${filteredStockMovements.length - maxRows} more records`, margin, yPos + 5);
+      pdf.setFontSize(8)
+      pdf.text(`... and ${filteredStockMovements.length - maxRows} more records`, margin, yPos + 5)
     }
 
-    pdf.save(`Stock-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
-    toast({ title: "PDF Downloaded", description: "Stock Audit Report has been downloaded." });
-  };
+    pdf.save(`Stock-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`)
+    toast({ title: "PDF Downloaded", description: "Stock Audit Report has been downloaded." })
+  }
 
   const downloadSalesAuditPDF = () => {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 10;
-    let yPos = margin;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 10
+    let yPos = margin
 
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 25, "F");
+    pdf.setFillColor(102, 126, 234)
+    pdf.rect(0, 0, pageWidth, 25, "F")
 
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
-    pdf.setFontSize(12);
-    pdf.text("SALES AUDIT REPORT", pageWidth / 2, 18, { align: "center" });
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(18)
+    pdf.setFont("helvetica", "bold")
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" })
+    pdf.setFontSize(12)
+    pdf.text("SALES AUDIT REPORT", pageWidth / 2, 18, { align: "center" })
 
-    pdf.setTextColor(0, 0, 0);
-    yPos = 35;
+    pdf.setTextColor(0, 0, 0)
+    yPos = 35
 
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
-    pdf.text(`Total Sales: Rs. ${salesSummary.totalSales.toLocaleString()}`, margin + 80, yPos);
-    pdf.text(`Total Bills: ${salesSummary.totalBills}`, margin + 160, yPos);
-    yPos += 15;
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos)
+    pdf.text(`Total Sales: Rs. ${salesSummary.totalSales.toLocaleString()}`, margin + 80, yPos)
+    pdf.text(`Total Bills: ${salesSummary.totalBills}`, margin + 160, yPos)
+    yPos += 15
 
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, "F");
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(`Total Amount: Rs. ${salesSummary.totalSales.toLocaleString()}`, margin + 5, yPos + 10);
-    pdf.text(`Total Paid: Rs. ${salesSummary.totalPaid.toLocaleString()}`, margin + 70, yPos + 10);
-    pdf.text(`Outstanding: Rs. ${salesSummary.totalOutstanding.toLocaleString()}`, margin + 140, yPos + 10);
-    pdf.text(`Paid Bills: ${salesSummary.paidBills}/${salesSummary.totalBills}`, margin + 220, yPos + 10);
-    yPos += 22;
+    pdf.setFillColor(240, 240, 240)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, "F")
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "bold")
+    pdf.text(`Total Amount: Rs. ${salesSummary.totalSales.toLocaleString()}`, margin + 5, yPos + 10)
+    pdf.text(`Total Paid: Rs. ${salesSummary.totalPaid.toLocaleString()}`, margin + 70, yPos + 10)
+    pdf.text(`Outstanding: Rs. ${salesSummary.totalOutstanding.toLocaleString()}`, margin + 140, yPos + 10)
+    pdf.text(`Paid Bills: ${salesSummary.paidBills}/${salesSummary.totalBills}`, margin + 220, yPos + 10)
+    yPos += 22
 
-    pdf.setFillColor(50, 50, 50);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(8);
-    const headers = ["Date", "Bill No", "Customer", "Phone", "Amount", "Paid", "Balance", "Status"];
-    const colWidths = [25, 35, 50, 45, 30, 30, 30, 25];
-    let xPos = margin + 2;
+    pdf.setFillColor(50, 50, 50)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(8)
+    const headers = ["Date", "Bill No", "Customer", "Phone", "Amount", "Paid", "Balance", "Status"]
+    const colWidths = [25, 35, 50, 45, 30, 30, 30, 25]
+    let xPos = margin + 2
     headers.forEach((header, i) => {
-      pdf.text(header, xPos, yPos + 5.5);
-      xPos += colWidths[i];
-    });
-    yPos += 10;
-    pdf.setTextColor(0, 0, 0);
+      pdf.text(header, xPos, yPos + 5.5)
+      xPos += colWidths[i]
+    })
+    yPos += 10
+    pdf.setTextColor(0, 0, 0)
 
-    const maxRows = Math.min(filteredSales.length, 25);
+    const maxRows = Math.min(filteredSales.length, 25)
     for (let i = 0; i < maxRows; i++) {
-      const sale = filteredSales[i];
-      if (yPos > pageHeight - 20) break;
+      const sale = filteredSales[i]
+      if (yPos > pageHeight - 20) break
 
       if (i % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+        pdf.setFillColor(250, 250, 250)
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F")
       }
 
-      pdf.setFontSize(7);
-      xPos = margin + 2;
-      pdf.text(formatDateShort(new Date(sale.createdAt)), xPos, yPos + 4); xPos += colWidths[0];
-      pdf.text(sale.id.slice(0, 8).toUpperCase(), xPos, yPos + 4); xPos += colWidths[1];
-      pdf.text(sale.customerName.substring(0, 20), xPos, yPos + 4); xPos += colWidths[2];
-      pdf.text(sale.customerPhone, xPos, yPos + 4); xPos += colWidths[3];
-      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[4];
-      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[5];
-      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[6];
-      
+      pdf.setFontSize(7)
+      xPos = margin + 2
+      pdf.text(formatDateShort(new Date(sale.createdAt)), xPos, yPos + 4)
+      xPos += colWidths[0]
+      pdf.text(sale.id.slice(0, 8).toUpperCase(), xPos, yPos + 4)
+      xPos += colWidths[1]
+      pdf.text(sale.customerName.substring(0, 20), xPos, yPos + 4)
+      xPos += colWidths[2]
+      pdf.text(sale.customerPhone, xPos, yPos + 4)
+      xPos += colWidths[3]
+      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}`, xPos, yPos + 4)
+      xPos += colWidths[4]
+      pdf.text(`Rs. ${Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4)
+      xPos += colWidths[5]
+      pdf.text(
+        `Rs. ${Math.round(safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)).toLocaleString()}`,
+        xPos,
+        yPos + 4,
+      )
+      xPos += colWidths[6]
+
       if (sale.paymentStatus === "paid") {
-        pdf.setTextColor(34, 197, 94);
-        pdf.text("Paid", xPos, yPos + 4);
+        pdf.setTextColor(34, 197, 94)
+        pdf.text("Paid", xPos, yPos + 4)
       } else if (sale.paymentStatus === "partial") {
-        pdf.setTextColor(245, 158, 11);
-        pdf.text("Partial", xPos, yPos + 4);
+        pdf.setTextColor(245, 158, 11)
+        pdf.text("Partial", xPos, yPos + 4)
       } else {
-        pdf.setTextColor(239, 68, 68);
-        pdf.text("Unpaid", xPos, yPos + 4);
+        pdf.setTextColor(239, 68, 68)
+        pdf.text("Unpaid", xPos, yPos + 4)
       }
-      pdf.setTextColor(0, 0, 0);
-      yPos += 6;
+      pdf.setTextColor(0, 0, 0)
+      yPos += 6
     }
 
     if (filteredSales.length > maxRows) {
-      pdf.setFontSize(8);
-      pdf.text(`... and ${filteredSales.length - maxRows} more records`, margin, yPos + 5);
+      pdf.setFontSize(8)
+      pdf.text(`... and ${filteredSales.length - maxRows} more records`, margin, yPos + 5)
     }
 
-    pdf.save(`Sales-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
-    toast({ title: "PDF Downloaded", description: "Sales Audit Report has been downloaded." });
-  };
+    pdf.save(`Sales-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`)
+    toast({ title: "PDF Downloaded", description: "Sales Audit Report has been downloaded." })
+  }
 
   const downloadUnpaidPDF = () => {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 10;
-    let yPos = margin;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 10
+    let yPos = margin
 
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 25, "F");
+    pdf.setFillColor(102, 126, 234)
+    pdf.rect(0, 0, pageWidth, 25, "F")
 
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
-    pdf.setFontSize(12);
-    pdf.text("UNPAID BILLS REPORT", pageWidth / 2, 18, { align: "center" });
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(18)
+    pdf.setFont("helvetica", "bold")
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" })
+    pdf.setFontSize(12)
+    pdf.text("UNPAID BILLS REPORT", pageWidth / 2, 18, { align: "center" })
 
-    pdf.setTextColor(0, 0, 0);
-    yPos = 35;
+    pdf.setTextColor(0, 0, 0)
+    yPos = 35
 
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
-    pdf.text(`Total Unpaid Bills: ${unpaidBills.length}`, margin + 80, yPos);
-    pdf.text(`Total Outstanding: Rs. ${Math.round(unpaidBills.reduce((acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)), 0)).toLocaleString()}`, margin + 160, yPos);
-    yPos += 15;
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos)
+    pdf.text(`Total Unpaid Bills: ${unpaidBills.length}`, margin + 80, yPos)
+    pdf.text(
+      `Total Outstanding: Rs. ${Math.round(unpaidBills.reduce((acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)), 0)).toLocaleString()}`,
+      margin + 160,
+      yPos,
+    )
+    yPos += 15
 
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Customer", margin + 5, yPos + 5);
-    pdf.text("Phone", margin + 80, yPos + 5);
-    pdf.text("Bill Amount", margin + 140, yPos + 5);
-    pdf.text("Paid", margin + 190, yPos + 5);
-    pdf.text("Outstanding", margin + 230, yPos + 5);
-    pdf.text("Status", margin + 280, yPos + 5);
-    yPos += 12;
+    pdf.setFillColor(240, 240, 240)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Customer", margin + 5, yPos + 5)
+    pdf.text("Phone", margin + 80, yPos + 5)
+    pdf.text("Bill Amount", margin + 140, yPos + 5)
+    pdf.text("Paid", margin + 190, yPos + 5)
+    pdf.text("Outstanding", margin + 230, yPos + 5)
+    pdf.text("Status", margin + 280, yPos + 5)
+    yPos += 12
 
-    const maxRows = Math.min(unpaidBills.length, 30);
+    const maxRows = Math.min(unpaidBills.length, 30)
     for (let i = 0; i < maxRows; i++) {
-      const bill = unpaidBills[i];
-      if (yPos > pageHeight - 20) break;
+      const bill = unpaidBills[i]
+      if (yPos > pageHeight - 20) break
 
       if (i % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+        pdf.setFillColor(250, 250, 250)
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F")
       }
 
-      pdf.setFontSize(7);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(bill.customerName.substring(0, 25), margin + 5, yPos + 4);
-      pdf.text(bill.customerPhone, margin + 80, yPos + 4);
-      pdf.text(`Rs. ${Math.round(safeParseFloat(bill.totalAmount)).toLocaleString()}`, margin + 140, yPos + 4);
-      pdf.text(`Rs. ${Math.round(safeParseFloat(bill.amountPaid)).toLocaleString()}`, margin + 190, yPos + 4);
-      
-      const outstanding = safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid);
-      pdf.setTextColor(239, 68, 68);
-      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, margin + 230, yPos + 4);
-      
-      pdf.setTextColor(0, 0, 0);
+      pdf.setFontSize(7)
+      pdf.setTextColor(0, 0, 0)
+      pdf.text(bill.customerName.substring(0, 25), margin + 5, yPos + 4)
+      pdf.text(bill.customerPhone, margin + 80, yPos + 4)
+      pdf.text(`Rs. ${Math.round(safeParseFloat(bill.totalAmount)).toLocaleString()}`, margin + 140, yPos + 4)
+      pdf.text(`Rs. ${Math.round(safeParseFloat(bill.amountPaid)).toLocaleString()}`, margin + 190, yPos + 4)
+
+      const outstanding = safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)
+      pdf.setTextColor(239, 68, 68)
+      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, margin + 230, yPos + 4)
+
+      pdf.setTextColor(0, 0, 0)
       if (bill.paymentStatus === "partial") {
-        pdf.setTextColor(245, 158, 11);
-        pdf.text("Partial", margin + 280, yPos + 4);
+        pdf.setTextColor(245, 158, 11)
+        pdf.text("Partial", margin + 280, yPos + 4)
       } else {
-        pdf.setTextColor(239, 68, 68);
-        pdf.text("Unpaid", margin + 280, yPos + 4);
+        pdf.setTextColor(239, 68, 68)
+        pdf.text("Unpaid", margin + 280, yPos + 4)
       }
-      yPos += 6;
+      yPos += 6
     }
 
     if (unpaidBills.length > maxRows) {
-      pdf.setFontSize(8);
-      pdf.text(`... and ${unpaidBills.length - maxRows} more unpaid bills`, margin, yPos + 5);
+      pdf.setFontSize(8)
+      pdf.text(`... and ${unpaidBills.length - maxRows} more unpaid bills`, margin, yPos + 5)
     }
 
-    pdf.save(`Unpaid-Bills-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
-    toast({ title: "PDF Downloaded", description: "Unpaid Bills Report has been downloaded." });
-  };
+    pdf.save(`Unpaid-Bills-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`)
+    toast({ title: "PDF Downloaded", description: "Unpaid Bills Report has been downloaded." })
+  }
 
   const downloadPaymentsPDF = () => {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 10;
-    let yPos = margin;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 10
+    let yPos = margin
 
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 25, "F");
+    pdf.setFillColor(102, 126, 234)
+    pdf.rect(0, 0, pageWidth, 25, "F")
 
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
-    pdf.setFontSize(12);
-    pdf.text("PAYMENTS AUDIT REPORT", pageWidth / 2, 18, { align: "center" });
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(18)
+    pdf.setFont("helvetica", "bold")
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" })
+    pdf.setFontSize(12)
+    pdf.text("PAYMENTS AUDIT REPORT", pageWidth / 2, 18, { align: "center" })
 
-    pdf.setTextColor(0, 0, 0);
-    yPos = 35;
+    pdf.setTextColor(0, 0, 0)
+    yPos = 35
 
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
-    pdf.text(`Total Payments: Rs. ${paymentsSummary.totalPayments.toLocaleString()}`, margin + 80, yPos);
-    pdf.text(`Cash: Rs. ${paymentsSummary.cashPayments.toLocaleString()} | Online: Rs. ${paymentsSummary.onlinePayments.toLocaleString()}`, margin + 160, yPos);
-    yPos += 15;
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos)
+    pdf.text(`Total Payments: Rs. ${paymentsSummary.totalPayments.toLocaleString()}`, margin + 80, yPos)
+    pdf.text(
+      `Cash: Rs. ${paymentsSummary.cashPayments.toLocaleString()} | Online: Rs. ${paymentsSummary.onlinePayments.toLocaleString()}`,
+      margin + 160,
+      yPos,
+    )
+    yPos += 15
 
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Date", margin + 5, yPos + 5);
-    pdf.text("Customer", margin + 35, yPos + 5);
-    pdf.text("Phone", margin + 90, yPos + 5);
-    pdf.text("Amount", margin + 140, yPos + 5);
-    pdf.text("Method", margin + 180, yPos + 5);
-    pdf.text("Previous Balance", margin + 220, yPos + 5);
-    pdf.text("New Balance", margin + 270, yPos + 5);
-    yPos += 12;
+    pdf.setFillColor(240, 240, 240)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Date", margin + 5, yPos + 5)
+    pdf.text("Customer", margin + 35, yPos + 5)
+    pdf.text("Phone", margin + 90, yPos + 5)
+    pdf.text("Amount", margin + 140, yPos + 5)
+    pdf.text("Method", margin + 180, yPos + 5)
+    pdf.text("Previous Balance", margin + 220, yPos + 5)
+    pdf.text("New Balance", margin + 270, yPos + 5)
+    yPos += 12
 
-    const maxRows = Math.min(auditPayments.length, 30);
+    const maxRows = Math.min(auditPayments.length, 30)
     for (let i = 0; i < maxRows; i++) {
-      const payment = auditPayments[i];
-      if (yPos > pageHeight - 20) break;
+      const payment = auditPayments[i]
+      if (yPos > pageHeight - 20) break
 
       if (i % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+        pdf.setFillColor(250, 250, 250)
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F")
       }
 
-      pdf.setFontSize(7);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(formatDateShort(new Date(payment.createdAt)), margin + 5, yPos + 4);
-      pdf.text((payment.sale?.customerName || "N/A").substring(0, 20), margin + 35, yPos + 4);
-      pdf.text(payment.customerPhone, margin + 90, yPos + 4);
-      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.amount)).toLocaleString()}`, margin + 140, yPos + 4);
-      
+      pdf.setFontSize(7)
+      pdf.setTextColor(0, 0, 0)
+      pdf.text(formatDateShort(new Date(payment.createdAt)), margin + 5, yPos + 4)
+      pdf.text((payment.sale?.customerName || "N/A").substring(0, 20), margin + 35, yPos + 4)
+      pdf.text(payment.customerPhone, margin + 90, yPos + 4)
+      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.amount)).toLocaleString()}`, margin + 140, yPos + 4)
+
       if (payment.paymentMethod === "cash") {
-        pdf.setTextColor(34, 197, 94);
-        pdf.text("Cash", margin + 180, yPos + 4);
+        pdf.setTextColor(34, 197, 94)
+        pdf.text("Cash", margin + 180, yPos + 4)
       } else {
-        pdf.setTextColor(59, 130, 246);
-        pdf.text("Online", margin + 180, yPos + 4);
+        pdf.setTextColor(59, 130, 246)
+        pdf.text("Online", margin + 180, yPos + 4)
       }
-      
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.previousBalance)).toLocaleString()}`, margin + 220, yPos + 4);
-      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.newBalance)).toLocaleString()}`, margin + 270, yPos + 4);
-      yPos += 6;
+
+      pdf.setTextColor(0, 0, 0)
+      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.previousBalance)).toLocaleString()}`, margin + 220, yPos + 4)
+      pdf.text(`Rs. ${Math.round(safeParseFloat(payment.newBalance)).toLocaleString()}`, margin + 270, yPos + 4)
+      yPos += 6
     }
 
     if (auditPayments.length > maxRows) {
-      pdf.setFontSize(8);
-      pdf.text(`... and ${auditPayments.length - maxRows} more payment records`, margin, yPos + 5);
+      pdf.setFontSize(8)
+      pdf.text(`... and ${auditPayments.length - maxRows} more payment records`, margin, yPos + 5)
     }
 
-    pdf.save(`Payments-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
-    toast({ title: "PDF Downloaded", description: "Payments Audit Report has been downloaded." });
-  };
+    pdf.save(`Payments-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`)
+    toast({ title: "PDF Downloaded", description: "Payments Audit Report has been downloaded." })
+  }
 
   const downloadReturnsPDF = () => {
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 10;
-    let yPos = margin;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const margin = 10
+    let yPos = margin
 
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 25, "F");
+    pdf.setFillColor(102, 126, 234)
+    pdf.rect(0, 0, pageWidth, 25, "F")
 
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(18);
-    pdf.setFont("helvetica", "bold");
-    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
-    pdf.setFontSize(12);
-    pdf.text("RETURNS AUDIT REPORT", pageWidth / 2, 18, { align: "center" });
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(18)
+    pdf.setFont("helvetica", "bold")
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" })
+    pdf.setFontSize(12)
+    pdf.text("RETURNS AUDIT REPORT", pageWidth / 2, 18, { align: "center" })
 
-    pdf.setTextColor(0, 0, 0);
-    yPos = 35;
+    pdf.setTextColor(0, 0, 0)
+    yPos = 35
 
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
-    pdf.text(`Total Returns: Rs. ${returnsSummary.totalReturns.toLocaleString()}`, margin + 80, yPos);
-    pdf.text(`Total Items Returned: ${returnsSummary.totalItemsReturned}`, margin + 160, yPos);
-    yPos += 15;
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos)
+    pdf.text(`Total Returns: Rs. ${returnsSummary.totalReturns.toLocaleString()}`, margin + 80, yPos)
+    pdf.text(`Total Items Returned: ${returnsSummary.totalItemsReturned}`, margin + 160, yPos)
+    yPos += 15
 
-    pdf.setFillColor(240, 240, 240);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Date", margin + 5, yPos + 5);
-    pdf.text("Customer", margin + 35, yPos + 5);
-    pdf.text("Phone", margin + 90, yPos + 5);
-    pdf.text("Refund Amount", margin + 140, yPos + 5);
-    pdf.text("Type", margin + 190, yPos + 5);
-    pdf.text("Reason", margin + 230, yPos + 5);
-    pdf.text("Status", margin + 280, yPos + 5);
-    yPos += 12;
+    pdf.setFillColor(240, 240, 240)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Date", margin + 5, yPos + 5)
+    pdf.text("Customer", margin + 35, yPos + 5)
+    pdf.text("Phone", margin + 90, yPos + 5)
+    pdf.text("Refund Amount", margin + 140, yPos + 5)
+    pdf.text("Type", margin + 190, yPos + 5)
+    pdf.text("Reason", margin + 230, yPos + 5)
+    pdf.text("Status", margin + 280, yPos + 5)
+    yPos += 12
 
-    const maxRows = Math.min(auditReturns.length, 30);
+    const maxRows = Math.min(auditReturns.length, 30)
     for (let i = 0; i < maxRows; i++) {
-      const returnItem = auditReturns[i];
-      if (yPos > pageHeight - 20) break;
+      const returnItem = auditReturns[i]
+      if (yPos > pageHeight - 20) break
 
       if (i % 2 === 0) {
-        pdf.setFillColor(250, 250, 250);
-        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+        pdf.setFillColor(250, 250, 250)
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F")
       }
 
-      pdf.setFontSize(7);
-      pdf.setTextColor(0, 0, 0);
-      pdf.text(formatDateShort(new Date(returnItem.createdAt)), margin + 5, yPos + 4);
-      pdf.text(returnItem.customerName.substring(0, 20), margin + 35, yPos + 4);
-      pdf.text(returnItem.customerPhone, margin + 90, yPos + 4);
-      pdf.text(`Rs. ${Math.round(safeParseFloat(returnItem.totalRefund || "0")).toLocaleString()}`, margin + 140, yPos + 4);
-      pdf.text(returnItem.returnType === "item" ? "Item Return" : "Full Return", margin + 190, yPos + 4);
-      pdf.text((returnItem.reason || "N/A").substring(0, 25), margin + 230, yPos + 4);
-      
+      pdf.setFontSize(7)
+      pdf.setTextColor(0, 0, 0)
+      pdf.text(formatDateShort(new Date(returnItem.createdAt)), margin + 5, yPos + 4)
+      pdf.text(returnItem.customerName.substring(0, 20), margin + 35, yPos + 4)
+      pdf.text(returnItem.customerPhone, margin + 90, yPos + 4)
+      pdf.text(
+        `Rs. ${Math.round(safeParseFloat(returnItem.totalRefund || "0")).toLocaleString()}`,
+        margin + 140,
+        yPos + 4,
+      )
+      pdf.text(returnItem.returnType === "item" ? "Item Return" : "Full Return", margin + 190, yPos + 4)
+      pdf.text((returnItem.reason || "N/A").substring(0, 25), margin + 230, yPos + 4)
+
       if (returnItem.status === "completed") {
-        pdf.setTextColor(34, 197, 94);
-        pdf.text("Completed", margin + 280, yPos + 4);
+        pdf.setTextColor(34, 197, 94)
+        pdf.text("Completed", margin + 280, yPos + 4)
       } else {
-        pdf.setTextColor(245, 158, 11);
-        pdf.text("Pending", margin + 280, yPos + 4);
+        pdf.setTextColor(245, 158, 11)
+        pdf.text("Pending", margin + 280, yPos + 4)
       }
-      yPos += 6;
+      yPos += 6
     }
 
     if (auditReturns.length > maxRows) {
-      pdf.setFontSize(8);
-      pdf.text(`... and ${auditReturns.length - maxRows} more return records`, margin, yPos + 5);
+      pdf.setFontSize(8)
+      pdf.text(`... and ${auditReturns.length - maxRows} more return records`, margin, yPos + 5)
     }
 
-    pdf.save(`Returns-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
-    toast({ title: "PDF Downloaded", description: "Returns Audit Report has been downloaded." });
-  };
+    pdf.save(`Returns-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`)
+    toast({ title: "PDF Downloaded", description: "Returns Audit Report has been downloaded." })
+  }
 
   if (showPinDialog) {
     return (
       <Dialog open={showPinDialog} onOpenChange={() => {}}>
-        <DialogContent 
-          className="sm:max-w-md" 
+        <DialogContent
+          className="sm:max-w-md"
           onPointerDownOutside={(e) => e.preventDefault()}
           aria-describedby="pin-dialog-description"
         >
@@ -1302,7 +1368,6 @@ export default function Audit() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 py-4">
-            
             {hasPin && !hasPin.hasPin && (
               <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
                 <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
@@ -1332,9 +1397,7 @@ export default function Audit() {
               ))}
             </div>
 
-            {pinError && (
-              <p className="text-center text-sm text-destructive">{pinError}</p>
-            )}
+            {pinError && <p className="text-center text-sm text-destructive">{pinError}</p>}
 
             {verifyPinMutation.isPending && (
               <div className="flex justify-center">
@@ -1344,10 +1407,18 @@ export default function Audit() {
           </div>
         </DialogContent>
       </Dialog>
-    );
+    )
   }
 
-  const isLoading = colorsLoading || stockInLoading || stockOutLoading || salesLoading || paymentsLoading || unpaidLoading || auditPaymentsLoading || returnsLoading;
+  const isLoading =
+    colorsLoading ||
+    stockInLoading ||
+    stockOutLoading ||
+    salesLoading ||
+    paymentsLoading ||
+    unpaidLoading ||
+    auditPaymentsLoading ||
+    returnsLoading
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -1356,7 +1427,7 @@ export default function Audit() {
           <ShieldCheck className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-bold">Audit Reports</h1>
         </div>
-        
+
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1368,7 +1439,7 @@ export default function Audit() {
               data-testid="input-audit-search"
             />
           </div>
-          
+
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-muted-foreground" />
             <Input
@@ -1494,8 +1565,10 @@ export default function Audit() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Companies</SelectItem>
-                      {companies.map(company => (
-                        <SelectItem key={company} value={company}>{company}</SelectItem>
+                      {companies.map((company) => (
+                        <SelectItem key={company} value={company}>
+                          {company}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1505,8 +1578,10 @@ export default function Audit() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Products</SelectItem>
-                      {filteredProducts.map(product => (
-                        <SelectItem key={product.id} value={product.productName}>{product.productName}</SelectItem>
+                      {filteredProducts.map((product) => (
+                        <SelectItem key={product.id} value={product.productName}>
+                          {product.productName}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1560,9 +1635,7 @@ export default function Audit() {
                       ) : (
                         filteredStockMovements.map((movement) => (
                           <TableRow key={movement.id}>
-                            <TableCell className="font-medium">
-                              {formatDateShort(movement.date)}
-                            </TableCell>
+                            <TableCell className="font-medium">{formatDateShort(movement.date)}</TableCell>
                             <TableCell>
                               <Badge
                                 variant={movement.type === "IN" ? "default" : "destructive"}
@@ -1584,16 +1657,21 @@ export default function Audit() {
                                 <div
                                   className="w-4 h-4 rounded border"
                                   style={{
-                                    backgroundColor: movement.colorCode === 'WHITE' ? '#f3f4f6' :
-                                      movement.colorCode === 'BLACK' ? '#000' :
-                                      `#${movement.colorCode}`,
+                                    backgroundColor:
+                                      movement.colorCode === "WHITE"
+                                        ? "#f3f4f6"
+                                        : movement.colorCode === "BLACK"
+                                          ? "#000"
+                                          : `#${movement.colorCode}`,
                                   }}
                                 />
                                 {movement.colorCode} - {movement.colorName}
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className={`flex items-center gap-1 ${movement.type === "IN" ? "text-green-600" : "text-red-600"}`}>
+                              <div
+                                className={`flex items-center gap-1 ${movement.type === "IN" ? "text-green-600" : "text-red-600"}`}
+                              >
                                 {movement.type === "IN" ? "+" : "-"}
                                 {movement.quantity}
                               </div>
@@ -1710,15 +1788,11 @@ export default function Audit() {
                         </TableRow>
                       ) : (
                         filteredSales.map((sale) => {
-                          const balance = safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid);
+                          const balance = safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)
                           return (
                             <TableRow key={sale.id}>
-                              <TableCell className="font-medium">
-                                {formatDateShort(new Date(sale.createdAt))}
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {sale.id.slice(0, 8).toUpperCase()}
-                              </TableCell>
+                              <TableCell className="font-medium">{formatDateShort(new Date(sale.createdAt))}</TableCell>
+                              <TableCell className="font-mono text-sm">{sale.id.slice(0, 8).toUpperCase()}</TableCell>
                               <TableCell>{sale.customerName}</TableCell>
                               <TableCell>{sale.customerPhone}</TableCell>
                               <TableCell>Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}</TableCell>
@@ -1734,19 +1808,19 @@ export default function Audit() {
                                     sale.paymentStatus === "paid"
                                       ? "default"
                                       : sale.paymentStatus === "partial"
-                                      ? "secondary"
-                                      : "destructive"
+                                        ? "secondary"
+                                        : "destructive"
                                   }
                                 >
                                   {sale.paymentStatus === "paid"
                                     ? "Paid"
                                     : sale.paymentStatus === "partial"
-                                    ? "Partial"
-                                    : "Unpaid"}
+                                      ? "Partial"
+                                      : "Unpaid"}
                                 </Badge>
                               </TableCell>
                             </TableRow>
-                          );
+                          )
                         })
                       )}
                     </TableBody>
@@ -1781,7 +1855,13 @@ export default function Audit() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  Rs. {Math.round(unpaidBills.reduce((acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)), 0)).toLocaleString()}
+                  Rs.{" "}
+                  {Math.round(
+                    unpaidBills.reduce(
+                      (acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)),
+                      0,
+                    ),
+                  ).toLocaleString()}
                 </div>
                 <p className="text-xs text-muted-foreground">Amount pending</p>
               </CardContent>
@@ -1795,7 +1875,15 @@ export default function Audit() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  Rs. {unpaidBills.length > 0 ? Math.round(unpaidBills.reduce((acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)), 0) / unpaidBills.length).toLocaleString() : 0}
+                  Rs.{" "}
+                  {unpaidBills.length > 0
+                    ? Math.round(
+                        unpaidBills.reduce(
+                          (acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)),
+                          0,
+                        ) / unpaidBills.length,
+                      ).toLocaleString()
+                    : 0}
                 </div>
                 <p className="text-xs text-muted-foreground">Average outstanding</p>
               </CardContent>
@@ -1845,7 +1933,7 @@ export default function Audit() {
                         </TableRow>
                       ) : (
                         unpaidBills.map((bill) => {
-                          const outstanding = safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid);
+                          const outstanding = safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)
                           return (
                             <TableRow key={bill.id}>
                               <TableCell className="font-medium">{bill.customerName}</TableCell>
@@ -1858,9 +1946,7 @@ export default function Audit() {
                                 </span>
                               </TableCell>
                               <TableCell>
-                                <Badge
-                                  variant={bill.paymentStatus === "partial" ? "secondary" : "destructive"}
-                                >
+                                <Badge variant={bill.paymentStatus === "partial" ? "secondary" : "destructive"}>
                                   {bill.paymentStatus === "partial" ? "Partial" : "Unpaid"}
                                 </Badge>
                               </TableCell>
@@ -1868,7 +1954,7 @@ export default function Audit() {
                                 {formatDateShort(new Date(bill.createdAt))}
                               </TableCell>
                             </TableRow>
-                          );
+                          )
                         })
                       )}
                     </TableBody>
@@ -1980,19 +2066,19 @@ export default function Audit() {
                             <TableCell className="font-medium">
                               {formatDateShort(new Date(payment.createdAt))}
                             </TableCell>
-                            <TableCell>{(payment.sale?.customerName || "N/A")}</TableCell>
+                            <TableCell>{payment.sale?.customerName || "N/A"}</TableCell>
                             <TableCell>{payment.customerPhone}</TableCell>
                             <TableCell className="text-green-600 font-medium">
                               Rs. {Math.round(safeParseFloat(payment.amount)).toLocaleString()}
                             </TableCell>
                             <TableCell>
-                              <Badge
-                                variant={payment.paymentMethod === "cash" ? "default" : "secondary"}
-                              >
+                              <Badge variant={payment.paymentMethod === "cash" ? "default" : "secondary"}>
                                 {payment.paymentMethod === "cash" ? "Cash" : "Online"}
                               </Badge>
                             </TableCell>
-                            <TableCell>Rs. {Math.round(safeParseFloat(payment.previousBalance)).toLocaleString()}</TableCell>
+                            <TableCell>
+                              Rs. {Math.round(safeParseFloat(payment.previousBalance)).toLocaleString()}
+                            </TableCell>
                             <TableCell>Rs. {Math.round(safeParseFloat(payment.newBalance)).toLocaleString()}</TableCell>
                             <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
                               {payment.notes || "-"}
@@ -2110,9 +2196,7 @@ export default function Audit() {
                               {returnItem.reason || "No reason provided"}
                             </TableCell>
                             <TableCell>
-                              <Badge
-                                variant={returnItem.status === "completed" ? "default" : "secondary"}
-                              >
+                              <Badge variant={returnItem.status === "completed" ? "default" : "secondary"}>
                                 {returnItem.status === "completed" ? "Completed" : "Pending"}
                               </Badge>
                             </TableCell>
@@ -2288,7 +2372,8 @@ export default function Audit() {
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <p className="text-sm text-muted-foreground">
-                      Control which actions are allowed in the application. Disabled actions will be hidden throughout the software.
+                      Control which actions are allowed in the application. Disabled actions will be hidden throughout
+                      the software.
                     </p>
 
                     <div className="space-y-4">
@@ -2429,7 +2514,9 @@ export default function Audit() {
                                 <Database className="h-4 w-4 text-purple-500" />
                                 Database Access
                               </Label>
-                              <p className="text-xs text-muted-foreground">Access database tab in settings (requires PIN)</p>
+                              <p className="text-xs text-muted-foreground">
+                                Access database tab in settings (requires PIN)
+                              </p>
                             </div>
                             <Switch
                               checked={appSettings?.permDatabaseAccess ?? true}
@@ -2470,8 +2557,8 @@ export default function Audit() {
                             type={showCloudUrl ? "text" : "password"}
                             value={cloudUrl}
                             onChange={(e) => {
-                              setCloudUrl(e.target.value);
-                              setCloudConnectionStatus("idle");
+                              setCloudUrl(e.target.value)
+                              setCloudConnectionStatus("idle")
                             }}
                             placeholder="postgresql://user:password@host/database"
                             className="pr-20"
@@ -2506,7 +2593,7 @@ export default function Audit() {
                       <Button
                         onClick={handleTestConnection}
                         variant="outline"
-                        className="w-full"
+                        className="w-full bg-transparent"
                         disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
                         data-testid="button-test-connection"
                       >
@@ -2519,10 +2606,13 @@ export default function Audit() {
                         ) : (
                           <Database className="h-4 w-4 mr-2" />
                         )}
-                        {cloudConnectionStatus === "testing" ? "Testing..." : 
-                         cloudConnectionStatus === "success" ? "Connected" :
-                         cloudConnectionStatus === "error" ? "Connection Failed - Retry" :
-                         "Test Connection"}
+                        {cloudConnectionStatus === "testing"
+                          ? "Testing..."
+                          : cloudConnectionStatus === "success"
+                            ? "Connected"
+                            : cloudConnectionStatus === "error"
+                              ? "Connection Failed - Retry"
+                              : "Test Connection"}
                       </Button>
 
                       {/* Auto-Sync Settings */}
@@ -2531,16 +2621,20 @@ export default function Audit() {
                           <RefreshCw className="h-4 w-4" />
                           Auto-Sync Settings
                         </h4>
-                        
+
                         <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
                           <div className="space-y-0.5">
                             <Label className="flex items-center gap-2">
-                              {autoSyncEnabled ? <Wifi className="h-4 w-4 text-green-500" /> : <WifiOff className="h-4 w-4 text-gray-500" />}
+                              {autoSyncEnabled ? (
+                                <Wifi className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <WifiOff className="h-4 w-4 text-gray-500" />
+                              )}
                               Automatic Cloud Sync
                             </Label>
                             <p className="text-xs text-muted-foreground">
-                              {autoSyncEnabled 
-                                ? `Syncing every ${syncInterval} minutes` 
+                              {autoSyncEnabled
+                                ? `Syncing every ${syncInterval} minute${syncInterval !== 1 ? "s" : ""}`
                                 : "Manual sync only"}
                             </p>
                           </div>
@@ -2568,7 +2662,7 @@ export default function Audit() {
                                 className="w-20"
                               />
                               <span className="text-sm text-muted-foreground">
-                                {syncInterval === 1 ? 'minute' : 'minutes'}
+                                {syncInterval === 1 ? "minute" : "minutes"}
                               </span>
                             </div>
                           </div>
@@ -2580,7 +2674,7 @@ export default function Audit() {
                           <RefreshCw className="h-4 w-4" />
                           Manual Sync Actions
                         </h4>
-                        
+
                         <div className="grid grid-cols-2 gap-3">
                           <Button
                             onClick={handleExportToCloud}
@@ -2601,7 +2695,7 @@ export default function Audit() {
                             onClick={handleImportFromCloud}
                             variant="outline"
                             disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
-                            className="flex items-center gap-2"
+                            className="flex items-center gap-2 bg-transparent"
                             data-testid="button-import-cloud"
                           >
                             {cloudSyncStatus === "importing" ? (
@@ -2624,30 +2718,134 @@ export default function Audit() {
                           </p>
                         </div>
 
-                        {lastExportCounts && (
-                          <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded-md">
-                            <p className="text-xs text-green-700 dark:text-green-300">
-                              Last Export: {lastExportCounts.products} products, {lastExportCounts.variants} variants, 
-                              {lastExportCounts.colors} colors, {lastExportCounts.sales} sales
-                            </p>
-                          </div>
-                        )}
-
-                        {lastImportCounts && (
-                          <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
-                            <p className="text-xs text-blue-700 dark:text-blue-300">
-                              Last Import: {lastImportCounts.products} products, {lastImportCounts.variants} variants, 
-                              {lastImportCounts.colors} colors, {lastImportCounts.sales} sales
-                            </p>
-                          </div>
-                        )}
-
                         {appSettings?.lastSyncTime && (
-                          <p className="mt-3 text-xs text-muted-foreground">
-                            Last sync: {format(new Date(appSettings.lastSyncTime), "dd/MM/yyyy HH:mm")}
-                          </p>
+                          <div className="mt-3 p-2 bg-gray-50 dark:bg-gray-900/50 rounded text-xs text-muted-foreground">
+                            <p>Last Sync: {format(new Date(appSettings.lastSyncTime), "dd/MM/yyyy HH:mm:ss")}</p>
+                          </div>
                         )}
+
+                        {cloudSyncStatus !== "idle" && (
+                          <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-800">
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />
+                              <span className="text-sm text-yellow-700 dark:text-yellow-300">
+                                {cloudSyncStatus === "exporting" ? "Exporting data..." : "Importing data..."}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Added missing closing div here */}
                       </div>
+
+                      <div className="mt-4 p-3 bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">Cloud Sync Status</p>
+                            <div className="flex items-center gap-2">
+                              {autoSyncEnabled ? (
+                                <>
+                                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+                                  <span className="text-xs text-green-700 dark:text-green-300">
+                                    Auto-syncing every {syncInterval} minute{syncInterval !== 1 ? "s" : ""}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="h-2 w-2 bg-gray-400 rounded-full"></div>
+                                  <span className="text-xs text-gray-600 dark:text-gray-400">Manual sync only</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right text-xs">
+                            {cloudConnectionStatus === "success" ? (
+                              <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded">
+                                <Check className="h-3 w-3" />
+                                Connected
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">
+                                <XCircle className="h-3 w-3" />
+                                Disconnected
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Enhanced sync results display */}
+                      {(lastExportCounts || lastImportCounts) && (
+                        <div className="border-t pt-4 space-y-3">
+                          <h4 className="font-medium text-sm">Sync Results</h4>
+
+                          {lastExportCounts && (
+                            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                              <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2">
+                                Last Export
+                              </p>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <span>
+                                  Products: <strong>{lastExportCounts.products}</strong>
+                                </span>
+                                <span>
+                                  Variants: <strong>{lastExportCounts.variants}</strong>
+                                </span>
+                                <span>
+                                  Colors: <strong>{lastExportCounts.colors}</strong>
+                                </span>
+                                <span>
+                                  Sales: <strong>{lastExportCounts.sales}</strong>
+                                </span>
+                                <span>
+                                  Items: <strong>{lastExportCounts.saleItems}</strong>
+                                </span>
+                                <span>
+                                  Payments: <strong>{lastExportCounts.paymentHistory}</strong>
+                                </span>
+                                <span>
+                                  Returns: <strong>{lastExportCounts.returns}</strong>
+                                </span>
+                                <span>
+                                  Stock Moves: <strong>{lastExportCounts.stockInHistory}</strong>
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {lastImportCounts && (
+                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                              <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-2">Last Import</p>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <span>
+                                  Products: <strong>{lastImportCounts.products}</strong>
+                                </span>
+                                <span>
+                                  Variants: <strong>{lastImportCounts.variants}</strong>
+                                </span>
+                                <span>
+                                  Colors: <strong>{lastImportCounts.colors}</strong>
+                                </span>
+                                <span>
+                                  Sales: <strong>{lastImportCounts.sales}</strong>
+                                </span>
+                                <span>
+                                  Items: <strong>{lastImportCounts.saleItems}</strong>
+                                </span>
+                                <span>
+                                  Payments: <strong>{lastImportCounts.paymentHistory}</strong>
+                                </span>
+                                <span>
+                                  Returns: <strong>{lastImportCounts.returns}</strong>
+                                </span>
+                                <span>
+                                  Stock Moves: <strong>{lastImportCounts.stockInHistory}</strong>
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -2671,7 +2869,7 @@ export default function Audit() {
                         </div>
                         <p className="text-xs text-muted-foreground">Total records across all tables</p>
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label className="text-sm font-medium">Cloud Status</Label>
                         <div className="flex items-center gap-2">
@@ -2693,21 +2891,21 @@ export default function Audit() {
                     <div className="border-t pt-4">
                       <h4 className="font-medium mb-3">Quick Actions</h4>
                       <div className="grid grid-cols-2 gap-3">
-                        <Button 
-                          variant="outline" 
-                          className="flex items-center gap-2"
+                        <Button
+                          variant="outline"
+                          className="flex items-center gap-2 bg-transparent"
                           onClick={() => {
-                            queryClient.invalidateQueries();
+                            queryClient.invalidateQueries()
                             toast({
                               title: "Data Refreshed",
                               description: "All data has been refreshed.",
-                            });
+                            })
                           }}
                         >
                           <RefreshCw className="h-4 w-4" />
                           Refresh Data
                         </Button>
-                        <Button variant="outline" className="flex items-center gap-2">
+                        <Button variant="outline" className="flex items-center gap-2 bg-transparent">
                           <Database className="h-4 w-4" />
                           Backup Database
                         </Button>
@@ -2739,5 +2937,5 @@ export default function Audit() {
         </TabsContent>
       </Tabs>
     </div>
-  );
+  )
 }

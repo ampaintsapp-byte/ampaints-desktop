@@ -1,66 +1,83 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { useDateFormat } from "@/hooks/use-date-format";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Separator } from "@/components/ui/separator";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+"use client"
+
+import { useState, useMemo } from "react"
+import { useQuery, useMutation } from "@tanstack/react-query"
+import { queryClient, apiRequest } from "@/lib/queryClient"
+import { useToast } from "@/hooks/use-toast"
+import { useDateFormat } from "@/hooks/use-date-format"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Search, RotateCcw, FileText, Package, Minus, Plus, Loader2, Eye, Download, User, Phone, DollarSign, AlertTriangle, CheckCircle, Calendar, X, ArrowLeft } from "lucide-react";
-import jsPDF from "jspdf";
-import type { SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Separator } from "@/components/ui/separator"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Search,
+  RotateCcw,
+  FileText,
+  Package,
+  Minus,
+  Plus,
+  Loader2,
+  Eye,
+  Download,
+  User,
+  Phone,
+  DollarSign,
+  AlertTriangle,
+  CheckCircle,
+  ArrowLeft,
+} from "lucide-react"
+import jsPDF from "jspdf"
+import type { SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema"
 
 interface ReturnStats {
-  totalReturns: number;
-  totalRefunded: number;
-  itemReturns: number;
-  billReturns: number;
+  totalReturns: number
+  totalRefunded: number
+  itemReturns: number
+  billReturns: number
 }
 
 interface QuickReturnForm {
-  customerName: string;
-  customerPhone: string;
-  colorId: string;
-  quantity: number;
-  rate: number;
-  reason: string;
-  restoreStock: boolean;
+  customerName: string
+  customerPhone: string
+  colorId: string
+  quantity: number
+  rate: number
+  reason: string
+  restoreStock: boolean
 }
 
 export default function Returns() {
-  const { toast } = useToast();
-  const { formatDate, formatDateShort } = useDateFormat();
-  const [activeTab, setActiveTab] = useState("bill");
-  const [searchPhone, setSearchPhone] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSale, setSelectedSale] = useState<SaleWithItems | null>(null);
-  const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null);
-  const [showReturnDialog, setShowReturnDialog] = useState(false);
-  const [showQuickReturnDialog, setShowQuickReturnDialog] = useState(false);
-  const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
-  const [returnReason, setReturnReason] = useState("");
-  const [returnType, setReturnType] = useState<"full" | "partial">("full");
-  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
-  const [restockItems, setRestockItems] = useState<Record<string, boolean>>({});
-  
+  const { toast } = useToast()
+  const { formatDate, formatDateShort } = useDateFormat()
+  const [activeTab, setActiveTab] = useState("bill")
+  const [searchPhone, setSearchPhone] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedSale, setSelectedSale] = useState<SaleWithItems | null>(null)
+  const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null)
+  const [showReturnDialog, setShowReturnDialog] = useState(false)
+  const [showQuickReturnDialog, setShowQuickReturnDialog] = useState(false)
+  const [viewDetailsOpen, setViewDetailsOpen] = useState(false)
+  const [returnReason, setReturnReason] = useState("")
+  const [returnType, setReturnType] = useState<"full" | "partial">("full")
+  const [selectedItems, setSelectedItems] = useState<Record<string, number>>({})
+  const [restockItems, setRestockItems] = useState<Record<string, boolean>>({})
+
   // Quick return form state
   const [quickReturnForm, setQuickReturnForm] = useState<QuickReturnForm>({
     customerName: "",
@@ -70,82 +87,87 @@ export default function Returns() {
     rate: 0,
     reason: "",
     restoreStock: true,
-  });
+  })
 
-  const { data: returns = [], isLoading: returnsLoading, refetch: refetchReturns } = useQuery<ReturnWithItems[]>({
+  const {
+    data: returns = [],
+    isLoading: returnsLoading,
+    refetch: refetchReturns,
+  } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
-  });
+  })
 
   const { data: sales = [], isLoading: salesLoading } = useQuery<SaleWithItems[]>({
     queryKey: ["/api/sales"],
-  });
+  })
 
   const { data: colors = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
-  });
+  })
 
   const filteredReturns = useMemo(() => {
-    return returns.filter(ret =>
-      ret.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ret.customerPhone.includes(searchQuery) ||
-      ret.id.toLowerCase().includes(searchQuery)
-    );
-  }, [returns, searchQuery]);
+    return returns.filter(
+      (ret) =>
+        ret.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ret.customerPhone.includes(searchQuery) ||
+        ret.id.toLowerCase().includes(searchQuery),
+    )
+  }, [returns, searchQuery])
 
   const stats: ReturnStats = useMemo(() => {
     return {
       totalReturns: returns.length,
-      totalRefunded: returns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
-      itemReturns: returns.filter(ret => ret.returnType === "item").length,
-      billReturns: returns.filter(ret => ret.returnType === "full_bill").length,
-    };
-  }, [returns]);
+      totalRefunded: returns.reduce((sum, ret) => sum + Number.parseFloat(ret.totalRefund || "0"), 0),
+      itemReturns: returns.filter((ret) => ret.returnType === "item").length,
+      billReturns: returns.filter((ret) => ret.returnType === "full_bill").length,
+    }
+  }, [returns])
 
   const searchResults = useMemo(() => {
-    if (!searchPhone.trim()) return [];
-    return sales.filter(sale => 
-      sale.customerPhone.includes(searchPhone) || 
-      sale.customerName.toLowerCase().includes(searchPhone.toLowerCase())
-    );
-  }, [sales, searchPhone]);
+    if (!searchPhone.trim()) return []
+    return sales.filter(
+      (sale) =>
+        sale.customerPhone.includes(searchPhone) || sale.customerName.toLowerCase().includes(searchPhone.toLowerCase()),
+    )
+  }, [sales, searchPhone])
 
   const createReturnMutation = useMutation({
     mutationFn: async (data: { returnData: any; items: any[] }) => {
-      const response = await apiRequest("POST", "/api/returns", data);
-      return response.json();
+      const response = await apiRequest("POST", "/api/returns", data)
+      return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/returns"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      setShowReturnDialog(false);
-      setSelectedSale(null);
-      setSelectedItems({});
-      setRestockItems({});
-      setReturnReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
+      setShowReturnDialog(false)
+      setSelectedSale(null)
+      setSelectedItems({})
+      setRestockItems({})
+      setReturnReason("")
       toast({
         title: "Return Processed",
         description: "Return has been successfully processed and stock has been updated",
-      });
+      })
     },
     onError: (error: any) => {
       toast({
         title: "Error",
         description: error.message || "Failed to process return",
         variant: "destructive",
-      });
+      })
     },
-  });
+  })
 
   const quickReturnMutation = useMutation({
     mutationFn: async (data: QuickReturnForm) => {
-      const response = await apiRequest("POST", "/api/returns/quick", data);
-      return response.json();
+      const response = await apiRequest("POST", "/api/returns/quick", data)
+      return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/returns"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-      setShowQuickReturnDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
+      setShowQuickReturnDialog(false)
       setQuickReturnForm({
         customerName: "",
         customerPhone: "",
@@ -154,113 +176,113 @@ export default function Returns() {
         rate: 0,
         reason: "",
         restoreStock: true,
-      });
+      })
       toast({
         title: "Quick Return Processed",
         description: "Item has been returned successfully and stock has been updated",
-      });
+      })
     },
     onError: (error: any) => {
       toast({
         title: "Error",
         description: error.message || "Failed to process quick return",
         variant: "destructive",
-      });
+      })
     },
-  });
+  })
 
   const handleSelectSale = (sale: SaleWithItems) => {
-    setSelectedSale(sale);
-    setShowReturnDialog(true);
-    setReturnType("full");
-    setSelectedItems({});
-    setRestockItems({});
-    setReturnReason("");
-    
+    setSelectedSale(sale)
+    setShowReturnDialog(true)
+    setReturnType("full")
+    setSelectedItems({})
+    setRestockItems({})
+    setReturnReason("")
+
     // Pre-select all items for full return
     if (sale.saleItems) {
-      const items: Record<string, number> = {};
-      const restock: Record<string, boolean> = {};
-      sale.saleItems.forEach(item => {
-        items[item.id] = item.quantity;
-        restock[item.id] = true;
-      });
-      setSelectedItems(items);
-      setRestockItems(restock);
+      const items: Record<string, number> = {}
+      const restock: Record<string, boolean> = {}
+      sale.saleItems.forEach((item) => {
+        items[item.id] = item.quantity
+        restock[item.id] = true
+      })
+      setSelectedItems(items)
+      setRestockItems(restock)
     }
-  };
+  }
 
   const handleItemQuantityChange = (itemId: string, maxQty: number, delta: number) => {
-    setSelectedItems(prev => {
-      const current = prev[itemId] || 0;
-      const newQty = Math.max(0, Math.min(maxQty, current + delta));
+    setSelectedItems((prev) => {
+      const current = prev[itemId] || 0
+      const newQty = Math.max(0, Math.min(maxQty, current + delta))
       if (newQty === 0) {
-        const { [itemId]: _, ...rest } = prev;
-        return rest;
+        const { [itemId]: _, ...rest } = prev
+        return rest
       }
-      return { ...prev, [itemId]: newQty };
-    });
-    setReturnType("partial");
-  };
+      return { ...prev, [itemId]: newQty }
+    })
+    setReturnType("partial")
+  }
 
   const handleToggleRestock = (itemId: string) => {
-    setRestockItems(prev => ({
+    setRestockItems((prev) => ({
       ...prev,
       [itemId]: !prev[itemId],
-    }));
-  };
+    }))
+  }
 
   const handleSelectAllItems = () => {
-    if (!selectedSale) return;
-    
-    const items: Record<string, number> = {};
-    const restock: Record<string, boolean> = {};
-    
-    selectedSale.saleItems?.forEach(item => {
-      items[item.id] = item.quantity;
-      restock[item.id] = true;
-    });
-    
-    setSelectedItems(items);
-    setRestockItems(restock);
-    setReturnType("full");
-  };
+    if (!selectedSale) return
+
+    const items: Record<string, number> = {}
+    const restock: Record<string, boolean> = {}
+
+    selectedSale.saleItems?.forEach((item) => {
+      items[item.id] = item.quantity
+      restock[item.id] = true
+    })
+
+    setSelectedItems(items)
+    setRestockItems(restock)
+    setReturnType("full")
+  }
 
   const handleDeselectAllItems = () => {
-    setSelectedItems({});
-    setRestockItems({});
-    setReturnType("partial");
-  };
+    setSelectedItems({})
+    setRestockItems({})
+    setReturnType("partial")
+  }
 
   const handleSubmitReturn = () => {
-    if (!selectedSale) return;
+    if (!selectedSale) return
 
     const itemsToReturn = Object.entries(selectedItems)
       .filter(([_, qty]) => qty > 0)
       .map(([itemId, quantity]) => {
-        const saleItem = selectedSale.saleItems?.find(i => i.id === itemId);
-        if (!saleItem) return null;
+        const saleItem = selectedSale.saleItems?.find((i) => i.id === itemId)
+        if (!saleItem) return null
         return {
           colorId: saleItem.colorId,
           saleItemId: saleItem.id,
           quantity,
-          rate: parseFloat(saleItem.rate),
-          subtotal: quantity * parseFloat(saleItem.rate),
+          rate: Number.parseFloat(saleItem.rate),
+          subtotal: quantity * Number.parseFloat(saleItem.rate),
           stockRestored: restockItems[itemId] ?? true,
-        };
+        }
       })
-      .filter(Boolean);
+      .filter(Boolean)
 
     if (itemsToReturn.length === 0) {
       toast({
         title: "No Items Selected",
         description: "Select at least one item to return",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
-    const totalRefund = itemsToReturn.reduce((sum, item) => sum + (item?.subtotal || 0), 0);
+    const totalRefund = itemsToReturn.reduce((sum, item) => sum + (item?.subtotal || 0), 0)
 
     createReturnMutation.mutate({
       returnData: {
@@ -273,8 +295,8 @@ export default function Returns() {
         status: "completed",
       },
       items: itemsToReturn,
-    });
-  };
+    })
+  }
 
   const handleQuickReturnSubmit = () => {
     if (!quickReturnForm.customerName || !quickReturnForm.customerPhone || !quickReturnForm.colorId) {
@@ -282,8 +304,8 @@ export default function Returns() {
         title: "Missing Information",
         description: "Please fill in all required fields",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
     if (quickReturnForm.quantity <= 0) {
@@ -291,151 +313,155 @@ export default function Returns() {
         title: "Invalid Quantity",
         description: "Quantity must be greater than 0",
         variant: "destructive",
-      });
-      return;
+      })
+      return
     }
 
-    quickReturnMutation.mutate(quickReturnForm);
-  };
+    quickReturnMutation.mutate(quickReturnForm)
+  }
 
   const handleColorSelect = (colorId: string) => {
-    const selectedColor = colors.find(c => c.id === colorId);
+    const selectedColor = colors.find((c) => c.id === colorId)
     if (selectedColor) {
-      const rate = selectedColor.rateOverride ? parseFloat(selectedColor.rateOverride) : parseFloat(selectedColor.variant.rate);
-      setQuickReturnForm(prev => ({
+      const rate = selectedColor.rateOverride
+        ? Number.parseFloat(selectedColor.rateOverride)
+        : Number.parseFloat(selectedColor.variant.rate)
+      setQuickReturnForm((prev) => ({
         ...prev,
         colorId,
         rate,
-      }));
+      }))
     }
-  };
+  }
 
   const formatItemDetails = (item: any) => {
-    if (!item.color) return `Item #${item.colorId}`;
-    const color = item.color;
-    const variant = color.variant;
-    const product = variant?.product;
-    return `${product?.company || ""} ${product?.productName || ""} - ${variant?.packingSize || ""} - ${color.colorCode} ${color.colorName}`;
-  };
+    if (!item.color) return `Item #${item.colorId}`
+    const color = item.color
+    const variant = color.variant
+    const product = variant?.product
+    return `${product?.company || ""} ${product?.productName || ""} - ${variant?.packingSize || ""} - ${color.colorCode} ${color.colorName}`
+  }
 
   const handleViewDetails = (returnRecord: ReturnWithItems) => {
-    setSelectedReturn(returnRecord);
-    setViewDetailsOpen(true);
-  };
+    setSelectedReturn(returnRecord)
+    setViewDetailsOpen(true)
+  }
 
   const downloadReturnPDF = (returnRecord: ReturnWithItems) => {
     const pdf = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: "a4"
-    });
+      format: "a4",
+    })
 
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 15;
-    let yPos = margin;
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const margin = 15
+    let yPos = margin
 
     // Header
-    pdf.setFillColor(102, 126, 234);
-    pdf.rect(0, 0, pageWidth, 30, "F");
+    pdf.setFillColor(102, 126, 234)
+    pdf.rect(0, 0, pageWidth, 30, "F")
 
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(16);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("RETURN DOCUMENT", pageWidth / 2, 12, { align: "center" });
-    pdf.setFontSize(9);
-    pdf.text("PaintPulse", pageWidth / 2, 20, { align: "center" });
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(16)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("RETURN DOCUMENT", pageWidth / 2, 12, { align: "center" })
+    pdf.setFontSize(9)
+    pdf.text("PaintPulse", pageWidth / 2, 20, { align: "center" })
 
-    pdf.setTextColor(0, 0, 0);
-    yPos = 40;
+    pdf.setTextColor(0, 0, 0)
+    yPos = 40
 
     // Return Info
-    pdf.setFontSize(10);
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Return Details:", margin, yPos);
-    yPos += 6;
+    pdf.setFontSize(10)
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Return Details:", margin, yPos)
+    yPos += 6
 
-    pdf.setFontSize(9);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Return ID: ${returnRecord.id.slice(0, 8).toUpperCase()}`, margin, yPos);
-    yPos += 5;
-    pdf.text(`Date: ${formatDateShort(returnRecord.createdAt)}`, margin, yPos);
-    yPos += 5;
-    pdf.text(`Status: ${returnRecord.status.toUpperCase()}`, margin, yPos);
-    yPos += 5;
-    pdf.text(`Type: ${returnRecord.returnType === "full_bill" ? "FULL BILL RETURN" : "ITEM RETURN"}`, margin, yPos);
-    yPos += 10;
+    pdf.setFontSize(9)
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Return ID: ${returnRecord.id.slice(0, 8).toUpperCase()}`, margin, yPos)
+    yPos += 5
+    pdf.text(`Date: ${formatDateShort(returnRecord.createdAt)}`, margin, yPos)
+    yPos += 5
+    pdf.text(`Status: ${returnRecord.status.toUpperCase()}`, margin, yPos)
+    yPos += 5
+    pdf.text(`Type: ${returnRecord.returnType === "full_bill" ? "FULL BILL RETURN" : "ITEM RETURN"}`, margin, yPos)
+    yPos += 10
 
     // Customer Info
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Customer Information:", margin, yPos);
-    yPos += 6;
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Customer Information:", margin, yPos)
+    yPos += 6
 
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Name: ${returnRecord.customerName}`, margin, yPos);
-    yPos += 5;
-    pdf.text(`Phone: ${returnRecord.customerPhone}`, margin, yPos);
-    yPos += 10;
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Name: ${returnRecord.customerName}`, margin, yPos)
+    yPos += 5
+    pdf.text(`Phone: ${returnRecord.customerPhone}`, margin, yPos)
+    yPos += 10
 
     // Returned Items Table
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Returned Items:", margin, yPos);
-    yPos += 8;
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Returned Items:", margin, yPos)
+    yPos += 8
 
     // Table header
-    pdf.setFillColor(50, 50, 50);
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
-    pdf.setTextColor(255, 255, 255);
-    pdf.setFontSize(8);
+    pdf.setFillColor(50, 50, 50)
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFontSize(8)
 
-    pdf.text("Product", margin + 3, yPos + 5);
-    pdf.text("Qty", margin + 70, yPos + 5);
-    pdf.text("Rate", margin + 90, yPos + 5);
-    pdf.text("Subtotal", pageWidth - margin - 20, yPos + 5, { align: "right" });
-    yPos += 10;
+    pdf.text("Product", margin + 3, yPos + 5)
+    pdf.text("Qty", margin + 70, yPos + 5)
+    pdf.text("Rate", margin + 90, yPos + 5)
+    pdf.text("Subtotal", pageWidth - margin - 20, yPos + 5, { align: "right" })
+    yPos += 10
 
-    pdf.setTextColor(0, 0, 0);
+    pdf.setTextColor(0, 0, 0)
 
     // Table rows
     returnRecord.returnItems.forEach((item, index) => {
       if (yPos > 250) {
-        pdf.addPage();
-        yPos = margin;
+        pdf.addPage()
+        yPos = margin
       }
 
-      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255];
-      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-      pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
+      const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255]
+      pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2])
+      pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
 
-      pdf.setFontSize(8);
-      const productName = `${item.color.variant.product.productName} - ${item.color.colorName} (${item.color.colorCode})`;
-      pdf.text(productName.substring(0, 40), margin + 3, yPos + 5);
-      pdf.text(item.quantity.toString(), margin + 70, yPos + 5);
-      pdf.text(`Rs.${Math.round(parseFloat(item.rate))}`, margin + 90, yPos + 5);
-      pdf.text(`Rs.${Math.round(parseFloat(item.subtotal))}`, pageWidth - margin - 3, yPos + 5, {
-        align: "right"
-      });
+      pdf.setFontSize(8)
+      const productName = `${item.color.variant.product.productName} - ${item.color.colorName} (${item.color.colorCode})`
+      pdf.text(productName.substring(0, 40), margin + 3, yPos + 5)
+      pdf.text(item.quantity.toString(), margin + 70, yPos + 5)
+      pdf.text(`Rs.${Math.round(Number.parseFloat(item.rate))}`, margin + 90, yPos + 5)
+      pdf.text(`Rs.${Math.round(Number.parseFloat(item.subtotal))}`, pageWidth - margin - 3, yPos + 5, {
+        align: "right",
+      })
 
-      yPos += 8;
-    });
+      yPos += 8
+    })
 
-    yPos += 10;
+    yPos += 10
 
     // Summary
-    pdf.setFont("helvetica", "bold");
-    pdf.text("Return Summary:", margin, yPos);
-    yPos += 8;
+    pdf.setFont("helvetica", "bold")
+    pdf.text("Return Summary:", margin, yPos)
+    yPos += 8
 
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`Total Items Returned: ${returnRecord.returnItems.length}`, margin, yPos);
-    yPos += 5;
-    pdf.text(`Total Refund Amount: Rs.${Math.round(parseFloat(returnRecord.totalRefund || "0"))}`, margin, yPos);
+    pdf.setFont("helvetica", "normal")
+    pdf.text(`Total Items Returned: ${returnRecord.returnItems.length}`, margin, yPos)
+    yPos += 5
+    pdf.text(`Total Refund Amount: Rs.${Math.round(Number.parseFloat(returnRecord.totalRefund || "0"))}`, margin, yPos)
 
-    pdf.save(`Return-${returnRecord.id.slice(0, 8).toUpperCase()}-${formatDateShort(returnRecord.createdAt).replace(/\//g, "-")}.pdf`);
+    pdf.save(
+      `Return-${returnRecord.id.slice(0, 8).toUpperCase()}-${formatDateShort(returnRecord.createdAt).replace(/\//g, "-")}.pdf`,
+    )
     toast({
       title: "Return Document Downloaded",
       description: "PDF has been downloaded successfully.",
-    });
-  };
+    })
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -473,15 +499,8 @@ export default function Returns() {
                       onChange={(e) => setSearchPhone(e.target.value)}
                     />
                   </div>
-                  <Button 
-                    onClick={() => setSearchPhone(searchPhone)}
-                    disabled={salesLoading}
-                  >
-                    {salesLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Search className="w-4 h-4" />
-                    )}
+                  <Button onClick={() => setSearchPhone(searchPhone)} disabled={salesLoading}>
+                    {salesLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                     <span className="ml-2">Search</span>
                   </Button>
                 </div>
@@ -492,8 +511,8 @@ export default function Returns() {
                     <ScrollArea className="h-[300px] rounded-md border">
                       <div className="p-2 space-y-2">
                         {searchResults.map((sale) => (
-                          <Card 
-                            key={sale.id} 
+                          <Card
+                            key={sale.id}
                             className="cursor-pointer hover:bg-muted/50 transition-colors"
                             onClick={() => handleSelectSale(sale)}
                           >
@@ -502,15 +521,19 @@ export default function Returns() {
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="font-medium truncate">{sale.customerName}</span>
-                                    <Badge variant="outline" className="shrink-0">{sale.customerPhone}</Badge>
+                                    <Badge variant="outline" className="shrink-0">
+                                      {sale.customerPhone}
+                                    </Badge>
                                   </div>
                                   <div className="text-sm text-muted-foreground mt-1">
                                     {formatDate(new Date(sale.createdAt))} - {sale.saleItems?.length || 0} items
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <div className="font-medium">Rs. {parseFloat(sale.totalAmount).toLocaleString()}</div>
-                                  <Badge 
+                                  <div className="font-medium">
+                                    Rs. {Number.parseFloat(sale.totalAmount).toLocaleString()}
+                                  </div>
+                                  <Badge
                                     variant={sale.paymentStatus === "paid" ? "default" : "secondary"}
                                     className="mt-1"
                                   >
@@ -535,15 +558,11 @@ export default function Returns() {
                 <CardDescription>Return individual items without searching for a specific bill</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button 
-                  onClick={() => setShowQuickReturnDialog(true)}
-                  className="w-full"
-                  size="lg"
-                >
+                <Button onClick={() => setShowQuickReturnDialog(true)} className="w-full" size="lg">
                   <RotateCcw className="w-4 h-4 mr-2" />
                   Open Quick Return Form
                 </Button>
-                
+
                 <div className="text-sm text-muted-foreground space-y-2">
                   <p>• Return individual items without bill reference</p>
                   <p>• Automatic stock restoration</p>
@@ -658,9 +677,7 @@ export default function Returns() {
                     filteredReturns.map((ret) => (
                       <TableRow key={ret.id}>
                         <TableCell>{formatDateShort(ret.createdAt)}</TableCell>
-                        <TableCell className="font-mono font-semibold">
-                          #{ret.id.slice(0, 8).toUpperCase()}
-                        </TableCell>
+                        <TableCell className="font-mono font-semibold">#{ret.id.slice(0, 8).toUpperCase()}</TableCell>
                         <TableCell>
                           <div className="space-y-1">
                             <p className="font-medium">{ret.customerName}</p>
@@ -679,32 +696,21 @@ export default function Returns() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-semibold text-red-600">
-                          Rs.{Math.round(parseFloat(ret.totalRefund || "0")).toLocaleString()}
+                          Rs.{Math.round(Number.parseFloat(ret.totalRefund || "0")).toLocaleString()}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">{ret.returnItems.length} items</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            variant={ret.status === "completed" ? "default" : "secondary"}
-                            className="capitalize"
-                          >
+                          <Badge variant={ret.status === "completed" ? "default" : "secondary"} className="capitalize">
                             {ret.status}
                           </Badge>
                         </TableCell>
                         <TableCell className="space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleViewDetails(ret)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => handleViewDetails(ret)}>
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => downloadReturnPDF(ret)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => downloadReturnPDF(ret)}>
                             <Download className="h-4 w-4" />
                           </Button>
                         </TableCell>
@@ -723,9 +729,7 @@ export default function Returns() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Process Return</DialogTitle>
-            <DialogDescription>
-              Select items to return and specify quantities
-            </DialogDescription>
+            <DialogDescription>Select items to return and specify quantities</DialogDescription>
           </DialogHeader>
 
           {selectedSale && (
@@ -745,7 +749,7 @@ export default function Returns() {
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">Bill Total</Label>
-                  <p className="font-medium">Rs. {parseFloat(selectedSale.totalAmount).toLocaleString()}</p>
+                  <p className="font-medium">Rs. {Number.parseFloat(selectedSale.totalAmount).toLocaleString()}</p>
                 </div>
               </div>
 
@@ -766,38 +770,37 @@ export default function Returns() {
               <ScrollArea className="h-[200px] rounded-md border">
                 <div className="p-2 space-y-2">
                   {selectedSale.saleItems?.map((item) => {
-                    const returnQty = selectedItems[item.id] || 0;
-                    const isReturning = returnQty > 0;
-                    
+                    const returnQty = selectedItems[item.id] || 0
+                    const isReturning = returnQty > 0
+
                     return (
-                      <div 
-                        key={item.id} 
-                        className={`p-3 rounded-md border ${isReturning ? 'bg-destructive/5 border-destructive/30' : 'bg-muted/30'}`}
+                      <div
+                        key={item.id}
+                        className={`p-3 rounded-md border ${isReturning ? "bg-destructive/5 border-destructive/30" : "bg-muted/30"}`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm truncate">{formatItemDetails(item)}</p>
                             <p className="text-xs text-muted-foreground">
-                              Rate: Rs. {parseFloat(item.rate).toLocaleString()} x {item.quantity} = Rs. {parseFloat(item.subtotal).toLocaleString()}
+                              Rate: Rs. {Number.parseFloat(item.rate).toLocaleString()} x {item.quantity} = Rs.{" "}
+                              {Number.parseFloat(item.subtotal).toLocaleString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <Button 
-                              size="icon" 
+                            <Button
+                              size="icon"
                               variant="outline"
-                              className="h-7 w-7"
+                              className="h-7 w-7 bg-transparent"
                               onClick={() => handleItemQuantityChange(item.id, item.quantity, -1)}
                               disabled={returnQty === 0}
                             >
                               <Minus className="h-3 w-3" />
                             </Button>
-                            <span className="w-8 text-center text-sm font-medium">
-                              {returnQty}
-                            </span>
-                            <Button 
-                              size="icon" 
+                            <span className="w-8 text-center text-sm font-medium">{returnQty}</span>
+                            <Button
+                              size="icon"
                               variant="outline"
-                              className="h-7 w-7"
+                              className="h-7 w-7 bg-transparent"
                               onClick={() => handleItemQuantityChange(item.id, item.quantity, 1)}
                               disabled={returnQty >= item.quantity}
                             >
@@ -817,18 +820,20 @@ export default function Returns() {
                               Restore to stock ({returnQty} units)
                             </Label>
                             <span className="text-xs text-destructive ml-auto">
-                              - Rs. {(returnQty * parseFloat(item.rate)).toLocaleString()}
+                              - Rs. {(returnQty * Number.parseFloat(item.rate)).toLocaleString()}
                             </span>
                           </div>
                         )}
                       </div>
-                    );
+                    )
                   })}
                 </div>
               </ScrollArea>
 
               <div>
-                <Label htmlFor="reason" className="text-sm font-medium">Return Reason (Optional)</Label>
+                <Label htmlFor="reason" className="text-sm font-medium">
+                  Return Reason (Optional)
+                </Label>
                 <Textarea
                   id="reason"
                   placeholder="Enter reason for return..."
@@ -844,10 +849,11 @@ export default function Returns() {
                 <div>
                   <p className="text-sm text-muted-foreground">Total Refund Amount</p>
                   <p className="text-xl font-bold text-destructive">
-                    Rs. {Object.entries(selectedItems)
+                    Rs.{" "}
+                    {Object.entries(selectedItems)
                       .reduce((sum, [itemId, qty]) => {
-                        const item = selectedSale.saleItems?.find(i => i.id === itemId);
-                        return sum + (qty * parseFloat(item?.rate || "0"));
+                        const item = selectedSale.saleItems?.find((i) => i.id === itemId)
+                        return sum + qty * Number.parseFloat(item?.rate || "0")
                       }, 0)
                       .toLocaleString()}
                   </p>
@@ -860,13 +866,10 @@ export default function Returns() {
           )}
 
           <DialogFooter className="gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => setShowReturnDialog(false)}
-            >
+            <Button variant="outline" onClick={() => setShowReturnDialog(false)}>
               Cancel
             </Button>
-            <Button 
+            <Button
               variant="destructive"
               onClick={handleSubmitReturn}
               disabled={createReturnMutation.isPending || Object.keys(selectedItems).length === 0}
@@ -883,19 +886,12 @@ export default function Returns() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={() => setShowQuickReturnDialog(false)}
-                className="h-8 w-8"
-              >
+              <Button variant="ghost" size="icon" onClick={() => setShowQuickReturnDialog(false)} className="h-8 w-8">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <div>
                 <DialogTitle>Quick Item Return</DialogTitle>
-                <DialogDescription>
-                  Return individual items without bill reference
-                </DialogDescription>
+                <DialogDescription>Return individual items without bill reference</DialogDescription>
               </div>
             </div>
           </DialogHeader>
@@ -913,7 +909,7 @@ export default function Returns() {
                     id="customerName"
                     placeholder="Enter customer name"
                     value={quickReturnForm.customerName}
-                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerName: e.target.value }))}
+                    onChange={(e) => setQuickReturnForm((prev) => ({ ...prev, customerName: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
@@ -922,7 +918,7 @@ export default function Returns() {
                     id="customerPhone"
                     placeholder="Enter customer phone"
                     value={quickReturnForm.customerPhone}
-                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, customerPhone: e.target.value }))}
+                    onChange={(e) => setQuickReturnForm((prev) => ({ ...prev, customerPhone: e.target.value }))}
                   />
                 </div>
               </CardContent>
@@ -943,7 +939,8 @@ export default function Returns() {
                     <SelectContent>
                       {colors.map((color) => (
                         <SelectItem key={color.id} value={color.id}>
-                          {color.variant.product.company} {color.variant.product.productName} - {color.variant.packingSize} - {color.colorCode} {color.colorName}
+                          {color.variant.product.company} {color.variant.product.productName} -{" "}
+                          {color.variant.packingSize} - {color.colorCode} {color.colorName}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -957,10 +954,12 @@ export default function Returns() {
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => setQuickReturnForm(prev => ({ 
-                          ...prev, 
-                          quantity: Math.max(1, prev.quantity - 1) 
-                        }))}
+                        onClick={() =>
+                          setQuickReturnForm((prev) => ({
+                            ...prev,
+                            quantity: Math.max(1, prev.quantity - 1),
+                          }))
+                        }
                       >
                         <Minus className="h-4 w-4" />
                       </Button>
@@ -969,16 +968,20 @@ export default function Returns() {
                         type="number"
                         min="1"
                         value={quickReturnForm.quantity}
-                        onChange={(e) => setQuickReturnForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                        onChange={(e) =>
+                          setQuickReturnForm((prev) => ({ ...prev, quantity: Number.parseInt(e.target.value) || 1 }))
+                        }
                         className="text-center"
                       />
                       <Button
                         variant="outline"
                         size="icon"
-                        onClick={() => setQuickReturnForm(prev => ({ 
-                          ...prev, 
-                          quantity: prev.quantity + 1 
-                        }))}
+                        onClick={() =>
+                          setQuickReturnForm((prev) => ({
+                            ...prev,
+                            quantity: prev.quantity + 1,
+                          }))
+                        }
                       >
                         <Plus className="h-4 w-4" />
                       </Button>
@@ -992,7 +995,9 @@ export default function Returns() {
                       min="0"
                       step="0.01"
                       value={quickReturnForm.rate}
-                      onChange={(e) => setQuickReturnForm(prev => ({ ...prev, rate: parseFloat(e.target.value) || 0 }))}
+                      onChange={(e) =>
+                        setQuickReturnForm((prev) => ({ ...prev, rate: Number.parseFloat(e.target.value) || 0 }))
+                      }
                     />
                   </div>
                   <div className="space-y-2">
@@ -1020,7 +1025,7 @@ export default function Returns() {
                     id="reason"
                     placeholder="Enter reason for return..."
                     value={quickReturnForm.reason}
-                    onChange={(e) => setQuickReturnForm(prev => ({ ...prev, reason: e.target.value }))}
+                    onChange={(e) => setQuickReturnForm((prev) => ({ ...prev, reason: e.target.value }))}
                     rows={3}
                   />
                 </div>
@@ -1029,8 +1034,8 @@ export default function Returns() {
                   <Checkbox
                     id="restoreStock"
                     checked={quickReturnForm.restoreStock}
-                    onCheckedChange={(checked) => 
-                      setQuickReturnForm(prev => ({ ...prev, restoreStock: checked as boolean }))
+                    onCheckedChange={(checked) =>
+                      setQuickReturnForm((prev) => ({ ...prev, restoreStock: checked as boolean }))
                     }
                   />
                   <Label htmlFor="restoreStock" className="cursor-pointer text-sm">
@@ -1047,20 +1052,20 @@ export default function Returns() {
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>Customer:</div>
                     <div className="font-medium">{quickReturnForm.customerName || "Not specified"}</div>
-                    
+
                     <div>Phone:</div>
                     <div className="font-medium">{quickReturnForm.customerPhone || "Not specified"}</div>
-                    
+
                     <div>Item:</div>
                     <div className="font-medium">
-                      {quickReturnForm.colorId 
-                        ? colors.find(c => c.id === quickReturnForm.colorId)?.colorName 
+                      {quickReturnForm.colorId
+                        ? colors.find((c) => c.id === quickReturnForm.colorId)?.colorName
                         : "Not selected"}
                     </div>
-                    
+
                     <div>Quantity:</div>
                     <div className="font-medium">{quickReturnForm.quantity} units</div>
-                    
+
                     <div>Refund Amount:</div>
                     <div className="font-bold text-red-600">
                       Rs. {(quickReturnForm.quantity * quickReturnForm.rate).toLocaleString()}
@@ -1072,8 +1077,8 @@ export default function Returns() {
           </div>
 
           <DialogFooter className="gap-2 pt-4 border-t">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setQuickReturnForm({
                   customerName: "",
@@ -1083,14 +1088,19 @@ export default function Returns() {
                   rate: 0,
                   reason: "",
                   restoreStock: true,
-                });
+                })
               }}
             >
               Reset Form
             </Button>
-            <Button 
+            <Button
               onClick={handleQuickReturnSubmit}
-              disabled={quickReturnMutation.isPending || !quickReturnForm.customerName || !quickReturnForm.customerPhone || !quickReturnForm.colorId}
+              disabled={
+                quickReturnMutation.isPending ||
+                !quickReturnForm.customerName ||
+                !quickReturnForm.customerPhone ||
+                !quickReturnForm.colorId
+              }
               className="min-w-32"
             >
               {quickReturnMutation.isPending ? (
@@ -1137,7 +1147,7 @@ export default function Returns() {
                 <div>
                   <p className="text-sm text-muted-foreground">Total Refund</p>
                   <p className="font-semibold text-red-600">
-                    Rs.{Math.round(parseFloat(selectedReturn.totalRefund || "0")).toLocaleString()}
+                    Rs.{Math.round(Number.parseFloat(selectedReturn.totalRefund || "0")).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -1167,9 +1177,7 @@ export default function Returns() {
                   <div className="grid grid-cols-2 gap-4 text-sm p-3 bg-blue-50 rounded-lg">
                     <div>
                       <span className="text-muted-foreground">Sale ID:</span>
-                      <p className="font-mono font-semibold">
-                        #{selectedReturn.sale.id.slice(0, 8).toUpperCase()}
-                      </p>
+                      <p className="font-mono font-semibold">#{selectedReturn.sale.id.slice(0, 8).toUpperCase()}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Sale Date:</span>
@@ -1177,11 +1185,15 @@ export default function Returns() {
                     </div>
                     <div>
                       <span className="text-muted-foreground">Total Amount:</span>
-                      <p className="font-medium">Rs.{Math.round(parseFloat(selectedReturn.sale.totalAmount)).toLocaleString()}</p>
+                      <p className="font-medium">
+                        Rs.{Math.round(Number.parseFloat(selectedReturn.sale.totalAmount)).toLocaleString()}
+                      </p>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Amount Paid:</span>
-                      <p className="font-medium">Rs.{Math.round(parseFloat(selectedReturn.sale.amountPaid)).toLocaleString()}</p>
+                      <p className="font-medium">
+                        Rs.{Math.round(Number.parseFloat(selectedReturn.sale.amountPaid)).toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1194,42 +1206,66 @@ export default function Returns() {
                   Returned Items ({selectedReturn.returnItems.length})
                 </h3>
                 <div className="space-y-3">
-                  {selectedReturn.returnItems.map((item) => (
-                    <Card key={item.id} className="p-4">
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-semibold">
-                              {item.color.variant.product.productName}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              {item.color.colorName} ({item.color.colorCode})
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Size: {item.color.variant.packingSize}
-                            </p>
+                  {selectedReturn.returnItems.map((item) => {
+                    const originalQty =
+                      selectedReturn.sale.saleItems?.find((si) => si.colorId === item.colorId)?.quantity || 0
+                    const remainingQty = originalQty - item.quantity
+
+                    return (
+                      <Card key={item.id} className="p-4">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <p className="font-semibold">{item.color.variant.product.productName}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {item.color.colorName} ({item.color.colorCode})
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Size: {item.color.variant.packingSize}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <Badge variant="outline">{item.quantity} units returned</Badge>
+                              {item.stockRestored && (
+                                <div className="flex items-center gap-1 text-xs text-green-600 mt-2">
+                                  <CheckCircle className="h-3 w-3" />
+                                  Stock Restored
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <Badge variant="outline">{item.quantity} units</Badge>
-                            {item.stockRestored && (
-                              <div className="flex items-center gap-1 text-xs text-green-600 mt-2">
-                                <CheckCircle className="h-3 w-3" />
-                                Stock Restored
-                              </div>
-                            )}
+
+                          <div className="grid grid-cols-3 gap-2 text-sm bg-gray-50 p-2 rounded">
+                            <div>
+                              <span className="text-muted-foreground block text-xs">Original Qty</span>
+                              <span className="font-semibold">{originalQty}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-xs">Returned</span>
+                              <span className="font-semibold text-red-600">{item.quantity}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-xs">Remaining</span>
+                              <span className="font-semibold text-green-600">{remainingQty}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Rate:</span>
+                            <span className="font-mono">
+                              Rs.{Math.round(Number.parseFloat(item.rate)).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-sm font-semibold border-t pt-2">
+                            <span>Refund Amount:</span>
+                            <span className="text-red-600">
+                              Rs.{Math.round(Number.parseFloat(item.subtotal)).toLocaleString()}
+                            </span>
                           </div>
                         </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Rate:</span>
-                          <span className="font-mono">Rs.{Math.round(parseFloat(item.rate)).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between text-sm font-semibold border-t pt-2">
-                          <span>Refund Amount:</span>
-                          <span className="text-red-600">Rs.{Math.round(parseFloat(item.subtotal)).toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -1237,9 +1273,7 @@ export default function Returns() {
               {selectedReturn.reason && (
                 <div className="border-t pt-4">
                   <h3 className="font-semibold mb-2">Return Reason</h3>
-                  <p className="text-sm text-muted-foreground p-3 bg-yellow-50 rounded-lg">
-                    {selectedReturn.reason}
-                  </p>
+                  <p className="text-sm text-muted-foreground p-3 bg-yellow-50 rounded-lg">{selectedReturn.reason}</p>
                 </div>
               )}
             </div>
@@ -1259,5 +1293,5 @@ export default function Returns() {
         </DialogContent>
       </Dialog>
     </div>
-  );
+  )
 }
