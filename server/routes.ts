@@ -162,9 +162,22 @@ async function getCloudSqlClient(connectionUrl: string) {
 
     return { sql, type: "supabase" }
   } else {
-    // Neon PostgreSQL connection
+    // Improved Neon connection with SSL handling
     const { neon } = await import("@neondatabase/serverless")
-    const sql = neon(connectionUrl)
+
+    // Clean up the connection URL for Neon
+    let cleanUrl = connectionUrl
+    if (cleanUrl.includes("channel_binding=require")) {
+      cleanUrl = cleanUrl.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+    }
+
+    // Ensure sslmode is set correctly for Neon
+    if (!cleanUrl.includes("sslmode")) {
+      const separator = cleanUrl.includes("?") ? "&" : "?"
+      cleanUrl += `${separator}sslmode=require`
+    }
+
+    const sql = neon(cleanUrl)
     return { sql, type: "neon" }
   }
 }
@@ -2275,7 +2288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let cleanUrl = connectionUrl
       if (cleanUrl.includes("channel_binding=require")) {
-        cleanUrl = cleanUrl.replace("&channel_binding=require", "")
+        cleanUrl = cleanUrl.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
       }
 
       const { sql, type } = await getCloudSqlClient(cleanUrl)
@@ -2298,12 +2311,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Cloud connection test failed:", error)
 
       let errorMessage = "Connection failed"
-      if (error.message.includes("SSL")) {
-        errorMessage = "SSL connection failed. Try removing channel_binding parameter."
-      } else if (error.message.includes("authentication")) {
-        errorMessage = "Authentication failed. Check username/password."
-      } else if (error.message.includes("getaddrinfo")) {
-        errorMessage = "Cannot reach database server. Check hostname."
+      if (error.message?.includes("SSL") || error.message?.includes("ssl")) {
+        errorMessage = "SSL connection error. Check that sslmode=require is set and credentials are correct."
+      } else if (error.message?.includes("authentication") || error.message?.includes("role")) {
+        errorMessage = "Authentication failed. Check username and password in the connection URL."
+      } else if (error.message?.includes("getaddrinfo") || error.message?.includes("ENOTFOUND")) {
+        errorMessage = "Cannot reach database server. Check the hostname in your connection URL."
+      } else if (error.message?.includes("ECONNREFUSED")) {
+        errorMessage = "Connection refused. Check if the server is running and the port is correct."
+      } else if (error.message?.includes("timeout")) {
+        errorMessage = "Connection timeout. The server is not responding. Check network connectivity."
       }
 
       res.status(400).json({

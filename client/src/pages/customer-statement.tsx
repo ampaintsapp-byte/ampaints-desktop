@@ -625,7 +625,6 @@ export default function CustomerStatement() {
     for (const txn of transactions) {
       const dateStr = formatDateShort(txn.date)
       const outstanding = txn.type !== "payment" ? Math.max(0, txn.totalAmount - txn.paid) : 0
-
       let amountStr = "-"
       let paidStr = "-"
       let dueStr = "-"
@@ -1796,4 +1795,3 @@ Thank you for your business!`
     </div>
   )
 }
-

@@ -2158,6 +2158,8 @@ export class DatabaseStorage implements IStorage {
       // Create adjusted sales data
       const adjustedSales: SaleWithItems[] = sales
         .map((sale) => {
+          const isManualBalance = sale.isManualBalance
+
           const adjustedSaleItems = sale.saleItems
             .map((item) => {
               const returnedQty = returnedQuantities.get(item.id) || 0
@@ -2180,7 +2182,7 @@ export class DatabaseStorage implements IStorage {
             totalAmount: totalAmount.toString(),
           }
         })
-        .filter((sale) => sale.saleItems.length > 0) // Only include sales with available items
+        .filter((sale) => sale.saleItems.length > 0 || sale.isManualBalance)
 
       // Create flat list of available items for easy access
       const availableItems = sales.flatMap((sale) =>
@@ -2581,7 +2583,7 @@ export class DatabaseStorage implements IStorage {
         .from(stockInHistory)
         .where(and(eq(stockInHistory.colorId, colorId), eq(stockInHistory.stockInDate, dateStr)))
 
-      // Get stock out total (from raw table since it might not be in Drizzle)
+      // Get stock out total (from raw table since it might not be in Drizzle schema)
       const outHistory = sqliteDb
         .prepare(
           "SELECT COALESCE(SUM(quantity), 0) as totalOut FROM stock_out_history WHERE color_id = ? AND stock_out_date = ?",

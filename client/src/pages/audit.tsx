@@ -2537,7 +2537,7 @@ export default function Audit() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground" id="cloud-description">
                       Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
                     </p>
 
@@ -2592,6 +2592,8 @@ export default function Audit() {
                         className="w-full bg-transparent"
                         disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
                         data-testid="button-test-connection"
+                        aria-label="Test connection to cloud database"
+                        aria-describedby="cloud-description"
                       >
                         {cloudConnectionStatus === "testing" ? (
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
