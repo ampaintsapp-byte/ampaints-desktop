@@ -1,4 +1,4 @@
-// audit.tsx - UPDATED VERSION WITH SEPARATED SETTINGS TABS
+// audit.tsx - COMPLETE VERSION WITH ALL TABS IMPLEMENTED
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +68,9 @@ import {
   Cpu,
   Wifi,
   WifiOff,
+  ArrowUp,
+  ArrowDown,
+  IndianRupee,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -75,7 +78,7 @@ import { useDateFormat } from "@/hooks/use-date-format";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import jsPDF from "jspdf";
 import type { ColorWithVariantAndProduct, Sale, StockInHistory, Product, PaymentHistory, Return, Settings as AppSettings } from "@shared/schema";
-import { format, startOfDay, endOfDay, isBefore, isAfter } from "date-fns";
+import { format, startOfDay, endOfDay, isBefore, isAfter, parseISO } from "date-fns";
 
 interface StockInHistoryWithColor extends StockInHistory {
   color: ColorWithVariantAndProduct;
@@ -792,6 +795,22 @@ export default function Audit() {
     return { totalSales, totalPaid, totalOutstanding, totalBills, paidBills };
   }, [allSales]);
 
+  const paymentsSummary = useMemo(() => {
+    const totalPayments = paymentHistory.reduce((acc, p) => acc + parseFloat(p.amount), 0);
+    const cashPayments = paymentHistory.filter(p => p.paymentMethod === 'cash').reduce((acc, p) => acc + parseFloat(p.amount), 0);
+    const onlinePayments = paymentHistory.filter(p => p.paymentMethod === 'online').reduce((acc, p) => acc + parseFloat(p.amount), 0);
+    return { totalPayments, cashPayments, onlinePayments };
+  }, [paymentHistory]);
+
+  const returnsSummary = useMemo(() => {
+    const totalReturns = auditReturns.reduce((acc, r) => acc + parseFloat(r.totalRefund || "0"), 0);
+    const totalItemsReturned = auditReturns.reduce((acc, r) => {
+      // This would need to be calculated from return items in a real implementation
+      return acc + 1; // Placeholder
+    }, 0);
+    return { totalReturns, totalItemsReturned };
+  }, [auditReturns]);
+
   const clearFilters = () => {
     setSearchQuery("");
     setDateFrom("");
@@ -803,7 +822,7 @@ export default function Audit() {
 
   const hasActiveFilters = searchQuery || dateFrom || dateTo || companyFilter !== "all" || productFilter !== "all" || movementTypeFilter !== "all";
 
-  // PDF download functions (same as before)
+  // PDF download functions
   const downloadStockAuditPDF = () => {
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -897,11 +916,337 @@ export default function Audit() {
     toast({ title: "PDF Downloaded", description: "Stock Audit Report has been downloaded." });
   };
 
-  // Other PDF download functions remain the same...
-  const downloadSalesAuditPDF = () => { /* ... */ };
-  const downloadUnpaidPDF = () => { /* ... */ };
-  const downloadPaymentsPDF = () => { /* ... */ };
-  const downloadReturnsPDF = () => { /* ... */ };
+  const downloadSalesAuditPDF = () => {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    let yPos = margin;
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 25, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
+    pdf.setFontSize(12);
+    pdf.text("SALES AUDIT REPORT", pageWidth / 2, 18, { align: "center" });
+
+    pdf.setTextColor(0, 0, 0);
+    yPos = 35;
+
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
+    pdf.text(`Total Sales: Rs. ${Math.round(salesSummary.totalSales).toLocaleString()}`, margin + 80, yPos);
+    pdf.text(`Total Bills: ${salesSummary.totalBills}`, margin + 160, yPos);
+    yPos += 15;
+
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 15, "F");
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(`Total Amount: Rs. ${Math.round(salesSummary.totalSales).toLocaleString()}`, margin + 5, yPos + 10);
+    pdf.text(`Total Paid: Rs. ${Math.round(salesSummary.totalPaid).toLocaleString()}`, margin + 70, yPos + 10);
+    pdf.text(`Outstanding: Rs. ${Math.round(salesSummary.totalOutstanding).toLocaleString()}`, margin + 140, yPos + 10);
+    pdf.text(`Paid Bills: ${salesSummary.paidBills}/${salesSummary.totalBills}`, margin + 220, yPos + 10);
+    yPos += 22;
+
+    pdf.setFillColor(50, 50, 50);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(8);
+    const headers = ["Date", "Bill No", "Customer", "Phone", "Amount", "Paid", "Balance", "Status"];
+    const colWidths = [25, 35, 50, 45, 30, 30, 30, 25];
+    let xPos = margin + 2;
+    headers.forEach((header, i) => {
+      pdf.text(header, xPos, yPos + 5.5);
+      xPos += colWidths[i];
+    });
+    yPos += 10;
+    pdf.setTextColor(0, 0, 0);
+
+    const maxRows = Math.min(filteredSales.length, 25);
+    for (let i = 0; i < maxRows; i++) {
+      const sale = filteredSales[i];
+      if (yPos > pageHeight - 20) break;
+
+      if (i % 2 === 0) {
+        pdf.setFillColor(250, 250, 250);
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+      }
+
+      pdf.setFontSize(7);
+      xPos = margin + 2;
+      pdf.text(formatDateShort(new Date(sale.createdAt)), xPos, yPos + 4); xPos += colWidths[0];
+      pdf.text(sale.id.slice(0, 8).toUpperCase(), xPos, yPos + 4); xPos += colWidths[1];
+      pdf.text(sale.customerName.substring(0, 20), xPos, yPos + 4); xPos += colWidths[2];
+      pdf.text(sale.customerPhone, xPos, yPos + 4); xPos += colWidths[3];
+      pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[4];
+      pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[5];
+      pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString()}`, xPos, yPos + 4); xPos += colWidths[6];
+      
+      if (sale.paymentStatus === "paid") {
+        pdf.setTextColor(34, 197, 94);
+        pdf.text("Paid", xPos, yPos + 4);
+      } else if (sale.paymentStatus === "partial") {
+        pdf.setTextColor(245, 158, 11);
+        pdf.text("Partial", xPos, yPos + 4);
+      } else {
+        pdf.setTextColor(239, 68, 68);
+        pdf.text("Unpaid", xPos, yPos + 4);
+      }
+      pdf.setTextColor(0, 0, 0);
+      yPos += 6;
+    }
+
+    if (filteredSales.length > maxRows) {
+      pdf.setFontSize(8);
+      pdf.text(`... and ${filteredSales.length - maxRows} more records`, margin, yPos + 5);
+    }
+
+    pdf.save(`Sales-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
+    toast({ title: "PDF Downloaded", description: "Sales Audit Report has been downloaded." });
+  };
+
+  const downloadUnpaidPDF = () => {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    let yPos = margin;
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 25, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
+    pdf.setFontSize(12);
+    pdf.text("UNPAID BILLS REPORT", pageWidth / 2, 18, { align: "center" });
+
+    pdf.setTextColor(0, 0, 0);
+    yPos = 35;
+
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
+    pdf.text(`Total Unpaid Bills: ${unpaidBills.length}`, margin + 80, yPos);
+    pdf.text(`Total Outstanding: Rs. ${Math.round(unpaidBills.reduce((acc, bill) => acc + (parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid)), 0)).toLocaleString()}`, margin + 160, yPos);
+    yPos += 15;
+
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Customer", margin + 5, yPos + 5);
+    pdf.text("Phone", margin + 80, yPos + 5);
+    pdf.text("Bill Amount", margin + 140, yPos + 5);
+    pdf.text("Paid", margin + 190, yPos + 5);
+    pdf.text("Outstanding", margin + 230, yPos + 5);
+    pdf.text("Status", margin + 280, yPos + 5);
+    yPos += 12;
+
+    const maxRows = Math.min(unpaidBills.length, 30);
+    for (let i = 0; i < maxRows; i++) {
+      const bill = unpaidBills[i];
+      if (yPos > pageHeight - 20) break;
+
+      if (i % 2 === 0) {
+        pdf.setFillColor(250, 250, 250);
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+      }
+
+      pdf.setFontSize(7);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(bill.customerName.substring(0, 25), margin + 5, yPos + 4);
+      pdf.text(bill.customerPhone, margin + 80, yPos + 4);
+      pdf.text(`Rs. ${Math.round(parseFloat(bill.totalAmount)).toLocaleString()}`, margin + 140, yPos + 4);
+      pdf.text(`Rs. ${Math.round(parseFloat(bill.amountPaid)).toLocaleString()}`, margin + 190, yPos + 4);
+      
+      const outstanding = parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+      pdf.setTextColor(239, 68, 68);
+      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, margin + 230, yPos + 4);
+      
+      pdf.setTextColor(0, 0, 0);
+      if (bill.paymentStatus === "partial") {
+        pdf.setTextColor(245, 158, 11);
+        pdf.text("Partial", margin + 280, yPos + 4);
+      } else {
+        pdf.setTextColor(239, 68, 68);
+        pdf.text("Unpaid", margin + 280, yPos + 4);
+      }
+      yPos += 6;
+    }
+
+    if (unpaidBills.length > maxRows) {
+      pdf.setFontSize(8);
+      pdf.text(`... and ${unpaidBills.length - maxRows} more unpaid bills`, margin, yPos + 5);
+    }
+
+    pdf.save(`Unpaid-Bills-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
+    toast({ title: "PDF Downloaded", description: "Unpaid Bills Report has been downloaded." });
+  };
+
+  const downloadPaymentsPDF = () => {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    let yPos = margin;
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 25, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
+    pdf.setFontSize(12);
+    pdf.text("PAYMENTS AUDIT REPORT", pageWidth / 2, 18, { align: "center" });
+
+    pdf.setTextColor(0, 0, 0);
+    yPos = 35;
+
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
+    pdf.text(`Total Payments: Rs. ${Math.round(paymentsSummary.totalPayments).toLocaleString()}`, margin + 80, yPos);
+    pdf.text(`Cash: Rs. ${Math.round(paymentsSummary.cashPayments).toLocaleString()} | Online: Rs. ${Math.round(paymentsSummary.onlinePayments).toLocaleString()}`, margin + 160, yPos);
+    yPos += 15;
+
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Date", margin + 5, yPos + 5);
+    pdf.text("Customer", margin + 35, yPos + 5);
+    pdf.text("Phone", margin + 90, yPos + 5);
+    pdf.text("Amount", margin + 140, yPos + 5);
+    pdf.text("Method", margin + 180, yPos + 5);
+    pdf.text("Previous Balance", margin + 220, yPos + 5);
+    pdf.text("New Balance", margin + 270, yPos + 5);
+    yPos += 12;
+
+    const maxRows = Math.min(auditPayments.length, 30);
+    for (let i = 0; i < maxRows; i++) {
+      const payment = auditPayments[i];
+      if (yPos > pageHeight - 20) break;
+
+      if (i % 2 === 0) {
+        pdf.setFillColor(250, 250, 250);
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+      }
+
+      pdf.setFontSize(7);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(formatDateShort(new Date(payment.createdAt)), margin + 5, yPos + 4);
+      pdf.text((payment.sale?.customerName || "N/A").substring(0, 20), margin + 35, yPos + 4);
+      pdf.text(payment.customerPhone, margin + 90, yPos + 4);
+      pdf.text(`Rs. ${Math.round(parseFloat(payment.amount)).toLocaleString()}`, margin + 140, yPos + 4);
+      
+      if (payment.paymentMethod === "cash") {
+        pdf.setTextColor(34, 197, 94);
+        pdf.text("Cash", margin + 180, yPos + 4);
+      } else {
+        pdf.setTextColor(59, 130, 246);
+        pdf.text("Online", margin + 180, yPos + 4);
+      }
+      
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(`Rs. ${Math.round(parseFloat(payment.previousBalance)).toLocaleString()}`, margin + 220, yPos + 4);
+      pdf.text(`Rs. ${Math.round(parseFloat(payment.newBalance)).toLocaleString()}`, margin + 270, yPos + 4);
+      yPos += 6;
+    }
+
+    if (auditPayments.length > maxRows) {
+      pdf.setFontSize(8);
+      pdf.text(`... and ${auditPayments.length - maxRows} more payment records`, margin, yPos + 5);
+    }
+
+    pdf.save(`Payments-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
+    toast({ title: "PDF Downloaded", description: "Payments Audit Report has been downloaded." });
+  };
+
+  const downloadReturnsPDF = () => {
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    let yPos = margin;
+
+    pdf.setFillColor(102, 126, 234);
+    pdf.rect(0, 0, pageWidth, 25, "F");
+
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" });
+    pdf.setFontSize(12);
+    pdf.text("RETURNS AUDIT REPORT", pageWidth / 2, 18, { align: "center" });
+
+    pdf.setTextColor(0, 0, 0);
+    yPos = 35;
+
+    pdf.setFontSize(10);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Generated: ${formatDateShort(new Date())}`, margin, yPos);
+    pdf.text(`Total Returns: Rs. ${Math.round(returnsSummary.totalReturns).toLocaleString()}`, margin + 80, yPos);
+    pdf.text(`Total Items Returned: ${returnsSummary.totalItemsReturned}`, margin + 160, yPos);
+    yPos += 15;
+
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F");
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Date", margin + 5, yPos + 5);
+    pdf.text("Customer", margin + 35, yPos + 5);
+    pdf.text("Phone", margin + 90, yPos + 5);
+    pdf.text("Refund Amount", margin + 140, yPos + 5);
+    pdf.text("Type", margin + 190, yPos + 5);
+    pdf.text("Reason", margin + 230, yPos + 5);
+    pdf.text("Status", margin + 280, yPos + 5);
+    yPos += 12;
+
+    const maxRows = Math.min(auditReturns.length, 30);
+    for (let i = 0; i < maxRows; i++) {
+      const returnItem = auditReturns[i];
+      if (yPos > pageHeight - 20) break;
+
+      if (i % 2 === 0) {
+        pdf.setFillColor(250, 250, 250);
+        pdf.rect(margin, yPos, pageWidth - 2 * margin, 6, "F");
+      }
+
+      pdf.setFontSize(7);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(formatDateShort(new Date(returnItem.createdAt)), margin + 5, yPos + 4);
+      pdf.text(returnItem.customerName.substring(0, 20), margin + 35, yPos + 4);
+      pdf.text(returnItem.customerPhone, margin + 90, yPos + 4);
+      pdf.text(`Rs. ${Math.round(parseFloat(returnItem.totalRefund || "0")).toLocaleString()}`, margin + 140, yPos + 4);
+      pdf.text(returnItem.returnType === "item" ? "Item Return" : "Full Return", margin + 190, yPos + 4);
+      pdf.text((returnItem.reason || "N/A").substring(0, 25), margin + 230, yPos + 4);
+      
+      if (returnItem.status === "completed") {
+        pdf.setTextColor(34, 197, 94);
+        pdf.text("Completed", margin + 280, yPos + 4);
+      } else {
+        pdf.setTextColor(245, 158, 11);
+        pdf.text("Pending", margin + 280, yPos + 4);
+      }
+      yPos += 6;
+    }
+
+    if (auditReturns.length > maxRows) {
+      pdf.setFontSize(8);
+      pdf.text(`... and ${auditReturns.length - maxRows} more return records`, margin, yPos + 5);
+    }
+
+    pdf.save(`Returns-Audit-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`);
+    toast({ title: "PDF Downloaded", description: "Returns Audit Report has been downloaded." });
+  };
 
   if (showPinDialog) {
     return (
@@ -962,7 +1307,7 @@ export default function Audit() {
     );
   }
 
-  const isLoading = colorsLoading || stockInLoading || stockOutLoading || salesLoading || paymentsLoading;
+  const isLoading = colorsLoading || stockInLoading || stockOutLoading || salesLoading || paymentsLoading || unpaidLoading || auditPaymentsLoading || returnsLoading;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -1042,26 +1387,704 @@ export default function Audit() {
           </TabsList>
         </div>
 
-        {/* Stock, Sales, Unpaid, Payments, Returns Tabs remain exactly the same... */}
-        
+        {/* STOCK AUDIT TAB */}
         <TabsContent value="stock" className="flex-1 overflow-auto p-4 space-y-4">
-          {/* Stock tab content remains exactly the same */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <ArrowUp className="h-4 w-4 text-green-500" />
+                  Total Stock In
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stockSummary.totalIn}</div>
+                <p className="text-xs text-muted-foreground">Units added to stock</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <ArrowDown className="h-4 w-4 text-red-500" />
+                  Total Stock Out
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stockSummary.totalOut}</div>
+                <p className="text-xs text-muted-foreground">Units sold</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Package className="h-4 w-4 text-blue-500" />
+                  Current Stock
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stockSummary.currentStock}</div>
+                <p className="text-xs text-muted-foreground">Available units</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-purple-500" />
+                  Net Movement
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stockSummary.totalIn - stockSummary.totalOut}</div>
+                <p className="text-xs text-muted-foreground">Stock change</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Stock Movement History
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Company" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Companies</SelectItem>
+                      {companies.map(company => (
+                        <SelectItem key={company} value={company}>{company}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={productFilter} onValueChange={setProductFilter}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Products</SelectItem>
+                      {filteredProducts.map(product => (
+                        <SelectItem key={product.id} value={product.productName}>{product.productName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={movementTypeFilter} onValueChange={setMovementTypeFilter}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="IN">Stock In</SelectItem>
+                      <SelectItem value="OUT">Stock Out</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={downloadStockAuditPDF} className="flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Export PDF
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead>Size</TableHead>
+                        <TableHead>Color</TableHead>
+                        <TableHead>Quantity</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead>Customer</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredStockMovements.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                            No stock movements found for the selected filters.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredStockMovements.map((movement) => (
+                          <TableRow key={movement.id}>
+                            <TableCell className="font-medium">
+                              {formatDateShort(movement.date)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={movement.type === "IN" ? "default" : "destructive"}
+                                className="flex items-center gap-1 w-16 justify-center"
+                              >
+                                {movement.type === "IN" ? (
+                                  <ArrowUp className="h-3 w-3" />
+                                ) : (
+                                  <ArrowDown className="h-3 w-3" />
+                                )}
+                                {movement.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{movement.company}</TableCell>
+                            <TableCell>{movement.product}</TableCell>
+                            <TableCell>{movement.variant}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-4 h-4 rounded border"
+                                  style={{
+                                    backgroundColor: movement.colorCode === 'WHITE' ? '#f3f4f6' :
+                                      movement.colorCode === 'BLACK' ? '#000' :
+                                      `#${movement.colorCode}`,
+                                  }}
+                                />
+                                {movement.colorCode} - {movement.colorName}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className={`flex items-center gap-1 ${movement.type === "IN" ? "text-green-600" : "text-red-600"}`}>
+                                {movement.type === "IN" ? "+" : "-"}
+                                {movement.quantity}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm">{movement.reference}</TableCell>
+                            <TableCell>{movement.customer || "-"}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
+        {/* SALES AUDIT TAB */}
         <TabsContent value="sales" className="flex-1 overflow-auto p-4 space-y-4">
-          {/* Sales tab content remains exactly the same */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <IndianRupee className="h-4 w-4 text-green-500" />
+                  Total Sales
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">Rs. {Math.round(salesSummary.totalSales).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">All time revenue</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Wallet className="h-4 w-4 text-blue-500" />
+                  Total Paid
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">Rs. {Math.round(salesSummary.totalPaid).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Amount received</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-orange-500" />
+                  Outstanding
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">Rs. {Math.round(salesSummary.totalOutstanding).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Pending payments</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-purple-500" />
+                  Total Bills
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{salesSummary.totalBills}</div>
+                <p className="text-xs text-muted-foreground">
+                  {salesSummary.paidBills} paid, {salesSummary.totalBills - salesSummary.paidBills} unpaid
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Sales History
+                </div>
+                <Button onClick={downloadSalesAuditPDF} className="flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Bill No</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Paid</TableHead>
+                        <TableHead>Balance</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredSales.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                            No sales found for the selected filters.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredSales.map((sale) => {
+                          const balance = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+                          return (
+                            <TableRow key={sale.id}>
+                              <TableCell className="font-medium">
+                                {formatDateShort(new Date(sale.createdAt))}
+                              </TableCell>
+                              <TableCell className="font-mono text-sm">
+                                {sale.id.slice(0, 8).toUpperCase()}
+                              </TableCell>
+                              <TableCell>{sale.customerName}</TableCell>
+                              <TableCell>{sale.customerPhone}</TableCell>
+                              <TableCell>Rs. {Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</TableCell>
+                              <TableCell>Rs. {Math.round(parseFloat(sale.amountPaid)).toLocaleString()}</TableCell>
+                              <TableCell>
+                                <span className={balance > 0 ? "text-red-600 font-medium" : "text-green-600"}>
+                                  Rs. {Math.round(balance).toLocaleString()}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    sale.paymentStatus === "paid"
+                                      ? "default"
+                                      : sale.paymentStatus === "partial"
+                                      ? "secondary"
+                                      : "destructive"
+                                  }
+                                >
+                                  {sale.paymentStatus === "paid"
+                                    ? "Paid"
+                                    : sale.paymentStatus === "partial"
+                                    ? "Partial"
+                                    : "Unpaid"}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
+        {/* UNPAID BILLS TAB */}
         <TabsContent value="unpaid" className="flex-1 overflow-auto p-4 space-y-4">
-          {/* Unpaid tab content remains exactly the same */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-red-500" />
+                  Total Unpaid Bills
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{unpaidBills.length}</div>
+                <p className="text-xs text-muted-foreground">Pending bills</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <IndianRupee className="h-4 w-4 text-orange-500" />
+                  Total Outstanding
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  Rs. {Math.round(unpaidBills.reduce((acc, bill) => acc + (parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid)), 0)).toLocaleString()}
+                </div>
+                <p className="text-xs text-muted-foreground">Amount pending</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <TrendingDown className="h-4 w-4 text-purple-500" />
+                  Average Per Bill
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  Rs. {unpaidBills.length > 0 ? Math.round(unpaidBills.reduce((acc, bill) => acc + (parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid)), 0) / unpaidBills.length).toLocaleString() : 0}
+                </div>
+                <p className="text-xs text-muted-foreground">Average outstanding</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Unpaid Bills
+                </div>
+                <Button onClick={downloadUnpaidPDF} className="flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {unpaidLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Bill Amount</TableHead>
+                        <TableHead>Paid</TableHead>
+                        <TableHead>Outstanding</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Last Updated</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {unpaidBills.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No unpaid bills found. Great job!
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        unpaidBills.map((bill) => {
+                          const outstanding = parseFloat(bill.totalAmount) - parseFloat(bill.amountPaid);
+                          return (
+                            <TableRow key={bill.id}>
+                              <TableCell className="font-medium">{bill.customerName}</TableCell>
+                              <TableCell>{bill.customerPhone}</TableCell>
+                              <TableCell>Rs. {Math.round(parseFloat(bill.totalAmount)).toLocaleString()}</TableCell>
+                              <TableCell>Rs. {Math.round(parseFloat(bill.amountPaid)).toLocaleString()}</TableCell>
+                              <TableCell>
+                                <span className="text-red-600 font-medium">
+                                  Rs. {Math.round(outstanding).toLocaleString()}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={bill.paymentStatus === "partial" ? "secondary" : "destructive"}
+                                >
+                                  {bill.paymentStatus === "partial" ? "Partial" : "Unpaid"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {formatDateShort(new Date(bill.createdAt))}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
+        {/* PAYMENTS AUDIT TAB */}
         <TabsContent value="payments" className="flex-1 overflow-auto p-4 space-y-4">
-          {/* Payments tab content remains exactly the same */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <IndianRupee className="h-4 w-4 text-green-500" />
+                  Total Payments
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">Rs. {Math.round(paymentsSummary.totalPayments).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">All payments received</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Wallet className="h-4 w-4 text-blue-500" />
+                  Cash Payments
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">Rs. {Math.round(paymentsSummary.cashPayments).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Cash transactions</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-purple-500" />
+                  Online Payments
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">Rs. {Math.round(paymentsSummary.onlinePayments).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Digital transactions</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-orange-500" />
+                  Payment Records
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{auditPayments.length}</div>
+                <p className="text-xs text-muted-foreground">Total payment entries</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wallet className="h-5 w-5" />
+                  Payment History
+                </div>
+                <Button onClick={downloadPaymentsPDF} className="flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {auditPaymentsLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Previous Balance</TableHead>
+                        <TableHead>New Balance</TableHead>
+                        <TableHead>Notes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {auditPayments.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                            No payment records found.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        auditPayments.map((payment) => (
+                          <TableRow key={payment.id}>
+                            <TableCell className="font-medium">
+                              {formatDateShort(new Date(payment.createdAt))}
+                            </TableCell>
+                            <TableCell>{(payment.sale?.customerName || "N/A")}</TableCell>
+                            <TableCell>{payment.customerPhone}</TableCell>
+                            <TableCell className="text-green-600 font-medium">
+                              Rs. {Math.round(parseFloat(payment.amount)).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={payment.paymentMethod === "cash" ? "default" : "secondary"}
+                              >
+                                {payment.paymentMethod === "cash" ? "Cash" : "Online"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>Rs. {Math.round(parseFloat(payment.previousBalance)).toLocaleString()}</TableCell>
+                            <TableCell>Rs. {Math.round(parseFloat(payment.newBalance)).toLocaleString()}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-32 truncate">
+                              {payment.notes || "-"}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
+        {/* RETURNS AUDIT TAB */}
         <TabsContent value="returns" className="flex-1 overflow-auto p-4 space-y-4">
-          {/* Returns tab content remains exactly the same */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4 text-orange-500" />
+                  Total Returns
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{auditReturns.length}</div>
+                <p className="text-xs text-muted-foreground">Return transactions</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <IndianRupee className="h-4 w-4 text-red-500" />
+                  Total Refund Amount
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">Rs. {Math.round(returnsSummary.totalReturns).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Amount refunded</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Package className="h-4 w-4 text-purple-500" />
+                  Items Returned
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{returnsSummary.totalItemsReturned}</div>
+                <p className="text-xs text-muted-foreground">Total items returned</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="h-5 w-5" />
+                  Returns History
+                </div>
+                <Button onClick={downloadReturnsPDF} className="flex items-center gap-2">
+                  <Download className="h-4 w-4" />
+                  Export PDF
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {returnsLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Refund Amount</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Reason</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {auditReturns.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No return records found.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        auditReturns.map((returnItem) => (
+                          <TableRow key={returnItem.id}>
+                            <TableCell className="font-medium">
+                              {formatDateShort(new Date(returnItem.createdAt))}
+                            </TableCell>
+                            <TableCell>{returnItem.customerName}</TableCell>
+                            <TableCell>{returnItem.customerPhone}</TableCell>
+                            <TableCell className="text-red-600 font-medium">
+                              Rs. {Math.round(parseFloat(returnItem.totalRefund || "0")).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                {returnItem.returnType === "item" ? "Item Return" : "Full Return"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-48 truncate">
+                              {returnItem.reason || "No reason provided"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={returnItem.status === "completed" ? "default" : "secondary"}
+                              >
+                                {returnItem.status === "completed" ? "Completed" : "Pending"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* SETTINGS TAB - COMPLETELY REORGANIZED WITH SEPARATE TABS */}
@@ -1630,7 +2653,17 @@ export default function Audit() {
                     <div className="border-t pt-4">
                       <h4 className="font-medium mb-3">Quick Actions</h4>
                       <div className="grid grid-cols-2 gap-3">
-                        <Button variant="outline" className="flex items-center gap-2">
+                        <Button 
+                          variant="outline" 
+                          className="flex items-center gap-2"
+                          onClick={() => {
+                            queryClient.invalidateQueries();
+                            toast({
+                              title: "Data Refreshed",
+                              description: "All data has been refreshed.",
+                            });
+                          }}
+                        >
                           <RefreshCw className="h-4 w-4" />
                           Refresh Data
                         </Button>

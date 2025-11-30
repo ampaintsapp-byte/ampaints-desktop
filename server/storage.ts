@@ -52,6 +52,23 @@ interface ExtendedInsertSale extends InsertSale {
   notes?: string | null;
 }
 
+// NEW: Customer purchase history interface
+interface CustomerPurchaseHistory {
+  originalSales: SaleWithItems[];
+  adjustedSales: SaleWithItems[];
+  availableItems: Array<{
+    saleId: string;
+    saleItemId: string;
+    colorId: string;
+    color: ColorWithVariantAndProduct;
+    originalQuantity: number;
+    availableQuantity: number;
+    rate: number;
+    subtotal: number;
+    saleDate: Date;
+  }>;
+}
+
 export interface IStorage {
   // Products
   getProducts(): Promise<Product[]>;
@@ -152,6 +169,9 @@ export interface IStorage {
   getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]>;
   getReturnItems(): Promise<ReturnItem[]>;
   getSaleItems(): Promise<SaleItem[]>;
+
+  // NEW: Customer Purchase History Tracking
+  getCustomerPurchaseHistory(customerPhone: string): Promise<CustomerPurchaseHistory>;
 
   // Settings
   getSettings(): Promise<Settings>;
@@ -1932,6 +1952,87 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('[Storage] Error fetching sale items:', error);
       return [];
+    }
+  }
+
+  // NEW: Customer Purchase History Tracking
+  async getCustomerPurchaseHistory(customerPhone: string): Promise<CustomerPurchaseHistory> {
+    try {
+      console.log(`[Storage] Getting purchase history for customer: ${customerPhone}`);
+      
+      // Get all sales for the customer
+      const sales = await this.getSalesByCustomerPhoneWithItems(customerPhone);
+      
+      // Get all returns for the customer
+      const returns = await this.getReturnsByCustomerPhone(customerPhone);
+      
+      // Create a map to track returned quantities per sale item
+      const returnedQuantities = new Map<string, number>();
+      
+      // Process returns to calculate returned quantities
+      returns.forEach(returnRecord => {
+        returnRecord.returnItems.forEach(returnItem => {
+          if (returnItem.saleItemId) {
+            const key = returnItem.saleItemId;
+            const currentQty = returnedQuantities.get(key) || 0;
+            returnedQuantities.set(key, currentQty + returnItem.quantity);
+          }
+        });
+      });
+      
+      // Create adjusted sales data
+      const adjustedSales: SaleWithItems[] = sales.map(sale => {
+        const adjustedSaleItems = sale.saleItems.map(item => {
+          const returnedQty = returnedQuantities.get(item.id) || 0;
+          const availableQty = Math.max(0, item.quantity - returnedQty);
+          
+          return {
+            ...item,
+            quantity: availableQty,
+            subtotal: (availableQty * parseFloat(item.rate)).toString()
+          };
+        }).filter(item => item.quantity > 0); // Only include items with available quantity
+        
+        // Recalculate sale total
+        const totalAmount = adjustedSaleItems.reduce((sum, item) => sum + parseFloat(item.subtotal), 0);
+        
+        return {
+          ...sale,
+          saleItems: adjustedSaleItems,
+          totalAmount: totalAmount.toString()
+        };
+      }).filter(sale => sale.saleItems.length > 0); // Only include sales with available items
+      
+      // Create flat list of available items for easy access
+      const availableItems = sales.flatMap(sale => 
+        sale.saleItems.map(item => {
+          const returnedQty = returnedQuantities.get(item.id) || 0;
+          const availableQty = Math.max(0, item.quantity - returnedQty);
+          
+          return {
+            saleId: sale.id,
+            saleItemId: item.id,
+            colorId: item.colorId,
+            color: item.color,
+            originalQuantity: item.quantity,
+            availableQuantity: availableQty,
+            rate: parseFloat(item.rate),
+            subtotal: availableQty * parseFloat(item.rate),
+            saleDate: sale.createdAt
+          };
+        }).filter(item => item.availableQuantity > 0)
+      );
+
+      console.log(`[Storage] Purchase history calculated: ${sales.length} original sales, ${adjustedSales.length} adjusted sales, ${availableItems.length} available items`);
+      
+      return {
+        originalSales: sales,
+        adjustedSales,
+        availableItems
+      };
+    } catch (error) {
+      console.error('[Storage] Error getting customer purchase history:', error);
+      throw error;
     }
   }
 

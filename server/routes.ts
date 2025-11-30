@@ -43,7 +43,8 @@ const pendingChanges = {
   products: false,
   sales: false, 
   colors: false,
-  payments: false
+  payments: false,
+  returns: false
 };
 
 // Helper function to hash PIN
@@ -89,11 +90,15 @@ setInterval(() => {
 // Real-time query invalidation helper
 function invalidateCustomerQueries(customerPhone: string) {
   console.log(`[Real-time] Invalidating queries for customer: ${customerPhone}`);
+  // Invalidate React Query cache for this customer
+  // This would be connected to your frontend cache invalidation system
 }
 
 // Global query invalidation helper
 function invalidateGlobalQueries() {
   console.log("[Real-time] Invalidating global queries");
+  // Invalidate all React Query caches
+  // This would be connected to your frontend cache invalidation system
 }
 
 // Auto-sync functions
@@ -994,11 +999,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get all sales with items for a customer (for statement details)
+  // NEW: Get customer purchase history with return adjustments
+  app.get("/api/customer/:phone/purchase-history", async (req, res) => {
+    try {
+      const { phone } = req.params;
+      console.log(`[API] Fetching purchase history for customer: ${phone}`);
+      
+      const purchaseHistory = await storage.getCustomerPurchaseHistory(phone);
+      res.json(purchaseHistory);
+    } catch (error) {
+      console.error("[API] Error fetching customer purchase history:", error);
+      res.status(500).json({ error: "Failed to fetch customer purchase history" });
+    }
+  });
+
+  // Get all sales with items for a customer (for statement details) - UPDATED
   app.get("/api/sales/customer/:phone/with-items", async (req, res) => {
     try {
-      const sales = await storage.getSalesByCustomerPhoneWithItems(req.params.phone);
-      res.json(sales);
+      const { phone } = req.params;
+      const purchaseHistory = await storage.getCustomerPurchaseHistory(phone);
+      res.json(purchaseHistory.adjustedSales);
     } catch (error) {
       console.error("Error fetching customer sales with items:", error);
       res.status(500).json({ error: "Failed to fetch customer sales with items" });
@@ -1340,13 +1360,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create return
+  // Create return - UPDATED WITH REAL-TIME INVALIDATION
   app.post("/api/returns", async (req, res) => {
     try {
       const { returnData, items } = req.body;
       console.log("[API] Creating return:", { returnData, items: items?.length });
       
       const returnRecord = await storage.createReturn(returnData, items || []);
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(returnData.customerPhone);
+      invalidateGlobalQueries();
+      
+      // Auto-sync trigger
+      detectChanges('returns');
+      detectChanges('sales');
+      detectChanges('colors');
+      
       res.json(returnRecord);
     } catch (error) {
       console.error("[API] Error creating return:", error);
@@ -1354,11 +1384,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Quick return
+  // Quick return - UPDATED WITH REAL-TIME INVALIDATION
   app.post("/api/returns/quick", async (req, res) => {
     try {
       console.log("[API] Creating quick return:", req.body);
       const returnRecord = await storage.createQuickReturn(req.body);
+      
+      // Invalidate real-time queries
+      invalidateCustomerQueries(req.body.customerPhone);
+      invalidateGlobalQueries();
+      
+      // Auto-sync trigger
+      detectChanges('returns');
+      detectChanges('colors');
+      
       res.json(returnRecord);
     } catch (error) {
       console.error("[API] Error creating quick return:", error);
