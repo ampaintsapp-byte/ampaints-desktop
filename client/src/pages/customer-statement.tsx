@@ -261,7 +261,8 @@ export default function CustomerStatement() {
         customerPhone,
         totalAmount: data.amount,
         dueDate: data.dueDate,
-        notes: data.notes || `Cash loan of Rs. ${data.amount}`,
+        notes: data.notes || `Manual balance of Rs. ${data.amount}`,
+        isManualBalance: true,
       })
       return response.json()
     },
@@ -269,6 +270,7 @@ export default function CustomerStatement() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/customer", customerPhone] })
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/payment-history/customer", customerPhone] })
       setCashLoanDialogOpen(false)
       setCashLoanAmount("")
       setCashLoanNotes("")
@@ -281,7 +283,7 @@ export default function CustomerStatement() {
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to add cash loan",
+        description: error.message || "Failed to add manual balance",
         variant: "destructive",
       })
     },
@@ -382,7 +384,9 @@ export default function CustomerStatement() {
         runningBalance -= txn.credit
       } else {
         // Bills and cash loans add to outstanding
-        runningBalance += txn.outstanding
+        runningBalance += txn.debit
+        // Subtract any payments already made on this transaction
+        runningBalance -= txn.paid
       }
       balanceByTransaction[txn.id] = runningBalance
     })
@@ -465,7 +469,7 @@ export default function CustomerStatement() {
     if (!cashLoanAmount) {
       toast({
         title: "Invalid Amount",
-        description: "Please enter an amount for the cash loan",
+        description: "Please enter an amount for the manual balance",
         variant: "destructive",
       })
       return
@@ -490,7 +494,7 @@ export default function CustomerStatement() {
 
   const openEditPayment = (payment: PaymentHistoryWithSale) => {
     setEditingPayment(payment)
-    setEditPaymentAmount(payment.amount)
+    setEditPaymentAmount(payment.amount.toString())
     setEditPaymentMethod(payment.paymentMethod)
     setEditPaymentNotes(payment.notes || "")
     setEditPaymentDialogOpen(true)
