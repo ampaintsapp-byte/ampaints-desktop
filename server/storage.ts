@@ -10,7 +10,7 @@ import {
   paymentHistory,
   returns,
   returnItems,
-  customerAccounts, // Assuming customerAccounts is imported from @shared/schema
+  customerAccounts,
   type Product,
   type InsertProduct,
   type Variant,
@@ -38,9 +38,6 @@ import {
 } from "@shared/schema"
 import { db } from "./db"
 import { eq, desc, sql, and } from "drizzle-orm"
-
-// storage.ts - COMPLETE FIXED VERSION WITH ALL MISSING PROPERTIES
-// REMOVED REDUNDANT IMPORTS - Keeping only one set
 
 // FIXED: Extended interfaces with missing properties
 interface ExtendedSale extends Sale {
@@ -211,7 +208,6 @@ export interface IStorage {
   updateSettings(data: UpdateSettings): Promise<Settings>
 
   // Audit
-  getStockOutHistory(): Promise<any[]>
   recordStockOut(data: {
     colorId: string
     quantity: number
@@ -2221,40 +2217,6 @@ export class DatabaseStorage implements IStorage {
       console.error("[Storage] Error getting customer purchase history:", error)
       throw error
     }
-  }
-
-  // Audit
-  async getStockOutHistory(): Promise<any[]> {
-    const result = await db.query.saleItems.findMany({
-      with: {
-        color: {
-          with: {
-            variant: {
-              with: {
-                product: true,
-              },
-            },
-          },
-        },
-        sale: true,
-      },
-    })
-
-    return result
-      .map((item) => ({
-        id: item.id,
-        saleId: item.saleId,
-        colorId: item.colorId,
-        quantity: item.quantity,
-        rate: item.rate,
-        subtotal: item.subtotal,
-        color: item.color,
-        sale: item.sale,
-        soldAt: item.sale?.createdAt,
-        customerName: item.sale?.customerName,
-        customerPhone: item.sale?.customerPhone,
-      }))
-      .sort((a, b) => new Date(b.soldAt || 0).getTime() - new Date(a.soldAt || 0).getTime())
   }
 
   // ============ NEW: STOCK OUT HISTORY TRACKING ============

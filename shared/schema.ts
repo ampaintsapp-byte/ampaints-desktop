@@ -110,6 +110,21 @@ export const returnItems = sqliteTable("return_items", {
   stockRestored: integer("stock_restored", { mode: 'boolean' }).notNull().default(true), // Whether stock was restored
 });
 
+// Customer Accounts table - stores customer account information
+export const customerAccounts = sqliteTable("customer_accounts", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  customerPhone: text("customer_phone").notNull().unique(),
+  customerName: text("customer_name").notNull(),
+  totalPurchased: text("total_purchased").default("0"),
+  totalPaid: text("total_paid").default("0"),
+  currentBalance: text("current_balance").default("0"),
+  lastTransactionDate: integer("last_transaction_date"),
+  accountStatus: text("account_status").default("active"), // active, inactive, blocked
+  notes: text("notes"),
+  createdAt: integer("created_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
+  updatedAt: integer("updated_at", { mode: 'timestamp' }).$defaultFn(() => new Date()).notNull(),
+});
+
 // Settings table - stores app preferences (single row)
 export const settings = sqliteTable("settings", {
   id: text("id").primaryKey().default("default"),
@@ -221,6 +236,11 @@ export const returnItemsRelations = relations(returnItems, ({ one }) => ({
   }),
 }));
 
+export const customerAccountsRelations = relations(customerAccounts, ({ many }) => ({
+  sales: many(sales),
+  paymentHistory: many(paymentHistory),
+}));
+
 // Insert schemas
 export const insertProductSchema = createInsertSchema(products).omit({
   id: true,
@@ -288,6 +308,16 @@ export const insertReturnItemSchema = createInsertSchema(returnItems).omit({
   subtotal: z.string().or(z.number()),
 });
 
+export const insertCustomerAccountSchema = createInsertSchema(customerAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  totalPurchased: z.string().or(z.number()).optional(),
+  totalPaid: z.string().or(z.number()).optional(),
+  currentBalance: z.string().or(z.number()).optional(),
+});
+
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   id: true,
   updatedAt: true,
@@ -305,6 +335,7 @@ export const selectStockInHistorySchema = createSelectSchema(stockInHistory);
 export const selectPaymentHistorySchema = createSelectSchema(paymentHistory);
 export const selectReturnSchema = createSelectSchema(returns);
 export const selectReturnItemSchema = createSelectSchema(returnItems);
+export const selectCustomerAccountSchema = createSelectSchema(customerAccounts);
 export const selectSettingsSchema = createSelectSchema(settings);
 
 // Types
@@ -334,6 +365,9 @@ export type Return = typeof returns.$inferSelect;
 
 export type InsertReturnItem = z.infer<typeof insertReturnItemSchema>;
 export type ReturnItem = typeof returnItems.$inferSelect;
+
+export type InsertCustomerAccount = z.infer<typeof insertCustomerAccountSchema>;
+export type CustomerAccount = typeof customerAccounts.$inferSelect;
 
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type UpdateSettings = z.infer<typeof updateSettingsSchema>;
@@ -375,6 +409,11 @@ export type ReturnWithItems = Return & {
   returnItems: ReturnItemWithDetails[];
 };
 
+export type CustomerAccountWithRelations = CustomerAccount & {
+  sales?: Sale[];
+  paymentHistory?: PaymentHistory[];
+};
+
 // Helper function to compute effective rate for a color
 // Returns rateOverride if set, otherwise falls back to variant rate
 export function getEffectiveRate(color: ColorWithVariantAndProduct): string {
@@ -407,4 +446,35 @@ export function isValidDDMMYYYY(dateString: string): boolean {
   return date.getDate() === day && 
          date.getMonth() === month - 1 && 
          date.getFullYear() === year;
+}
+
+// Helper function to calculate customer account summary
+export function calculateCustomerAccountSummary(
+  sales: Sale[],
+  paymentHistory: PaymentHistory[]
+): {
+  totalPurchased: number;
+  totalPaid: number;
+  currentBalance: number;
+  paymentStatus: "paid" | "partial" | "unpaid";
+} {
+  const totalPurchased = sales.reduce((sum, sale) => sum + Number.parseFloat(sale.totalAmount), 0);
+  const totalPaid = sales.reduce((sum, sale) => sum + Number.parseFloat(sale.amountPaid), 0);
+  const currentBalance = totalPurchased - totalPaid;
+  
+  let paymentStatus: "paid" | "partial" | "unpaid";
+  if (currentBalance <= 0) {
+    paymentStatus = "paid";
+  } else if (totalPaid > 0) {
+    paymentStatus = "partial";
+  } else {
+    paymentStatus = "unpaid";
+  }
+
+  return {
+    totalPurchased,
+    totalPaid,
+    currentBalance,
+    paymentStatus,
+  };
 }
