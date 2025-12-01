@@ -1558,11 +1558,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/sales/customer/:phone/with-items", async (req, res) => {
     try {
       const { phone } = req.params
+
+      if (!phone || phone.trim() === "") {
+        return res.status(400).json({ error: "Phone number is required" })
+      }
+
+      console.log(`[API] Fetching customer sales with items for: ${phone}`)
       const purchaseHistory = await storage.getCustomerPurchaseHistory(phone)
+
+      if (!purchaseHistory || !purchaseHistory.adjustedSales) {
+        return res.json({ adjustedSales: [] })
+      }
+
       res.json(purchaseHistory.adjustedSales)
     } catch (error) {
       console.error("Error fetching customer sales with items:", error)
-      res.status(500).json({ error: "Failed to fetch customer sales with items" })
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error("Full error details:", errorMessage)
+      res.status(500).json({
+        error: "Failed to fetch customer sales with items",
+        details: errorMessage,
+      })
     }
   })
 

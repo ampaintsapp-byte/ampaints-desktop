@@ -2155,24 +2155,32 @@ export class DatabaseStorage implements IStorage {
     try {
       console.log(`[Storage] Getting purchase history for customer: ${customerPhone}`)
 
+      if (!customerPhone || customerPhone.trim() === "") {
+        throw new Error("Customer phone is required")
+      }
+
       // Get all sales for the customer
       const sales = await this.getSalesByCustomerPhoneWithItems(customerPhone)
+      console.log(`[Storage] Retrieved ${sales.length} sales for customer`)
 
       // Get all returns for the customer
       const returns = await this.getReturnsByCustomerPhone(customerPhone)
+      console.log(`[Storage] Retrieved ${returns.length} returns for customer`)
 
       // Create a map to track returned quantities per sale item
       const returnedQuantities = new Map<string, number>()
 
       // Process returns to calculate returned quantities
       returns.forEach((returnRecord) => {
-        returnRecord.returnItems.forEach((returnItem) => {
-          if (returnItem.saleItemId) {
-            const key = returnItem.saleItemId
-            const currentQty = returnedQuantities.get(key) || 0
-            returnedQuantities.set(key, currentQty + returnItem.quantity)
-          }
-        })
+        if (returnRecord.returnItems && Array.isArray(returnRecord.returnItems)) {
+          returnRecord.returnItems.forEach((returnItem) => {
+            if (returnItem.saleItemId) {
+              const key = returnItem.saleItemId
+              const currentQty = returnedQuantities.get(key) || 0
+              returnedQuantities.set(key, currentQty + (returnItem.quantity || 0))
+            }
+          })
+        }
       })
 
       // Create adjusted sales data
@@ -2184,21 +2192,25 @@ export class DatabaseStorage implements IStorage {
             return sale
           }
 
+          if (!sale.saleItems || !Array.isArray(sale.saleItems)) {
+            return sale
+          }
+
           const adjustedSaleItems = sale.saleItems
             .map((item) => {
               const returnedQty = returnedQuantities.get(item.id) || 0
-              const availableQty = Math.max(0, item.quantity - returnedQty)
+              const availableQty = Math.max(0, (item.quantity || 0) - returnedQty)
 
               return {
                 ...item,
                 quantity: availableQty,
-                subtotal: (availableQty * Number.parseFloat(item.rate)).toString(),
+                subtotal: (availableQty * Number.parseFloat(item.rate || "0")).toString(),
               }
             })
-            .filter((item) => item.quantity > 0) // Only include items with available quantity
+            .filter((item) => item.quantity > 0)
 
           // Recalculate sale total
-          const totalAmount = adjustedSaleItems.reduce((sum, item) => sum + Number.parseFloat(item.subtotal), 0)
+          const totalAmount = adjustedSaleItems.reduce((sum, item) => sum + Number.parseFloat(item.subtotal || "0"), 0)
 
           return {
             ...sale,
@@ -2210,20 +2222,20 @@ export class DatabaseStorage implements IStorage {
 
       // Create flat list of available items for easy access
       const availableItems = sales.flatMap((sale) =>
-        sale.saleItems
+        (sale.saleItems || [])
           .map((item) => {
             const returnedQty = returnedQuantities.get(item.id) || 0
-            const availableQty = Math.max(0, item.quantity - returnedQty)
+            const availableQty = Math.max(0, (item.quantity || 0) - returnedQty)
 
             return {
               saleId: sale.id,
               saleItemId: item.id,
               colorId: item.colorId,
               color: item.color,
-              originalQuantity: item.quantity,
+              originalQuantity: item.quantity || 0,
               availableQuantity: availableQty,
-              rate: Number.parseFloat(item.rate),
-              subtotal: availableQty * Number.parseFloat(item.rate),
+              rate: Number.parseFloat(item.rate || "0"),
+              subtotal: availableQty * Number.parseFloat(item.rate || "0"),
               saleDate: sale.createdAt,
             }
           })
@@ -2241,7 +2253,7 @@ export class DatabaseStorage implements IStorage {
       }
     } catch (error) {
       console.error("[Storage] Error getting customer purchase history:", error)
-      throw error
+      throw new Error(`Failed to get purchase history: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
