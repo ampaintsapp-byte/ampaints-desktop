@@ -3,6 +3,10 @@
 import { useState, useMemo } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { queryClient, apiRequest } from "@/lib/queryClient"
+import { useDebounce } from "@/hooks/use-debounce"
+
+const VISIBLE_LIMIT_INITIAL = 50
+const VISIBLE_LIMIT_INCREMENT = 30
 import { useToast } from "@/hooks/use-toast"
 import { useDateFormat } from "@/hooks/use-date-format"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -77,6 +81,9 @@ export default function Returns() {
   const [activeTab, setActiveTab] = useState("bill")
   const [searchPhone, setSearchPhone] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL)
+  
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
   const [selectedSale, setSelectedSale] = useState<SaleWithItemsAndReturns | null>(null)
   const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null)
   const [showReturnDialog, setShowReturnDialog] = useState(false)
@@ -117,11 +124,15 @@ export default function Returns() {
   const filteredReturns = useMemo(() => {
     return returns.filter(
       (ret) =>
-        ret.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ret.customerPhone.includes(searchQuery) ||
-        ret.id.toLowerCase().includes(searchQuery),
+        ret.customerName.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+        ret.customerPhone.includes(debouncedSearchQuery) ||
+        ret.id.toLowerCase().includes(debouncedSearchQuery),
     )
-  }, [returns, searchQuery])
+  }, [returns, debouncedSearchQuery])
+  
+  const visibleReturns = useMemo(() => {
+    return filteredReturns.slice(0, visibleLimit)
+  }, [filteredReturns, visibleLimit])
 
   const stats: ReturnStats = useMemo(() => {
     return {
@@ -775,7 +786,7 @@ export default function Returns() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredReturns.map((ret) => (
+                    visibleReturns.map((ret) => (
                       <TableRow key={ret.id}>
                         <TableCell>{formatDateShort(ret.createdAt)}</TableCell>
                         <TableCell className="font-mono font-semibold">#{ret.id.slice(0, 8).toUpperCase()}</TableCell>
@@ -820,6 +831,20 @@ export default function Returns() {
                   )}
                 </TableBody>
               </Table>
+              
+              {/* Load More Button */}
+              {filteredReturns.length > visibleLimit && (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                    data-testid="button-load-more-returns"
+                  >
+                    Load More ({filteredReturns.length - visibleLimit} remaining)
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

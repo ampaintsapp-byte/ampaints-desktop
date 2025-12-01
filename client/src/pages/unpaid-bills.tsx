@@ -4,6 +4,10 @@
 import { useState, useMemo, useEffect, useDeferredValue } from "react"
 import { useLocation } from "wouter"
 import { useQuery, useMutation } from "@tanstack/react-query"
+import { useDebounce } from "@/hooks/use-debounce"
+
+const VISIBLE_LIMIT_INITIAL = 50
+const VISIBLE_LIMIT_INCREMENT = 30
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -182,6 +186,9 @@ export default function UnpaidBills() {
     paymentStatus: "all",
     billStatus: "unpaid",
   })
+  
+  const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL)
+  const debouncedSearch = useDebounce(filters.search, 300)
 
   // Fetch ALL sales to show both paid and unpaid customers
   const {
@@ -561,9 +568,9 @@ export default function UnpaidBills() {
       filtered = filtered.filter((customer) => customer.totalOutstanding <= 0)
     }
 
-    // Apply search filter
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase()
+    // Apply search filter (using debounced value for performance)
+    if (debouncedSearch) {
+      const searchLower = debouncedSearch.toLowerCase()
       filtered = filtered.filter(
         (customer) =>
           customer.customerName.toLowerCase().includes(searchLower) || customer.customerPhone.includes(searchLower),
@@ -639,7 +646,11 @@ export default function UnpaidBills() {
     }
 
     return filtered
-  }, [consolidatedCustomers, filters])
+  }, [consolidatedCustomers, filters, debouncedSearch])
+  
+  const visibleCustomers = useMemo(() => {
+    return filteredAndSortedCustomers.slice(0, visibleLimit)
+  }, [filteredAndSortedCustomers, visibleLimit])
 
   const hasActiveFilters =
     filters.search ||
@@ -1266,7 +1277,7 @@ export default function UnpaidBills() {
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredAndSortedCustomers.map((customer) => {
+          {visibleCustomers.map((customer) => {
             const hasOverdue = customer.bills.some((bill) => getDueDateStatus(bill.dueDate) === "overdue")
             const hasDueSoon = customer.bills.some((bill) => getDueDateStatus(bill.dueDate) === "due_soon")
             const hasManualBalance = customer.bills.some((bill) => bill.isManualBalance)
@@ -1408,6 +1419,20 @@ export default function UnpaidBills() {
               </div>
             )
           })}
+          
+          {/* Load More Button */}
+          {filteredAndSortedCustomers.length > visibleLimit && (
+            <div className="col-span-full flex justify-center pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                data-testid="button-load-more-customers"
+              >
+                Load More ({filteredAndSortedCustomers.length - visibleLimit} remaining)
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

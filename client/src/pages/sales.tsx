@@ -4,6 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, RefreshCw, MoreVertical, Trash2, Eye, Printer, RotateCcw, Calendar, TrendingUp, Wallet, AlertCircle, ChevronRight } from "lucide-react";
+import { useDebounce } from "@/hooks/use-debounce";
+
+const VISIBLE_LIMIT_INITIAL = 50;
+const VISIBLE_LIMIT_INCREMENT = 30;
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -65,6 +69,9 @@ export default function Sales() {
   const [endDate, setEndDate] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+
+  const debouncedSearchQuery = useDebounce(customerSearchQuery, 300);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -134,8 +141,8 @@ export default function Sales() {
   const filteredSales = useMemo(() => {
     let filtered = sales;
 
-    if (customerSearchQuery) {
-      const query = customerSearchQuery.toLowerCase().trim();
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase().trim();
       filtered = filtered.filter((sale) => {
         const customerName = sale.customerName.toLowerCase();
         const customerPhone = sale.customerPhone.toLowerCase();
@@ -201,7 +208,11 @@ export default function Sales() {
     }
 
     return filtered;
-  }, [sales, customerSearchQuery, dateFilter, startDate, endDate]);
+  }, [sales, debouncedSearchQuery, dateFilter, startDate, endDate]);
+
+  const visibleSales = useMemo(() => {
+    return filteredSales.slice(0, visibleLimit);
+  }, [filteredSales, visibleLimit]);
 
   const totals = useMemo(() => {
     return filteredSales.reduce((acc, sale) => {
@@ -430,7 +441,7 @@ export default function Sales() {
           </div>
         ) : (
           <div className="space-y-2">
-            {filteredSales.map((sale) => {
+            {visibleSales.map((sale) => {
               const totalFloat = parseFloat(sale.totalAmount);
               const paidFloat = parseFloat(sale.amountPaid);
               const totalAmount = Math.round(totalFloat);
@@ -565,6 +576,20 @@ export default function Sales() {
                 </div>
               );
             })}
+            
+            {/* Load More Button */}
+            {filteredSales.length > visibleLimit && (
+              <div className="flex justify-center pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                  data-testid="button-load-more-sales"
+                >
+                  Load More ({filteredSales.length - visibleLimit} remaining)
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -573,7 +598,8 @@ export default function Sales() {
           <div className="glass-footer">
             <div className="flex flex-col sm:flex-row justify-between items-center gap-2 text-xs">
               <span className="text-muted-foreground">
-                Showing {filteredSales.length} of {sales.length}
+                Showing {visibleSales.length} of {filteredSales.length}
+                {debouncedSearchQuery && <span className="opacity-60"> • filtered from {sales.length}</span>}
                 {dateFilter !== "all" && <span className="opacity-60"> • {dateFilter}</span>}
               </span>
               <div className="flex items-center gap-4 font-medium">

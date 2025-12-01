@@ -5,6 +5,10 @@ import type React from "react"
 // audit.tsx - COMPLETE VERSION WITH ALL TABS IMPLEMENTED
 import { useState, useMemo, useEffect } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
+import { useDebounce } from "@/hooks/use-debounce"
+
+const VISIBLE_LIMIT_INITIAL = 50
+const VISIBLE_LIMIT_INCREMENT = 30
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -231,6 +235,9 @@ export default function Audit() {
   const [companyFilter, setCompanyFilter] = useState("all")
   const [productFilter, setProductFilter] = useState("all")
   const [movementTypeFilter, setMovementTypeFilter] = useState("all")
+  const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL)
+  
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
   // Settings Tabs State
   const [settingsTab, setSettingsTab] = useState("pin")
@@ -797,8 +804,8 @@ export default function Audit() {
   const filteredStockMovements = useMemo(() => {
     let filtered = [...stockMovements]
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase()
       filtered = filtered.filter(
         (m) =>
           m.colorCode.toLowerCase().includes(query) ||
@@ -832,13 +839,17 @@ export default function Audit() {
     }
 
     return filtered
-  }, [stockMovements, searchQuery, dateFrom, dateTo, companyFilter, productFilter, movementTypeFilter])
+  }, [stockMovements, debouncedSearchQuery, dateFrom, dateTo, companyFilter, productFilter, movementTypeFilter])
+  
+  const visibleStockMovements = useMemo(() => {
+    return filteredStockMovements.slice(0, visibleLimit)
+  }, [filteredStockMovements, visibleLimit])
 
   const filteredSales = useMemo(() => {
     let filtered = [...allSales]
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase()
       filtered = filtered.filter(
         (sale) =>
           sale.customerName.toLowerCase().includes(query) ||
@@ -864,7 +875,11 @@ export default function Audit() {
     }
 
     return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }, [allSales, searchQuery, dateFrom, dateTo])
+  }, [allSales, debouncedSearchQuery, dateFrom, dateTo])
+  
+  const visibleSales = useMemo(() => {
+    return filteredSales.slice(0, visibleLimit)
+  }, [filteredSales, visibleLimit])
 
   const stockSummary = useMemo(() => {
     const totalIn = stockInHistory.reduce((acc, r) => acc + r.quantity, 0)
@@ -1786,7 +1801,7 @@ export default function Audit() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredStockMovements.map((movement) => (
+                        visibleStockMovements.map((movement) => (
                           <TableRow key={movement.id}>
                             <TableCell className="font-medium">{formatDateShort(movement.date)}</TableCell>
                             <TableCell>
@@ -1836,6 +1851,20 @@ export default function Audit() {
                       )}
                     </TableBody>
                   </Table>
+                  
+                  {/* Load More Button */}
+                  {filteredStockMovements.length > visibleLimit && (
+                    <div className="flex justify-center py-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                        data-testid="button-load-more-stock-audit"
+                      >
+                        Load More ({filteredStockMovements.length - visibleLimit} remaining)
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -1942,7 +1971,7 @@ export default function Audit() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredSales.map((sale) => {
+                        visibleSales.map((sale) => {
                           const balance = safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)
                           return (
                             <TableRow key={sale.id}>
@@ -1980,6 +2009,20 @@ export default function Audit() {
                       )}
                     </TableBody>
                   </Table>
+                  
+                  {/* Load More Button */}
+                  {filteredSales.length > visibleLimit && (
+                    <div className="flex justify-center py-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                        data-testid="button-load-more-sales-audit"
+                      >
+                        Load More ({filteredSales.length - visibleLimit} remaining)
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

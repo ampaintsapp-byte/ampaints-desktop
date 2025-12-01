@@ -1,6 +1,10 @@
 import { useState, useMemo, useDeferredValue } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useDebounce } from "@/hooks/use-debounce";
+
+const VISIBLE_LIMIT_INITIAL = 50;
+const VISIBLE_LIMIT_INCREMENT = 30;
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +64,9 @@ export default function Reports() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+  
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   const { data: allSalesRaw = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -112,8 +119,8 @@ export default function Reports() {
   const filteredSales = useMemo(() => {
     let filtered = [...allSales];
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase();
       filtered = filtered.filter(
         (sale) =>
           sale.customerName.toLowerCase().includes(query) ||
@@ -160,13 +167,17 @@ export default function Reports() {
     });
 
     return filtered;
-  }, [allSales, searchQuery, dateFrom, dateTo, paymentStatusFilter, sortField, sortDirection]);
+  }, [allSales, debouncedSearchQuery, dateFrom, dateTo, paymentStatusFilter, sortField, sortDirection]);
+  
+  const visibleSales = useMemo(() => {
+    return filteredSales.slice(0, visibleLimit);
+  }, [filteredSales, visibleLimit]);
 
   const filteredPayments = useMemo(() => {
     let filtered = [...paymentHistory];
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase();
       filtered = filtered.filter(
         (payment) =>
           payment.customerPhone.includes(query) ||
@@ -211,7 +222,11 @@ export default function Reports() {
     });
 
     return filtered;
-  }, [paymentHistory, searchQuery, dateFrom, dateTo, sortField, sortDirection]);
+  }, [paymentHistory, debouncedSearchQuery, dateFrom, dateTo, sortField, sortDirection]);
+  
+  const visiblePayments = useMemo(() => {
+    return filteredPayments.slice(0, visibleLimit);
+  }, [filteredPayments, visibleLimit]);
 
   const unpaidSales = useMemo(() => {
     return filteredSales.filter((sale) => sale.paymentStatus !== "paid");
@@ -723,7 +738,7 @@ export default function Reports() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredSales.map((sale) => (
+                    {visibleSales.map((sale) => (
                       <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`}>
                         <TableCell className="font-medium">
                           <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
@@ -751,6 +766,20 @@ export default function Reports() {
                     )}
                   </TableBody>
                 </Table>
+                
+                {/* Load More Button */}
+                {filteredSales.length > visibleLimit && (
+                  <div className="flex justify-center py-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                      data-testid="button-load-more-sales-reports"
+                    >
+                      Load More ({filteredSales.length - visibleLimit} remaining)
+                    </Button>
+                  </div>
+                )}
               </div>
               <TableSummary tab="all-sales" />
             </CardContent>
@@ -852,7 +881,7 @@ export default function Reports() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredPayments.map((payment) => (
+                    {visiblePayments.map((payment) => (
                       <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
                         <TableCell className="font-medium">
                           <Link href={`/customer/${encodeURIComponent(payment.customerPhone)}`} className="text-blue-600 hover:underline">
@@ -889,6 +918,20 @@ export default function Reports() {
                     )}
                   </TableBody>
                 </Table>
+                
+                {/* Load More Button */}
+                {filteredPayments.length > visibleLimit && (
+                  <div className="flex justify-center py-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                      data-testid="button-load-more-payments-reports"
+                    >
+                      Load More ({filteredPayments.length - visibleLimit} remaining)
+                    </Button>
+                  </div>
+                )}
               </div>
               <TableSummary tab="recovery-payments" />
             </CardContent>

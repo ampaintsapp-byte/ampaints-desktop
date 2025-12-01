@@ -52,7 +52,15 @@ None specified yet.
 ### System Design Choices
 - **Database**: Lightweight, file-based SQLite managed by Drizzle ORM.
 - **Schema Management**: Automatic migration system for smooth upgrades and backward compatibility.
-- **Performance**: Optimized SQLite queries with composite indexes. Smart database pagination system with configurable limits (DEFAULT_LIMIT: 100, MAX_LIMIT: 500) to prevent software hangs with large datasets. Background data loading with React.lazy + Suspense for instant navigation, useDeferredValue for deferred heavy processing, and sidebar hover prefetching to warm caches before navigation.
+- **Performance**: Optimized SQLite queries with composite indexes. Smart database pagination system with configurable limits (DEFAULT_LIMIT: 100, MAX_LIMIT: 500) to prevent software hangs with large datasets. Background data loading with React.lazy + Suspense for instant navigation, useDeferredValue for deferred heavy processing, and sidebar hover prefetching to warm caches before navigation. 
+  - **Debounced Search**: All search inputs use 300ms debounce delay via shared `useDebounce` hook (`client/src/hooks/use-debounce.ts`) to prevent excessive filtering on every keystroke.
+  - **Visible Row Limits**: All data tables use visible limits (50 initial rows, load 30 more at a time) with "Load More" buttons to prevent UI hangs with large datasets. Applied across:
+    - Stock Management: Products, Variants, Colors, Stock In, Stock History, Stock Out tabs
+    - Sales: Customer sales list with debounced search
+    - Unpaid Bills: Customer consolidated view with debounced search
+    - Returns: Return history table with debounced search
+    - Reports: All Sales and Recovery Payments tabs with debounced search
+    - Audit: Stock movements and Sales audit tables with debounced search
 - **Pagination API**: Paginated endpoints for Sales (`/api/sales/paginated`), Unpaid Sales (`/api/sales/unpaid/paginated`), Stock History (`/api/stock-in/history/paginated`), and Payment History (`/api/payment-history/paginated`). Each returns data with pagination metadata (page, limit, total, totalPages, hasMore).
 - **UI/UX**: Clean, responsive interface using Radix UI and Tailwind CSS, with intuitive product card designs and a bank-style customer statement. Glassmorphism theme with blue accent icons and neutral color scheme.
 - **Error Handling**: Enhanced logging and debugging for troubleshooting.

@@ -1,7 +1,12 @@
 // stock-management.tsx - Premium Glass Theme Redesign
-import { useState, useMemo, useEffect, useDeferredValue } from "react";
+import { useState, useMemo, useEffect, useDeferredValue, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useDebounce } from "@/hooks/use-debounce";
+
+// Constants for performance optimization
+const VISIBLE_LIMIT_INITIAL = 50;
+const VISIBLE_LIMIT_INCREMENT = 30;
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -215,6 +220,20 @@ export default function StockManagement() {
   const [stockInSearchQuery, setStockInSearchQuery] = useState("");
   const [selectedColorForStockIn, setSelectedColorForStockIn] = useState<ColorWithVariantAndProduct | null>(null);
 
+  // Debounced search queries - prevents filtering on every keystroke (300ms delay)
+  const debouncedProductSearch = useDebounce(productSearchQuery, 300);
+  const debouncedVariantSearch = useDebounce(variantSearchQuery, 300);
+  const debouncedColorSearch = useDebounce(colorSearchQuery, 300);
+  const debouncedStockInSearch = useDebounce(stockInSearchQuery, 300);
+
+  // Visible limits for each tab - prevents rendering thousands of rows
+  const [productsVisibleLimit, setProductsVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+  const [variantsVisibleLimit, setVariantsVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+  const [colorsVisibleLimit, setColorsVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+  const [stockInVisibleLimit, setStockInVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+  const [historyVisibleLimit, setHistoryVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+  const [stockOutVisibleLimit, setStockOutVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
+
   /* Advanced filters state */
   const [productCompanyFilter, setProductCompanyFilter] = useState("all");
   const [variantCompanyFilter, setVariantCompanyFilter] = useState("all");
@@ -240,6 +259,10 @@ export default function StockManagement() {
   const [stockOutSearchQuery, setStockOutSearchQuery] = useState("");
   const [stockOutStartDate, setStockOutStartDate] = useState<string>("");
   const [stockOutEndDate, setStockOutEndDate] = useState<string>("");
+
+  // Debounced history search queries
+  const debouncedHistorySearch = useDebounce(historySearchQuery, 300);
+  const debouncedStockOutSearch = useDebounce(stockOutSearchQuery, 300);
 
   /* Multi-select state */
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
@@ -274,7 +297,7 @@ export default function StockManagement() {
   const colorsData = useDeferredValue(colorsRaw);
   const stockInHistory = useDeferredValue(stockInHistoryRaw);
 
-  /* Filtered Stock In History */
+  /* Filtered Stock In History - uses debounced search for performance */
   const filteredStockInHistory = useMemo(() => {
     let filtered = stockInHistory;
 
@@ -330,8 +353,8 @@ export default function StockManagement() {
       filtered = filtered.filter(history => new Date(history.createdAt) <= end);
     }
 
-    if (historySearchQuery.trim()) {
-      const query = historySearchQuery.trim().toLowerCase();
+    if (debouncedHistorySearch.trim()) {
+      const query = debouncedHistorySearch.trim().toLowerCase();
       filtered = filtered.filter(history => 
         history.color.colorCode.toLowerCase().includes(query) ||
         history.color.colorName.toLowerCase().includes(query) ||
@@ -342,7 +365,12 @@ export default function StockManagement() {
     }
 
     return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [stockInHistory, historyCompanyFilter, historyProductFilter, historyDateFilter, historySearchQuery, historyStartDate, historyEndDate]);
+  }, [stockInHistory, historyCompanyFilter, historyProductFilter, historyDateFilter, debouncedHistorySearch, historyStartDate, historyEndDate]);
+
+  // Visible stock history with limit for rendering optimization
+  const visibleStockInHistory = useMemo(() => {
+    return filteredStockInHistory.slice(0, historyVisibleLimit);
+  }, [filteredStockInHistory, historyVisibleLimit]);
 
   /* Stock Out History Query (Items sold through POS) */
   const { data: stockOutHistoryRaw = [], isLoading: stockOutLoading, refetch: refetchStockOutHistory } = useQuery<StockOutHistory[]>({
@@ -351,7 +379,7 @@ export default function StockManagement() {
 
   const stockOutHistory = useDeferredValue(stockOutHistoryRaw);
 
-  /* Filtered Stock Out History */
+  /* Filtered Stock Out History - uses debounced search for performance */
   const filteredStockOutHistory = useMemo(() => {
     let filtered = stockOutHistory;
 
@@ -401,8 +429,8 @@ export default function StockManagement() {
       filtered = filtered.filter(item => new Date(item.soldAt) <= end);
     }
 
-    if (stockOutSearchQuery.trim()) {
-      const query = stockOutSearchQuery.trim().toLowerCase();
+    if (debouncedStockOutSearch.trim()) {
+      const query = debouncedStockOutSearch.trim().toLowerCase();
       filtered = filtered.filter(item => 
         item.color?.colorCode?.toLowerCase().includes(query) ||
         item.color?.colorName?.toLowerCase().includes(query) ||
@@ -414,7 +442,12 @@ export default function StockManagement() {
     }
 
     return filtered;
-  }, [stockOutHistory, stockOutCompanyFilter, stockOutProductFilter, stockOutDateFilter, stockOutSearchQuery, stockOutStartDate, stockOutEndDate]);
+  }, [stockOutHistory, stockOutCompanyFilter, stockOutProductFilter, stockOutDateFilter, debouncedStockOutSearch, stockOutStartDate, stockOutEndDate]);
+
+  // Visible stock out history with limit for rendering optimization
+  const visibleStockOutHistory = useMemo(() => {
+    return filteredStockOutHistory.slice(0, stockOutVisibleLimit);
+  }, [filteredStockOutHistory, stockOutVisibleLimit]);
 
   /* Useful derived lists */
   const companies = useMemo(() => {
@@ -829,7 +862,7 @@ export default function StockManagement() {
   };
 
   /* -------------------------
-     Advanced filtering
+     Advanced filtering with debounced search (uses debounced values to prevent filtering on every keystroke)
      ------------------------- */
   const filteredProducts = useMemo(() => {
     let filtered = products.filter(p => {
@@ -837,7 +870,7 @@ export default function StockManagement() {
       return true;
     });
     
-    const query = productSearchQuery.trim().toLowerCase();
+    const query = debouncedProductSearch.trim().toLowerCase();
     if (query) {
       filtered = filtered.filter(p => 
         p.productName.toLowerCase().includes(query) ||
@@ -846,7 +879,12 @@ export default function StockManagement() {
     }
     
     return filtered;
-  }, [products, productCompanyFilter, productSearchQuery]);
+  }, [products, productCompanyFilter, debouncedProductSearch]);
+
+  // Visible products with limit for rendering optimization
+  const visibleProducts = useMemo(() => {
+    return filteredProducts.slice(0, productsVisibleLimit);
+  }, [filteredProducts, productsVisibleLimit]);
 
   const filteredVariants = useMemo(() => {
     let filtered = variantsData.filter(v => {
@@ -856,7 +894,7 @@ export default function StockManagement() {
       return true;
     });
     
-    const query = variantSearchQuery.trim().toLowerCase();
+    const query = debouncedVariantSearch.trim().toLowerCase();
     if (query) {
       filtered = filtered.filter(v => 
         v.product.productName.toLowerCase().includes(query) ||
@@ -867,7 +905,12 @@ export default function StockManagement() {
     }
     
     return filtered;
-  }, [variantsData, variantCompanyFilter, variantProductFilter, variantSizeFilter, variantSearchQuery]);
+  }, [variantsData, variantCompanyFilter, variantProductFilter, variantSizeFilter, debouncedVariantSearch]);
+
+  // Visible variants with limit for rendering optimization
+  const visibleVariants = useMemo(() => {
+    return filteredVariants.slice(0, variantsVisibleLimit);
+  }, [filteredVariants, variantsVisibleLimit]);
 
   const filteredColors = useMemo(() => {
     let filtered = colorsData;
@@ -884,7 +927,7 @@ export default function StockManagement() {
       return true;
     });
 
-    const query = colorSearchQuery.trim().toUpperCase();
+    const query = debouncedColorSearch.trim().toUpperCase();
     const queryLower = query.toLowerCase();
     if (!query) return filtered;
 
@@ -915,12 +958,17 @@ export default function StockManagement() {
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
       .map(({ color }) => color);
-  }, [colorsData, colorSearchQuery, colorCompanyFilter, colorProductFilter, colorSizeFilter, colorStockStatusFilter]);
+  }, [colorsData, debouncedColorSearch, colorCompanyFilter, colorProductFilter, colorSizeFilter, colorStockStatusFilter]);
+
+  // Visible colors with limit for rendering optimization
+  const visibleColors = useMemo(() => {
+    return filteredColors.slice(0, colorsVisibleLimit);
+  }, [filteredColors, colorsVisibleLimit]);
 
   const filteredColorsForStockIn = useMemo(() => {
-    const query = stockInSearchQuery.trim().toUpperCase();
+    const query = debouncedStockInSearch.trim().toUpperCase();
     const queryLower = query.toLowerCase();
-    if (!query) return colorsData;
+    if (!query) return colorsData.slice(0, stockInVisibleLimit);
 
     return colorsData
       .map((color) => {
@@ -948,8 +996,9 @@ export default function StockManagement() {
       })
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score)
+      .slice(0, stockInVisibleLimit)
       .map(({ color }) => color);
-  }, [colorsData, stockInSearchQuery]);
+  }, [colorsData, debouncedStockInSearch, stockInVisibleLimit]);
 
   /* Calculate statistics */
   const totalStockValue = colorsData.reduce((sum, color) => {
@@ -1496,8 +1545,9 @@ export default function StockManagement() {
                       </Button>
                     </div>
                   ) : (
+                  <>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredProducts.map(product => {
+                    {visibleProducts.map(product => {
                       const productVariants = variantsData.filter(v => v.productId === product.id);
                       
                       const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
@@ -1595,7 +1645,20 @@ export default function StockManagement() {
                       );
                     })}
                   </div>
+                  {/* Load More Button for Products */}
+                  {filteredProducts.length > productsVisibleLimit && (
+                    <div className="flex justify-center mt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setProductsVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                        className="border-gray-300"
+                      >
+                        Load More ({filteredProducts.length - productsVisibleLimit} remaining)
+                      </Button>
+                    </div>
                   )}
+                  </>
+                )}
                 </div>
               )}
             </CardContent>
@@ -1825,8 +1888,9 @@ export default function StockManagement() {
                       </Button>
                     </div>
                   ) : (
+                  <>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredVariants.map(variant => {
+                    {visibleVariants.map(variant => {
                       const variantColors = colorsData.filter(c => c.variantId === variant.id);
                       return (
                         <Card 
@@ -1914,7 +1978,20 @@ export default function StockManagement() {
                       );
                     })}
                   </div>
+                  {/* Load More Button for Variants */}
+                  {filteredVariants.length > variantsVisibleLimit && (
+                    <div className="flex justify-center mt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setVariantsVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                        className="border-gray-300"
+                      >
+                        Load More ({filteredVariants.length - variantsVisibleLimit} remaining)
+                      </Button>
+                    </div>
                   )}
+                  </>
+                )}
                 </div>
               )}
             </CardContent>
@@ -2147,8 +2224,9 @@ export default function StockManagement() {
                       </Button>
                     </div>
                   ) : (
+                    <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {filteredColors.map(color => (
+                      {visibleColors.map(color => (
                         <Card 
                           key={color.id} 
                           className="rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-all cursor-pointer group"
@@ -2238,6 +2316,19 @@ export default function StockManagement() {
                         </Card>
                       ))}
                     </div>
+                    {/* Load More Button for Colors */}
+                    {filteredColors.length > colorsVisibleLimit && (
+                      <div className="flex justify-center mt-4">
+                        <Button
+                          variant="outline"
+                          onClick={() => setColorsVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                          className="border-gray-300"
+                        >
+                          Load More ({filteredColors.length - colorsVisibleLimit} remaining)
+                        </Button>
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}
@@ -2739,8 +2830,9 @@ export default function StockManagement() {
                       <p>No history found matching your filters</p>
                     </div>
                   ) : (
+                    <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredStockInHistory.map(history => {
+                      {visibleStockInHistory.map(history => {
                         const isReturn = history.type === 'return';
                         return (
                         <Card 
@@ -2845,6 +2937,19 @@ export default function StockManagement() {
                         </Card>
                       )})}
                     </div>
+                    {/* Load More Button for Stock In History */}
+                    {filteredStockInHistory.length > historyVisibleLimit && (
+                      <div className="flex justify-center mt-4">
+                        <Button
+                          variant="outline"
+                          onClick={() => setHistoryVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                          className="border-gray-300"
+                        >
+                          Load More ({filteredStockInHistory.length - historyVisibleLimit} remaining)
+                        </Button>
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}
@@ -3009,7 +3114,7 @@ export default function StockManagement() {
 
                   {/* Stock Out Records Grid */}
                   <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                    {filteredStockOutHistory.map((item) => (
+                    {visibleStockOutHistory.map((item) => (
                       <Card 
                         key={item.id}
                         className="rounded-xl p-4 border border-gray-200 hover:shadow-lg transition-all"
@@ -3080,6 +3185,18 @@ export default function StockManagement() {
                       </Card>
                     ))}
                   </div>
+                  {/* Load More Button for Stock Out History */}
+                  {filteredStockOutHistory.length > stockOutVisibleLimit && (
+                    <div className="flex justify-center mt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setStockOutVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                        className="border-gray-300"
+                      >
+                        Load More ({filteredStockOutHistory.length - stockOutVisibleLimit} remaining)
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
