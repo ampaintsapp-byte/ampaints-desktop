@@ -312,7 +312,7 @@ export default function CustomerStatement() {
     }
   }, [allSales, paidSales, unpaidSales, paymentHistory])
 
-  // Corrected and improved transactions calculation
+  // FIXED: Corrected and improved transactions calculation
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
@@ -374,7 +374,7 @@ export default function CustomerStatement() {
     txns.push(...billTransactions, ...paymentTransactions)
     txns.sort((a, b) => a.date.getTime() - b.date.getTime())
 
-    // Calculate running balance correctly
+    // FIXED: Calculate running balance correctly
     let runningBalance = 0
     const balanceByTransaction: { [key: string]: number } = {}
 
