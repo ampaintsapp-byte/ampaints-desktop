@@ -43,21 +43,20 @@ import {
   ChevronDown,
   ChevronRight,
   Package,
-  RotateCcw,
 } from "lucide-react"
 import { useState, useMemo, Fragment } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { useDateFormat } from "@/hooks/use-date-format"
 import { useReceiptSettings } from "@/hooks/use-receipt-settings"
 import { apiRequest, queryClient } from "@/lib/queryClient"
-import type { Sale, PaymentHistory, SaleWithItems, ReturnWithItems } from "@shared/schema"
+import type { Sale, PaymentHistory, SaleWithItems } from "@shared/schema"
 import jsPDF from "jspdf"
 
 interface PaymentHistoryWithSale extends PaymentHistory {
   sale: Sale
 }
 
-type TransactionType = "bill" | "payment" | "cash_loan" | "return"
+type TransactionType = "bill" | "payment" | "cash_loan"
 
 interface SaleItemDisplay {
   productName: string
@@ -95,17 +94,17 @@ const safeParseFloat = (value: string | number | null | undefined): number => {
   return isNaN(num) ? 0 : num
 }
 
+// Utility function to safely parse dates
+const safeParseDate = (value: any): Date => {
+  if (!value) return new Date()
+  if (value instanceof Date) return value
+  const parsed = new Date(value)
+  return isNaN(parsed.getTime()) ? new Date() : parsed
+}
+
 // Utility function to round numbers for display
 const roundNumber = (num: number): number => {
   return Math.round(num * 100) / 100
-}
-
-const safeToDate = (value: Date | string | number | null | undefined): Date => {
-  if (!value) return new Date()
-  if (value instanceof Date) return value
-  // Handle timestamp (number) or ISO string
-  const date = new Date(value)
-  return isNaN(date.getTime()) ? new Date() : date
 }
 
 export default function CustomerStatement() {
@@ -173,17 +172,6 @@ export default function CustomerStatement() {
     refetchOnWindowFocus: true,
   })
 
-  const { data: customerReturns = [] } = useQuery<ReturnWithItems[]>({
-    queryKey: ["/api/returns/customer", customerPhone],
-    queryFn: async () => {
-      const res = await fetch(`/api/returns/customer/${encodeURIComponent(customerPhone)}`)
-      if (!res.ok) throw new Error("Failed to fetch customer returns")
-      return res.json()
-    },
-    enabled: !!customerPhone,
-    refetchOnWindowFocus: true,
-  })
-
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes: string }) => {
       const response = await apiRequest("POST", `/api/sales/${data.saleId}/payment`, {
@@ -198,8 +186,6 @@ export default function CustomerStatement() {
       queryClient.invalidateQueries({ queryKey: ["/api/payment-history/customer", customerPhone] })
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
-      // Invalidate returns as well
-      queryClient.invalidateQueries({ queryKey: ["/api/returns/customer", customerPhone] })
       setPaymentDialogOpen(false)
       setPaymentAmount("")
       setPaymentNotes("")
@@ -232,8 +218,6 @@ export default function CustomerStatement() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
       queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] })
-      // Invalidate returns as well
-      queryClient.invalidateQueries({ queryKey: ["/api/returns/customer", customerPhone] })
       setEditPaymentDialogOpen(false)
       setEditingPayment(null)
       toast({
@@ -261,8 +245,6 @@ export default function CustomerStatement() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
       queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] })
-      // Invalidate returns as well
-      queryClient.invalidateQueries({ queryKey: ["/api/returns/customer", customerPhone] })
       setDeletePaymentDialogOpen(false)
       setPaymentToDelete(null)
       toast({
@@ -297,8 +279,6 @@ export default function CustomerStatement() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
       queryClient.invalidateQueries({ queryKey: ["/api/payment-history/customer", customerPhone] })
-      // Invalidate returns as well
-      queryClient.invalidateQueries({ queryKey: ["/api/returns/customer", customerPhone] })
       setCashLoanDialogOpen(false)
       setCashLoanAmount("")
       setCashLoanNotes("")
@@ -322,11 +302,11 @@ export default function CustomerStatement() {
 
   const customerName = allSales[0]?.customerName || "Customer"
 
+  // Corrected and improved stats calculations
   const stats = useMemo(() => {
     const totalPurchases = allSales.reduce((sum, s) => sum + safeParseFloat(s.totalAmount), 0)
     const totalPaid = allSales.reduce((sum, s) => sum + safeParseFloat(s.amountPaid), 0)
-    const totalReturns = customerReturns.reduce((sum, r) => sum + safeParseFloat(r.totalRefund), 0)
-    const totalOutstanding = Math.max(0, totalPurchases - totalPaid - totalReturns)
+    const totalOutstanding = Math.max(0, totalPurchases - totalPaid)
     const totalPaymentsReceived = paymentHistory.reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
 
     return {
@@ -337,11 +317,10 @@ export default function CustomerStatement() {
       totalPaid: roundNumber(totalPaid),
       totalOutstanding: roundNumber(totalOutstanding),
       totalPaymentsReceived: roundNumber(totalPaymentsReceived),
-      totalReturns: roundNumber(totalReturns),
-      returnCount: customerReturns.length,
     }
-  }, [allSales, paidSales, unpaidSales, paymentHistory, customerReturns])
+  }, [allSales, paidSales, unpaidSales, paymentHistory])
 
+  // FIXED: Corrected and improved transactions calculation
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
@@ -364,7 +343,7 @@ export default function CustomerStatement() {
 
       return {
         id: `bill-${sale.id}`,
-        date: safeToDate(sale.createdAt),
+        date: safeParseDate(sale.createdAt),
         type: sale.isManualBalance ? "cash_loan" : "bill",
         description: sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`,
         reference: sale.id.slice(0, 8).toUpperCase(),
@@ -375,7 +354,7 @@ export default function CustomerStatement() {
         totalAmount: totalAmt,
         outstanding: outstandingAmt,
         notes: sale.notes || undefined,
-        dueDate: sale.dueDate ? safeToDate(sale.dueDate) : null,
+        dueDate: sale.dueDate ? safeParseDate(sale.dueDate) : null,
         status: sale.paymentStatus,
         saleId: sale.id,
         items: saleItems.length > 0 ? saleItems : undefined,
@@ -385,7 +364,7 @@ export default function CustomerStatement() {
     // Then collect all payments
     const paymentTransactions: Transaction[] = paymentHistory.map((payment) => ({
       id: `payment-${payment.id}`,
-      date: safeToDate(payment.createdAt),
+      date: safeParseDate(payment.createdAt),
       type: "payment",
       description: `Payment Received (${payment.paymentMethod.toUpperCase()})`,
       reference: payment.id.slice(0, 8).toUpperCase(),
@@ -399,47 +378,21 @@ export default function CustomerStatement() {
       saleId: payment.saleId,
     }))
 
-    const returnTransactions: Transaction[] = customerReturns.map((ret) => {
-      const returnItems: SaleItemDisplay[] =
-        ret.returnItems?.map((item) => ({
-          productName: item.color?.variant?.product?.productName || "Product",
-          variantName: item.color?.variant?.packingSize || "Variant",
-          colorName: item.color?.colorName || "Color",
-          colorCode: item.color?.colorCode || "",
-          quantity: item.quantity,
-          rate: safeParseFloat(item.rate),
-          subtotal: safeParseFloat(item.subtotal),
-        })) || []
-
-      return {
-        id: `return-${ret.id}`,
-        date: safeToDate(ret.createdAt),
-        type: "return" as TransactionType,
-        description: `Return - ${ret.returnType === "refund" ? "Refund" : "Exchange"}`,
-        reference: ret.id.slice(0, 8).toUpperCase(),
-        debit: 0,
-        credit: safeParseFloat(ret.totalRefund),
-        balance: 0,
-        paid: 0,
-        totalAmount: 0,
-        outstanding: 0,
-        notes: ret.reason || undefined,
-        saleId: ret.saleId || undefined,
-        items: returnItems.length > 0 ? returnItems : undefined,
-      }
-    })
-
     // Combine and sort by date (oldest first)
-    txns.push(...billTransactions, ...paymentTransactions, ...returnTransactions)
-    txns.sort((a, b) => a.date.getTime() - b.date.getTime())
+    txns.push(...billTransactions, ...paymentTransactions)
+    txns.sort((a, b) => {
+      const dateA = safeParseDate(a.date)
+      const dateB = safeParseDate(b.date)
+      return dateA.getTime() - dateB.getTime()
+    })
 
     // FIXED: Calculate running balance correctly
     let runningBalance = 0
     const balanceByTransaction: { [key: string]: number } = {}
 
     txns.forEach((txn) => {
-      if (txn.type === "payment" || txn.type === "return") {
-        // Payments and returns reduce the outstanding balance
+      if (txn.type === "payment") {
+        // Payments reduce the outstanding balance
         runningBalance -= txn.credit
       } else {
         // Bills and cash loans add to outstanding
@@ -457,7 +410,7 @@ export default function CustomerStatement() {
 
     // Return in reverse order (newest first for display)
     return txns.reverse()
-  }, [allSalesWithItems, paymentHistory, customerReturns])
+  }, [allSalesWithItems, paymentHistory])
 
   const scheduledPayments = useMemo(() => {
     const now = new Date()
@@ -465,16 +418,20 @@ export default function CustomerStatement() {
       .filter((s) => s.dueDate)
       .map((s) => ({
         ...s,
-        dueDate: safeToDate(s.dueDate),
+        dueDate: safeParseDate(s.dueDate!),
         outstanding: safeParseFloat(s.totalAmount) - safeParseFloat(s.amountPaid),
       }))
-      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+      .sort((a, b) => {
+        const dateA = safeParseDate(a.dueDate)
+        const dateB = safeParseDate(b.dueDate)
+        return dateA.getTime() - dateB.getTime()
+      })
   }, [unpaidSales])
 
   const getDueDateStatus = (dueDate: Date | null) => {
     if (!dueDate) return "none"
     const now = new Date()
-    const due = safeToDate(dueDate)
+    const due = safeParseDate(dueDate)
     const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
 
     if (diffDays < 0) return "overdue"
@@ -638,8 +595,6 @@ export default function CustomerStatement() {
       ["Total Bills:", stats.totalBills.toString(), "Total Purchases:", `Rs. ${stats.totalPurchases.toLocaleString()}`],
       ["Paid Bills:", stats.paidBills.toString(), "Total Paid:", `Rs. ${stats.totalPaid.toLocaleString()}`],
       ["Unpaid Bills:", stats.unpaidBills.toString(), "Outstanding:", `Rs. ${stats.totalOutstanding.toLocaleString()}`],
-      // Add returns to summary
-      ["Total Returns:", stats.returnCount.toString(), "Refunded:", `Rs. ${stats.totalReturns.toLocaleString()}`],
     ]
 
     pdf.setFontSize(9)
@@ -689,15 +644,12 @@ export default function CustomerStatement() {
 
     for (const txn of transactions) {
       const dateStr = formatDateShort(txn.date)
-      const outstanding = txn.type !== "payment" && txn.type !== "return" ? Math.max(0, txn.totalAmount - txn.paid) : 0
+      const outstanding = txn.type !== "payment" ? Math.max(0, txn.totalAmount - txn.paid) : 0
       let amountStr = "-"
       let paidStr = "-"
       let dueStr = "-"
 
       if (txn.type === "payment") {
-        paidStr = `Rs. ${Math.round(txn.credit).toLocaleString()}`
-      } else if (txn.type === "return") {
-        // For returns, it's a credit (refund)
         paidStr = `Rs. ${Math.round(txn.credit).toLocaleString()}`
       } else {
         amountStr = `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`
@@ -709,14 +661,12 @@ export default function CustomerStatement() {
 
       const bgColor: [number, number, number] =
         txn.type === "payment"
-          ? [220, 245, 220] // Green for payments
-          : txn.type === "return"
-            ? [255, 220, 220] // Light red for returns
-            : txn.type === "cash_loan"
-              ? [255, 240, 210] // Light orange for manual balances
-              : txn.status === "paid"
-                ? [210, 235, 255] // Light blue for paid bills
-                : [245, 245, 250] // Light gray for unpaid bills
+          ? [220, 245, 220]
+          : txn.type === "cash_loan"
+            ? [255, 240, 210]
+            : txn.status === "paid"
+              ? [210, 235, 255]
+              : [245, 245, 250]
 
       addLedgerRow([dateStr, txn.description, amountStr, paidStr, dueStr, balanceStr], false, bgColor)
 
@@ -745,7 +695,6 @@ export default function CustomerStatement() {
       }
 
       if (txn.notes && txn.type !== "payment") {
-        // Only show notes for non-payment transactions
         pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2])
         pdf.rect(margin, yPos - 3, pageWidth - 2 * margin, 5, "F")
 
@@ -862,9 +811,8 @@ export default function CustomerStatement() {
     pdf.text(formatDateShort(new Date()), margin + 35, yPos)
     yPos += 10
 
-    // Updated summary section to include returns
     pdf.setFillColor(240, 240, 240)
-    pdf.rect(margin, yPos, pageWidth - 2 * margin, 30, "F") // Increased height to accommodate returns
+    pdf.rect(margin, yPos, pageWidth - 2 * margin, 20, "F")
     yPos += 5
 
     pdf.setFontSize(9)
@@ -881,20 +829,7 @@ export default function CustomerStatement() {
     pdf.text(`Rs. ${stats.totalOutstanding.toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, {
       align: "center",
     })
-    yPos += 8 // Added spacing for the next row
-
-    pdf.text("Total Returns", margin + colWidth / 2, yPos, { align: "center" })
-    pdf.text("Total Refunded", margin + colWidth + colWidth / 2, yPos, { align: "center" })
-    pdf.text("Total Payments", margin + 2 * colWidth + colWidth / 2, yPos, { align: "center" })
-    yPos += 6
-
-    pdf.setFontSize(11)
-    pdf.text(`Rs. ${stats.totalReturns.toLocaleString()}`, margin + colWidth / 2, yPos, { align: "center" })
-    pdf.text(`Rs. ${stats.totalReturns.toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: "center" }) // Corrected: should be totalRefunded if different, assuming totalReturns for now
-    pdf.text(`Rs. ${stats.totalPaymentsReceived.toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, {
-      align: "center",
-    })
-    yPos += 10 // Added spacing after summary
+    yPos += 15
 
     pdf.setFillColor(50, 50, 50)
     pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
@@ -1010,8 +945,6 @@ ${receiptSettings.businessName}
 Total Bills: ${stats.totalBills}
 Total Purchases: Rs. ${stats.totalPurchases.toLocaleString()}
 Total Paid: Rs. ${stats.totalPaid.toLocaleString()}
-Total Returns: ${stats.returnCount}
-Total Refunded: Rs. ${stats.totalReturns.toLocaleString()}
 
 *CURRENT BALANCE: Rs. ${Math.round(closingBalance).toLocaleString()}*
 
@@ -1026,52 +959,6 @@ Thank you for your business!`
     })
   }
 
-  const getTypeIcon = (type: TransactionType) => {
-    switch (type) {
-      case "bill":
-        return <Receipt className="h-4 w-4" />
-      case "payment":
-        return <ArrowDownCircle className="h-4 w-4" />
-      case "cash_loan":
-        return <Landmark className="h-4 w-4" />
-      case "return":
-        return <RotateCcw className="h-4 w-4" />
-      default:
-        return <Receipt className="h-4 w-4" />
-    }
-  }
-
-  const getTypeBadge = (type: TransactionType) => {
-    switch (type) {
-      case "bill":
-        return (
-          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-            BILL
-          </Badge>
-        )
-      case "payment":
-        return (
-          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-            IN
-          </Badge>
-        )
-      case "cash_loan":
-        return (
-          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-            LOAN
-          </Badge>
-        )
-      case "return":
-        return (
-          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-            RETURN
-          </Badge>
-        )
-      default:
-        return <Badge variant="outline">OTHER</Badge>
-    }
-  }
-
   const getTransactionIcon = (type: TransactionType) => {
     switch (type) {
       case "payment":
@@ -1080,9 +967,6 @@ Thank you for your business!`
         return <Receipt className="h-5 w-5 text-blue-600" />
       case "cash_loan":
         return <Landmark className="h-5 w-5 text-amber-600" />
-      // Add icon for returns
-      case "return":
-        return <RotateCcw className="h-5 w-5 text-red-600" />
     }
   }
 
@@ -1094,9 +978,6 @@ Thank you for your business!`
         return <Badge className="bg-blue-100 text-blue-800 border-0">OUT</Badge>
       case "cash_loan":
         return <Badge className="bg-amber-100 text-amber-800 border-0">LOAN</Badge>
-      // Add badge for returns
-      case "return":
-        return <Badge className="bg-red-100 text-red-800 border-0">RET</Badge>
     }
   }
 
@@ -1188,60 +1069,35 @@ Thank you for your business!`
           </div>
 
           <CardContent className="p-6">
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2">
-                    <ShoppingBag className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm text-muted-foreground">Total Bills</span>
-                  </div>
-                  <p className="text-2xl font-bold mt-1">{stats.totalBills}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-purple-500" />
-                    <span className="text-sm text-muted-foreground">Total Purchases</span>
-                  </div>
-                  <p className="text-2xl font-bold mt-1">Rs. {Math.round(stats.totalPurchases).toLocaleString()}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span className="text-sm text-muted-foreground">Total Paid</span>
-                  </div>
-                  <p className="text-2xl font-bold text-green-600 mt-1">
-                    Rs. {Math.round(stats.totalPaid).toLocaleString()}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2">
-                    <RotateCcw className="h-4 w-4 text-orange-500" />
-                    <span className="text-sm text-muted-foreground">Total Returns</span>
-                  </div>
-                  <p className="text-2xl font-bold text-orange-600 mt-1">
-                    Rs. {Math.round(stats.totalReturns).toLocaleString()}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{stats.returnCount} return(s)</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-red-500" />
-                    <span className="text-sm text-muted-foreground">Outstanding</span>
-                  </div>
-                  <p className="text-2xl font-bold text-red-600 mt-1">
-                    Rs. {Math.round(stats.totalOutstanding).toLocaleString()}
-                  </p>
-                </CardContent>
-              </Card>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="stat-card p-4 rounded-xl text-center">
+                <ShoppingBag className="h-6 w-6 mx-auto mb-2 text-blue-600" />
+                <p className="text-2xl font-bold text-slate-800" data-testid="text-total-bills">
+                  {stats.totalBills}
+                </p>
+                <p className="text-xs text-slate-500">Total Bills</p>
+              </div>
+              <div className="stat-card p-4 rounded-xl text-center">
+                <TrendingUp className="h-6 w-6 mx-auto mb-2 text-emerald-600" />
+                <p className="text-xl font-bold text-slate-800" data-testid="text-total-purchases">
+                  Rs. {stats.totalPurchases.toLocaleString()}
+                </p>
+                <p className="text-xs text-slate-500">Total Purchases</p>
+              </div>
+              <div className="stat-card p-4 rounded-xl text-center">
+                <CheckCircle className="h-6 w-6 mx-auto mb-2 text-emerald-600" />
+                <p className="text-xl font-bold text-emerald-600" data-testid="text-total-paid">
+                  Rs. {stats.totalPaid.toLocaleString()}
+                </p>
+                <p className="text-xs text-slate-500">Total Paid</p>
+              </div>
+              <div className="stat-card p-4 rounded-xl text-center">
+                <AlertCircle className="h-6 w-6 mx-auto mb-2 text-red-600" />
+                <p className="text-xl font-bold text-red-600" data-testid="text-outstanding">
+                  Rs. {stats.totalOutstanding.toLocaleString()}
+                </p>
+                <p className="text-xs text-slate-500">Outstanding</p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1298,10 +1154,7 @@ Thank you for your business!`
                         </TableRow>
                       ) : (
                         transactions.map((txn) => {
-                          const outstanding =
-                            txn.type !== "payment" && txn.type !== "return"
-                              ? Math.max(0, txn.totalAmount - txn.paid)
-                              : 0
+                          const outstanding = txn.type !== "payment" ? Math.max(0, txn.totalAmount - txn.paid) : 0
                           const hasItems = txn.items && txn.items.length > 0
                           const isExpanded = expandedRows.has(txn.id)
                           return (
@@ -1310,13 +1163,11 @@ Thank you for your business!`
                                 className={`${
                                   txn.type === "payment"
                                     ? "bg-emerald-50/50"
-                                    : txn.type === "return"
-                                      ? "bg-red-50/50" // Highlight returns
-                                      : txn.type === "cash_loan"
-                                        ? "bg-amber-50/50"
-                                        : txn.status === "paid"
-                                          ? "bg-blue-50/30"
-                                          : ""
+                                    : txn.type === "cash_loan"
+                                      ? "bg-amber-50/50"
+                                      : txn.status === "paid"
+                                        ? "bg-blue-50/30"
+                                        : ""
                                 } ${hasItems ? "cursor-pointer" : ""}`}
                                 onClick={() => hasItems && toggleRowExpand(txn.id)}
                                 data-testid={`row-transaction-${txn.id}`}
@@ -1346,32 +1197,28 @@ Thank you for your business!`
                                         {txn.items!.length} item{txn.items!.length > 1 ? "s" : ""} - Click to view
                                       </p>
                                     )}
-                                    {txn.status &&
-                                      txn.type !== "payment" &&
-                                      txn.type !== "return" && ( // Show status only for bills/loans
-                                        <Badge
-                                          variant={
-                                            txn.status === "paid"
-                                              ? "default"
-                                              : txn.status === "partial"
-                                                ? "secondary"
-                                                : "destructive"
-                                          }
-                                          className="mt-1 text-xs"
-                                        >
-                                          {txn.status.toUpperCase()}
-                                        </Badge>
-                                      )}
+                                    {txn.status && txn.type !== "payment" && (
+                                      <Badge
+                                        variant={
+                                          txn.status === "paid"
+                                            ? "default"
+                                            : txn.status === "partial"
+                                              ? "secondary"
+                                              : "destructive"
+                                        }
+                                        className="mt-1 text-xs"
+                                      >
+                                        {txn.status.toUpperCase()}
+                                      </Badge>
+                                    )}
                                     {txn.notes && <p className="text-xs text-slate-500 mt-1">{txn.notes}</p>}
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right font-medium">
-                                  {txn.type === "payment" || txn.type === "return"
-                                    ? "-"
-                                    : `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`}
+                                  {txn.type === "payment" ? "-" : `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`}
                                 </TableCell>
                                 <TableCell className="text-right font-medium text-emerald-600">
-                                  {txn.type === "payment" || txn.type === "return"
+                                  {txn.type === "payment"
                                     ? `Rs. ${Math.round(txn.credit).toLocaleString()}`
                                     : txn.paid > 0
                                       ? `Rs. ${Math.round(txn.paid).toLocaleString()}`
@@ -1380,8 +1227,6 @@ Thank you for your business!`
                                 <TableCell className="text-right font-medium text-red-600">
                                   {txn.type === "payment" ? (
                                     "-"
-                                  ) : txn.type === "return" ? (
-                                    "-" // No 'outstanding' for returns, credit is shown above
                                   ) : txn.type === "cash_loan" && txn.paid === 0 ? (
                                     `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`
                                   ) : outstanding > 0 ? (
@@ -1400,12 +1245,6 @@ Thank you for your business!`
                                         <Eye className="h-4 w-4" />
                                       </Button>
                                     </Link>
-                                  ) : txn.type === "return" ? ( // Add option to view return details
-                                    <Link href={`/return/${txn.saleId}?from=customer`}>
-                                      <Button size="icon" variant="ghost" data-testid={`button-view-return-${txn.id}`}>
-                                        <Eye className="h-4 w-4" />
-                                      </Button>
-                                    </Link> // For payments, allow editing
                                   ) : (
                                     <Button
                                       size="icon"
