@@ -1994,21 +1994,6 @@ export class DatabaseStorage implements IStorage {
         console.log("[Storage] Inserting return item:", returnItem)
         await db.insert(returnItems).values(returnItem)
 
-        if (item.saleItemId) {
-          const [existingSaleItem] = await db.select().from(saleItems).where(eq(saleItems.id, item.saleItemId))
-          if (existingSaleItem) {
-            const currentReturned = (existingSaleItem as any).quantityReturned || 0
-            const newReturned = currentReturned + item.quantity
-            await db
-              .update(saleItems)
-              .set({ quantityReturned: newReturned } as any)
-              .where(eq(saleItems.id, item.saleItemId))
-            console.log(
-              `[Storage] Updated saleItem ${item.saleItemId} quantityReturned: ${currentReturned} -> ${newReturned}`,
-            )
-          }
-        }
-
         if (returnItem.stockRestored) {
           console.log(`[Storage] Restoring stock for color ${item.colorId}, quantity: ${item.quantity}`)
           const [color] = await db.select().from(colors).where(eq(colors.id, item.colorId))
