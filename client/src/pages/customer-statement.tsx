@@ -1211,6 +1211,8 @@ Thank you for your business!`
                                 <TableCell className="text-right font-medium text-red-600">
                                   {txn.type === "payment" ? (
                                     "-"
+                                  ) : txn.type === "cash_loan" && txn.paid === 0 ? (
+                                    `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`
                                   ) : outstanding > 0 ? (
                                     `Rs. ${Math.round(outstanding).toLocaleString()}`
                                   ) : (
@@ -1245,7 +1247,7 @@ Thank you for your business!`
                               {hasItems && isExpanded && (
                                 <TableRow
                                   key={`${txn.id}-items`}
-                                  className="bg-gradient-to-r from-blue-50/80 to-indigo-50/80"
+                                  className="bg-gradient-to-r from-blue-50 to-indigo-50"
                                 >
                                   <TableCell colSpan={8} className="p-0">
                                     <div className="mx-4 my-3 bg-white rounded-lg border border-blue-200 shadow-sm overflow-hidden">
