@@ -35,15 +35,15 @@ import {
   Loader2,
   Eye,
   Download,
-  User,
   Phone,
   DollarSign,
   AlertTriangle,
   CheckCircle,
-  ArrowLeft,
+  Ban,
+  Info,
 } from "lucide-react"
 import jsPDF from "jspdf"
-import type { SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema"
+import type { SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct, SaleItem } from "@shared/schema"
 
 interface ReturnStats {
   totalReturns: number
@@ -62,13 +62,22 @@ interface QuickReturnForm {
   restoreStock: boolean
 }
 
+interface SaleItemWithReturn extends SaleItem {
+  quantityReturned?: number
+  color: ColorWithVariantAndProduct
+}
+
+interface SaleWithItemsAndReturns extends Omit<SaleWithItems, "saleItems"> {
+  saleItems: SaleItemWithReturn[]
+}
+
 export default function Returns() {
   const { toast } = useToast()
   const { formatDate, formatDateShort } = useDateFormat()
   const [activeTab, setActiveTab] = useState("bill")
   const [searchPhone, setSearchPhone] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedSale, setSelectedSale] = useState<SaleWithItems | null>(null)
+  const [selectedSale, setSelectedSale] = useState<SaleWithItemsAndReturns | null>(null)
   const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null)
   const [showReturnDialog, setShowReturnDialog] = useState(false)
   const [showQuickReturnDialog, setShowQuickReturnDialog] = useState(false)
@@ -97,7 +106,7 @@ export default function Returns() {
     queryKey: ["/api/returns"],
   })
 
-  const { data: sales = [], isLoading: salesLoading } = useQuery<SaleWithItems[]>({
+  const { data: sales = [], isLoading: salesLoading } = useQuery<SaleWithItemsAndReturns[]>({
     queryKey: ["/api/sales"],
   })
 
@@ -125,10 +134,21 @@ export default function Returns() {
 
   const searchResults = useMemo(() => {
     if (!searchPhone.trim()) return []
-    return sales.filter(
-      (sale) =>
-        sale.customerPhone.includes(searchPhone) || sale.customerName.toLowerCase().includes(searchPhone.toLowerCase()),
-    )
+    return sales.filter((sale) => {
+      const matchesSearch =
+        sale.customerPhone.includes(searchPhone) || sale.customerName.toLowerCase().includes(searchPhone.toLowerCase())
+
+      if (!matchesSearch) return false
+
+      // Check if sale has any items that can still be returned
+      const hasReturnableItems = sale.saleItems?.some((item) => {
+        const quantityReturned = item.quantityReturned || 0
+        const availableToReturn = item.quantity - quantityReturned
+        return availableToReturn > 0
+      })
+
+      return hasReturnableItems
+    })
   }, [sales, searchPhone])
 
   const createReturnMutation = useMutation({
@@ -143,6 +163,7 @@ export default function Returns() {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
 
       queryClient.refetchQueries({ queryKey: ["/api/colors"] })
+      queryClient.refetchQueries({ queryKey: ["/api/sales"] })
 
       // Force immediate refetch for fresh data
       refetchReturns()
@@ -207,7 +228,7 @@ export default function Returns() {
 
   const isProcessing = createReturnMutation.isPending || quickReturnMutation.isPending
 
-  const handleSelectSale = (sale: SaleWithItems) => {
+  const handleSelectSale = (sale: SaleWithItemsAndReturns) => {
     setSelectedSale(sale)
     setShowReturnDialog(true)
     setReturnType("full")
@@ -215,23 +236,26 @@ export default function Returns() {
     setRestockItems({})
     setReturnReason("")
 
-    // Pre-select all items for full return
     if (sale.saleItems) {
       const items: Record<string, number> = {}
       const restock: Record<string, boolean> = {}
       sale.saleItems.forEach((item) => {
-        items[item.id] = item.quantity
-        restock[item.id] = true
+        const quantityReturned = item.quantityReturned || 0
+        const availableToReturn = item.quantity - quantityReturned
+        if (availableToReturn > 0) {
+          items[item.id] = availableToReturn
+          restock[item.id] = true
+        }
       })
       setSelectedItems(items)
       setRestockItems(restock)
     }
   }
 
-  const handleItemQuantityChange = (itemId: string, maxQty: number, delta: number) => {
+  const handleItemQuantityChange = (itemId: string, maxAvailableQty: number, delta: number) => {
     setSelectedItems((prev) => {
       const current = prev[itemId] || 0
-      const newQty = Math.max(0, Math.min(maxQty, current + delta))
+      const newQty = Math.max(0, Math.min(maxAvailableQty, current + delta))
       if (newQty === 0) {
         const { [itemId]: _, ...rest } = prev
         return rest
@@ -255,8 +279,12 @@ export default function Returns() {
     const restock: Record<string, boolean> = {}
 
     selectedSale.saleItems?.forEach((item) => {
-      items[item.id] = item.quantity
-      restock[item.id] = true
+      const quantityReturned = item.quantityReturned || 0
+      const availableToReturn = item.quantity - quantityReturned
+      if (availableToReturn > 0) {
+        items[item.id] = availableToReturn
+        restock[item.id] = true
+      }
     })
 
     setSelectedItems(items)
@@ -278,6 +306,19 @@ export default function Returns() {
       .map(([itemId, quantity]) => {
         const saleItem = selectedSale.saleItems?.find((i) => i.id === itemId)
         if (!saleItem) return null
+
+        // Validate quantity doesn't exceed available
+        const quantityReturned = saleItem.quantityReturned || 0
+        const availableToReturn = saleItem.quantity - quantityReturned
+        if (quantity > availableToReturn) {
+          toast({
+            title: "Invalid Quantity",
+            description: `Cannot return more than ${availableToReturn} units of ${formatItemDetails(saleItem)}`,
+            variant: "destructive",
+          })
+          return null
+        }
+
         return {
           colorId: saleItem.colorId,
           saleItemId: saleItem.id,
@@ -479,6 +520,11 @@ export default function Returns() {
     })
   }
 
+  const getAvailableToReturn = (item: SaleItemWithReturn) => {
+    const quantityReturned = item.quantityReturned || 0
+    return item.quantity - quantityReturned
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-2">
@@ -526,40 +572,68 @@ export default function Returns() {
                     <Label className="text-sm font-medium">Found Sales ({searchResults.length})</Label>
                     <ScrollArea className="h-[300px] rounded-md border">
                       <div className="p-2 space-y-2">
-                        {searchResults.map((sale) => (
-                          <Card
-                            key={sale.id}
-                            className="cursor-pointer hover:bg-muted/50 transition-colors"
-                            onClick={() => handleSelectSale(sale)}
-                          >
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between gap-4">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-medium truncate">{sale.customerName}</span>
-                                    <Badge variant="outline" className="shrink-0">
-                                      {sale.customerPhone}
+                        {searchResults.map((sale) => {
+                          const returnableItemsCount =
+                            sale.saleItems?.filter((item) => {
+                              const available = getAvailableToReturn(item)
+                              return available > 0
+                            }).length || 0
+
+                          const totalReturnedItems =
+                            sale.saleItems?.reduce((sum, item) => {
+                              return sum + (item.quantityReturned || 0)
+                            }, 0) || 0
+
+                          return (
+                            <Card
+                              key={sale.id}
+                              className="cursor-pointer hover:bg-muted/50 transition-colors"
+                              onClick={() => handleSelectSale(sale)}
+                            >
+                              <CardContent className="p-4">
+                                <div className="flex items-center justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-medium truncate">{sale.customerName}</span>
+                                      <Badge variant="outline" className="shrink-0">
+                                        {sale.customerPhone}
+                                      </Badge>
+                                    </div>
+                                    <div className="text-sm text-muted-foreground mt-1">
+                                      {formatDate(new Date(sale.createdAt))} - {sale.saleItems?.length || 0} items
+                                    </div>
+                                    <div className="flex gap-2 mt-2">
+                                      {totalReturnedItems > 0 && (
+                                        <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">
+                                          <RotateCcw className="w-3 h-3 mr-1" />
+                                          {totalReturnedItems} returned
+                                        </Badge>
+                                      )}
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs bg-green-50 text-green-700 border-green-200"
+                                      >
+                                        <Package className="w-3 h-3 mr-1" />
+                                        {returnableItemsCount} can return
+                                      </Badge>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <div className="font-medium">
+                                      Rs. {Number.parseFloat(sale.totalAmount).toLocaleString()}
+                                    </div>
+                                    <Badge
+                                      variant={sale.paymentStatus === "paid" ? "default" : "secondary"}
+                                      className="mt-1"
+                                    >
+                                      {sale.paymentStatus}
                                     </Badge>
                                   </div>
-                                  <div className="text-sm text-muted-foreground mt-1">
-                                    {formatDate(new Date(sale.createdAt))} - {sale.saleItems?.length || 0} items
-                                  </div>
                                 </div>
-                                <div className="text-right shrink-0">
-                                  <div className="font-medium">
-                                    Rs. {Number.parseFloat(sale.totalAmount).toLocaleString()}
-                                  </div>
-                                  <Badge
-                                    variant={sale.paymentStatus === "paid" ? "default" : "secondary"}
-                                    className="mt-1"
-                                  >
-                                    {sale.paymentStatus}
-                                  </Badge>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
+                              </CardContent>
+                            </Card>
+                          )
+                        })}
                       </div>
                     </ScrollArea>
                   </div>
@@ -754,7 +828,9 @@ export default function Returns() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Process Return</DialogTitle>
-            <DialogDescription>Select items to return and specify quantities</DialogDescription>
+            <DialogDescription>
+              Select items to return and specify quantities. Only fresh stock available for return is shown.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedSale && (
@@ -792,16 +868,25 @@ export default function Returns() {
                 </div>
               </div>
 
-              <ScrollArea className="h-[200px] rounded-md border">
+              <ScrollArea className="h-[280px] rounded-md border">
                 <div className="p-2 space-y-2">
                   {selectedSale.saleItems?.map((item) => {
                     const returnQty = selectedItems[item.id] || 0
                     const isReturning = returnQty > 0
+                    const quantityReturned = item.quantityReturned || 0
+                    const availableToReturn = getAvailableToReturn(item)
+                    const isFullyReturned = availableToReturn <= 0
 
                     return (
                       <div
                         key={item.id}
-                        className={`p-3 rounded-md border ${isReturning ? "bg-destructive/5 border-destructive/30" : "bg-muted/30"}`}
+                        className={`p-3 rounded-md border ${
+                          isFullyReturned
+                            ? "bg-gray-100 border-gray-300 opacity-60"
+                            : isReturning
+                              ? "bg-destructive/5 border-destructive/30"
+                              : "bg-muted/30"
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
@@ -810,30 +895,57 @@ export default function Returns() {
                               Rate: Rs. {Number.parseFloat(item.rate).toLocaleString()} x {item.quantity} = Rs.{" "}
                               {Number.parseFloat(item.subtotal).toLocaleString()}
                             </p>
+                            <div className="flex gap-2 mt-1.5 flex-wrap">
+                              {quantityReturned > 0 && (
+                                <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">
+                                  <RotateCcw className="w-3 h-3 mr-1" />
+                                  {quantityReturned} already returned
+                                </Badge>
+                              )}
+                              {!isFullyReturned && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs bg-green-50 text-green-700 border-green-200"
+                                >
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  {availableToReturn} available
+                                </Badge>
+                              )}
+                              {isFullyReturned && (
+                                <Badge variant="secondary" className="text-xs bg-gray-200 text-gray-600">
+                                  <Ban className="w-3 h-3 mr-1" />
+                                  Fully Returned
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <Button
                               size="icon"
                               variant="outline"
                               className="h-7 w-7 bg-transparent"
-                              onClick={() => handleItemQuantityChange(item.id, item.quantity, -1)}
-                              disabled={returnQty === 0}
+                              onClick={() => handleItemQuantityChange(item.id, availableToReturn, -1)}
+                              disabled={returnQty === 0 || isFullyReturned}
                             >
                               <Minus className="h-3 w-3" />
                             </Button>
-                            <span className="w-8 text-center text-sm font-medium">{returnQty}</span>
+                            <span
+                              className={`w-8 text-center text-sm font-medium ${isFullyReturned ? "text-gray-400" : ""}`}
+                            >
+                              {isFullyReturned ? "-" : returnQty}
+                            </span>
                             <Button
                               size="icon"
                               variant="outline"
                               className="h-7 w-7 bg-transparent"
-                              onClick={() => handleItemQuantityChange(item.id, item.quantity, 1)}
-                              disabled={returnQty >= item.quantity}
+                              onClick={() => handleItemQuantityChange(item.id, availableToReturn, 1)}
+                              disabled={returnQty >= availableToReturn || isFullyReturned}
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
                           </div>
                         </div>
-                        {isReturning && (
+                        {isReturning && !isFullyReturned && (
                           <div className="flex items-center gap-2 mt-2 pt-2 border-t">
                             <Checkbox
                               id={`restock-${item.id}`}
@@ -854,6 +966,14 @@ export default function Returns() {
                   })}
                 </div>
               </ScrollArea>
+
+              <div className="flex items-start gap-2 p-3 rounded-md bg-blue-50 border border-blue-200">
+                <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-blue-700">
+                  Items that have been previously returned show their status. You can only return the remaining
+                  available quantity for each item.
+                </p>
+              </div>
 
               <div>
                 <Label htmlFor="reason" className="text-sm font-medium">
@@ -896,17 +1016,17 @@ export default function Returns() {
             </Button>
             <Button
               onClick={handleSubmitReturn}
-              disabled={isProcessing}
+              disabled={isProcessing || Object.keys(selectedItems).length === 0}
               className={isProcessing ? "opacity-70 cursor-not-allowed" : ""}
             >
               {isProcessing ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing Return...
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
                 </>
               ) : (
                 <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
+                  <RotateCcw className="w-4 h-4 mr-2" />
                   Process Return
                 </>
               )}
@@ -915,232 +1035,123 @@ export default function Returns() {
         </DialogContent>
       </Dialog>
 
-      {/* Quick Return Dialog - Full Page */}
+      {/* Quick Return Dialog */}
       <Dialog open={showQuickReturnDialog} onOpenChange={setShowQuickReturnDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => setShowQuickReturnDialog(false)} className="h-8 w-8">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <div>
-                <DialogTitle>Quick Item Return</DialogTitle>
-                <DialogDescription>Return individual items without bill reference</DialogDescription>
-              </div>
-            </div>
+            <DialogTitle>Quick Item Return</DialogTitle>
+            <DialogDescription>Return an item without referencing a specific bill</DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Customer Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Customer Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="customerName">Customer Name *</Label>
-                  <Input
-                    id="customerName"
-                    placeholder="Enter customer name"
-                    value={quickReturnForm.customerName}
-                    onChange={(e) => setQuickReturnForm((prev) => ({ ...prev, customerName: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="customerPhone">Customer Phone *</Label>
-                  <Input
-                    id="customerPhone"
-                    placeholder="Enter customer phone"
-                    value={quickReturnForm.customerPhone}
-                    onChange={(e) => setQuickReturnForm((prev) => ({ ...prev, customerPhone: e.target.value }))}
-                  />
-                </div>
-              </CardContent>
-            </Card>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="quickCustomerName">Customer Name *</Label>
+                <Input
+                  id="quickCustomerName"
+                  value={quickReturnForm.customerName}
+                  onChange={(e) => setQuickReturnForm((p) => ({ ...p, customerName: e.target.value }))}
+                  placeholder="Enter name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quickCustomerPhone">Phone *</Label>
+                <Input
+                  id="quickCustomerPhone"
+                  value={quickReturnForm.customerPhone}
+                  onChange={(e) => setQuickReturnForm((p) => ({ ...p, customerPhone: e.target.value }))}
+                  placeholder="Enter phone"
+                />
+              </div>
+            </div>
 
-            {/* Item Selection */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Item Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="colorSelect">Select Item *</Label>
-                  <Select onValueChange={handleColorSelect} value={quickReturnForm.colorId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select an item to return" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {colors.map((color) => (
-                        <SelectItem key={color.id} value={color.id}>
-                          {color.variant.product.company} {color.variant.product.productName} -{" "}
-                          {color.variant.packingSize} - {color.colorCode} {color.colorName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="quickColor">Select Product *</Label>
+              <Select value={quickReturnForm.colorId} onValueChange={handleColorSelect}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a product to return" />
+                </SelectTrigger>
+                <SelectContent>
+                  {colors.map((color) => (
+                    <SelectItem key={color.id} value={color.id}>
+                      {color.variant.product.company} {color.variant.product.productName} - {color.variant.packingSize}{" "}
+                      - {color.colorCode} {color.colorName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="quantity">Quantity *</Label>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() =>
-                          setQuickReturnForm((prev) => ({
-                            ...prev,
-                            quantity: Math.max(1, prev.quantity - 1),
-                          }))
-                        }
-                      >
-                        <Minus className="h-4 w-4" />
-                      </Button>
-                      <Input
-                        id="quantity"
-                        type="number"
-                        min="1"
-                        value={quickReturnForm.quantity}
-                        onChange={(e) =>
-                          setQuickReturnForm((prev) => ({ ...prev, quantity: Number.parseInt(e.target.value) || 1 }))
-                        }
-                        className="text-center"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() =>
-                          setQuickReturnForm((prev) => ({
-                            ...prev,
-                            quantity: prev.quantity + 1,
-                          }))
-                        }
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="rate">Rate (Rs.) *</Label>
-                    <Input
-                      id="rate"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={quickReturnForm.rate}
-                      onChange={(e) =>
-                        setQuickReturnForm((prev) => ({ ...prev, rate: Number.parseFloat(e.target.value) || 0 }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="subtotal">Subtotal (Rs.)</Label>
-                    <Input
-                      id="subtotal"
-                      value={(quickReturnForm.quantity * quickReturnForm.rate).toFixed(2)}
-                      readOnly
-                      className="bg-muted font-semibold"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="quickQuantity">Quantity</Label>
+                <Input
+                  id="quickQuantity"
+                  type="number"
+                  min="1"
+                  value={quickReturnForm.quantity}
+                  onChange={(e) =>
+                    setQuickReturnForm((p) => ({ ...p, quantity: Number.parseInt(e.target.value) || 1 }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quickRate">Rate (Rs.)</Label>
+                <Input
+                  id="quickRate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={quickReturnForm.rate}
+                  onChange={(e) => setQuickReturnForm((p) => ({ ...p, rate: Number.parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+            </div>
 
-            {/* Additional Information */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-lg">Additional Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="reason">Return Reason</Label>
-                  <Textarea
-                    id="reason"
-                    placeholder="Enter reason for return..."
-                    value={quickReturnForm.reason}
-                    onChange={(e) => setQuickReturnForm((prev) => ({ ...prev, reason: e.target.value }))}
-                    rows={3}
-                  />
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="quickReason">Reason (Optional)</Label>
+              <Textarea
+                id="quickReason"
+                value={quickReturnForm.reason}
+                onChange={(e) => setQuickReturnForm((p) => ({ ...p, reason: e.target.value }))}
+                placeholder="Enter reason for return"
+              />
+            </div>
 
-                <div className="flex items-center space-x-2 p-3 bg-muted/50 rounded-lg">
-                  <Checkbox
-                    id="restoreStock"
-                    checked={quickReturnForm.restoreStock}
-                    onCheckedChange={(checked) =>
-                      setQuickReturnForm((prev) => ({ ...prev, restoreStock: checked as boolean }))
-                    }
-                  />
-                  <Label htmlFor="restoreStock" className="cursor-pointer text-sm">
-                    <div className="font-medium">Restore item to stock inventory</div>
-                    <div className="text-muted-foreground">
-                      This will add {quickReturnForm.quantity} units back to the stock quantity
-                    </div>
-                  </Label>
-                </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="quickRestock"
+                checked={quickReturnForm.restoreStock}
+                onCheckedChange={(checked) => setQuickReturnForm((p) => ({ ...p, restoreStock: !!checked }))}
+              />
+              <Label htmlFor="quickRestock" className="cursor-pointer">
+                <Package className="h-4 w-4 inline mr-1" />
+                Restore to stock
+              </Label>
+            </div>
 
-                {/* Summary */}
-                <div className="p-4 bg-blue-50 rounded-lg border">
-                  <h3 className="font-semibold mb-2">Return Summary</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>Customer:</div>
-                    <div className="font-medium">{quickReturnForm.customerName || "Not specified"}</div>
-
-                    <div>Phone:</div>
-                    <div className="font-medium">{quickReturnForm.customerPhone || "Not specified"}</div>
-
-                    <div>Item:</div>
-                    <div className="font-medium">
-                      {quickReturnForm.colorId
-                        ? colors.find((c) => c.id === quickReturnForm.colorId)?.colorName
-                        : "Not selected"}
-                    </div>
-
-                    <div>Quantity:</div>
-                    <div className="font-medium">{quickReturnForm.quantity} units</div>
-
-                    <div>Refund Amount:</div>
-                    <div className="font-bold text-red-600">
-                      Rs. {(quickReturnForm.quantity * quickReturnForm.rate).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="p-3 rounded-md bg-muted/50">
+              <p className="text-sm text-muted-foreground">Total Refund</p>
+              <p className="text-xl font-bold text-destructive">
+                Rs. {(quickReturnForm.quantity * quickReturnForm.rate).toLocaleString()}
+              </p>
+            </div>
           </div>
 
-          <DialogFooter className="gap-2 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setQuickReturnForm({
-                  customerName: "",
-                  customerPhone: "",
-                  colorId: "",
-                  quantity: 1,
-                  rate: 0,
-                  reason: "",
-                  restoreStock: true,
-                })
-              }}
-            >
-              Reset Form
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowQuickReturnDialog(false)}>
+              Cancel
             </Button>
-            <Button
-              onClick={handleQuickReturnSubmit}
-              disabled={isProcessing}
-              className={isProcessing ? "opacity-70 cursor-not-allowed" : ""}
-            >
+            <Button onClick={handleQuickReturnSubmit} disabled={isProcessing}>
               {isProcessing ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Processing...
                 </>
               ) : (
                 <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Process Quick Return
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Process Return
                 </>
               )}
             </Button>
@@ -1148,163 +1159,91 @@ export default function Returns() {
         </DialogContent>
       </Dialog>
 
-      {/* Return Details Dialog */}
+      {/* View Return Details Dialog */}
       <Dialog open={viewDetailsOpen} onOpenChange={setViewDetailsOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Return Details - #{selectedReturn?.id.slice(0, 8).toUpperCase()}</DialogTitle>
+            <DialogTitle>Return Details</DialogTitle>
           </DialogHeader>
 
           {selectedReturn && (
-            <div className="space-y-6">
-              {/* Return Summary */}
-              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 p-3 rounded-md bg-muted/50">
                 <div>
-                  <p className="text-sm text-muted-foreground">Return Date</p>
-                  <p className="font-semibold">{formatDateShort(selectedReturn.createdAt)}</p>
+                  <Label className="text-xs text-muted-foreground">Return ID</Label>
+                  <p className="font-mono font-semibold">#{selectedReturn.id.slice(0, 8).toUpperCase()}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Return Type</p>
-                  <p className="font-semibold">
-                    {selectedReturn.returnType === "full_bill" ? "Full Bill Return" : "Item Return"}
-                  </p>
+                  <Label className="text-xs text-muted-foreground">Date</Label>
+                  <p className="font-medium">{formatDate(new Date(selectedReturn.createdAt))}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Status</p>
-                  <Badge className="capitalize">{selectedReturn.status}</Badge>
+                  <Label className="text-xs text-muted-foreground">Customer</Label>
+                  <p className="font-medium">{selectedReturn.customerName}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Refund</p>
-                  <p className="font-semibold text-red-600">
-                    Rs.{Math.round(Number.parseFloat(selectedReturn.totalRefund || "0")).toLocaleString()}
-                  </p>
+                  <Label className="text-xs text-muted-foreground">Phone</Label>
+                  <p className="font-medium">{selectedReturn.customerPhone}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Type</Label>
+                  <Badge variant={selectedReturn.returnType === "full_bill" ? "destructive" : "secondary"}>
+                    {selectedReturn.returnType === "full_bill" ? "Full Bill" : "Item Return"}
+                  </Badge>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Status</Label>
+                  <Badge variant={selectedReturn.status === "completed" ? "default" : "secondary"}>
+                    {selectedReturn.status}
+                  </Badge>
                 </div>
               </div>
 
-              {/* Customer Info */}
-              <div className="border-t pt-4">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  Customer Information
-                </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Name:</span>
-                    <p className="font-medium">{selectedReturn.customerName}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Phone:</span>
-                    <p className="font-medium">{selectedReturn.customerPhone}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Original Sale Info */}
-              {selectedReturn.sale && (
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold mb-3">Original Sale</h3>
-                  <div className="grid grid-cols-2 gap-4 text-sm p-3 bg-blue-50 rounded-lg">
-                    <div>
-                      <span className="text-muted-foreground">Sale ID:</span>
-                      <p className="font-mono font-semibold">#{selectedReturn.sale.id.slice(0, 8).toUpperCase()}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Sale Date:</span>
-                      <p className="font-medium">{formatDateShort(selectedReturn.sale.createdAt)}</p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Total Amount:</span>
-                      <p className="font-medium">
-                        Rs.{Math.round(Number.parseFloat(selectedReturn.sale.totalAmount)).toLocaleString()}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Amount Paid:</span>
-                      <p className="font-medium">
-                        Rs.{Math.round(Number.parseFloat(selectedReturn.sale.amountPaid)).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Returned Items */}
-              <div className="border-t pt-4">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Returned Items ({selectedReturn.returnItems.length})
-                </h3>
-                <div className="space-y-3">
-                  {selectedReturn.returnItems.map((item) => {
-                    const originalQty =
-                      selectedReturn.sale.saleItems?.find((si) => si.colorId === item.colorId)?.quantity || 0
-                    const remainingQty = originalQty - item.quantity
-
-                    return (
-                      <Card key={item.id} className="p-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <p className="font-semibold">{item.color.variant.product.productName}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {item.color.colorName} ({item.color.colorCode})
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Size: {item.color.variant.packingSize}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <Badge variant="outline">{item.quantity} units returned</Badge>
-                              {item.stockRestored && (
-                                <div className="flex items-center gap-1 text-xs text-green-600 mt-2">
-                                  <CheckCircle className="h-3 w-3" />
-                                  Stock Restored
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2 text-sm bg-gray-50 p-2 rounded">
-                            <div>
-                              <span className="text-muted-foreground block text-xs">Original Qty</span>
-                              <span className="font-semibold">{originalQty}</span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground block text-xs">Returned</span>
-                              <span className="font-semibold text-red-600">{item.quantity}</span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground block text-xs">Remaining</span>
-                              <span className="font-semibold text-green-600">{remainingQty}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Rate:</span>
-                            <span className="font-mono">
-                              Rs.{Math.round(Number.parseFloat(item.rate)).toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="flex justify-between text-sm font-semibold border-t pt-2">
-                            <span>Refund Amount:</span>
-                            <span className="text-red-600">
-                              Rs.{Math.round(Number.parseFloat(item.subtotal)).toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                      </Card>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Return Reason */}
               {selectedReturn.reason && (
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold mb-2">Return Reason</h3>
-                  <p className="text-sm text-muted-foreground p-3 bg-yellow-50 rounded-lg">{selectedReturn.reason}</p>
+                <div className="p-3 rounded-md bg-muted/30">
+                  <Label className="text-xs text-muted-foreground">Reason</Label>
+                  <p className="text-sm">{selectedReturn.reason}</p>
                 </div>
               )}
+
+              <Separator />
+
+              <div>
+                <Label className="text-sm font-medium">Returned Items</Label>
+                <ScrollArea className="h-[200px] mt-2 rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Product</TableHead>
+                        <TableHead className="text-center">Qty</TableHead>
+                        <TableHead className="text-right">Rate</TableHead>
+                        <TableHead className="text-right">Subtotal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedReturn.returnItems.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="text-xs">
+                            {item.color.variant.product.productName} - {item.color.colorName} ({item.color.colorCode})
+                          </TableCell>
+                          <TableCell className="text-center">{item.quantity}</TableCell>
+                          <TableCell className="text-right">Rs.{Math.round(Number.parseFloat(item.rate))}</TableCell>
+                          <TableCell className="text-right font-medium">
+                            Rs.{Math.round(Number.parseFloat(item.subtotal))}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-md bg-red-50 border border-red-200">
+                <p className="font-medium text-red-700">Total Refund</p>
+                <p className="text-xl font-bold text-red-700">
+                  Rs.{Math.round(Number.parseFloat(selectedReturn.totalRefund || "0")).toLocaleString()}
+                </p>
+              </div>
             </div>
           )}
 
@@ -1314,7 +1253,7 @@ export default function Returns() {
             </Button>
             {selectedReturn && (
               <Button onClick={() => downloadReturnPDF(selectedReturn)}>
-                <Download className="h-4 w-4 mr-2" />
+                <Download className="w-4 h-4 mr-2" />
                 Download PDF
               </Button>
             )}

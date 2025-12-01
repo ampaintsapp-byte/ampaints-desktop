@@ -1445,6 +1445,7 @@ export class DatabaseStorage implements IStorage {
       saleId: sale.id,
       rate: typeof item.rate === "number" ? item.rate.toString() : item.rate,
       subtotal: typeof item.subtotal === "number" ? item.subtotal.toString() : item.subtotal,
+      quantityReturned: 0, // Initialize quantityReturned
     }))
     await db.insert(saleItems).values(saleItemsToInsert)
 
@@ -1621,6 +1622,7 @@ export class DatabaseStorage implements IStorage {
       saleId,
       rate: typeof item.rate === "number" ? item.rate.toString() : item.rate,
       subtotal: typeof item.subtotal === "number" ? item.subtotal.toString() : item.subtotal,
+      quantityReturned: 0, // Initialize quantityReturned
     }
     await db.insert(saleItems).values(saleItem)
 
@@ -1993,6 +1995,18 @@ export class DatabaseStorage implements IStorage {
 
         console.log("[Storage] Inserting return item:", returnItem)
         await db.insert(returnItems).values(returnItem)
+
+        if (item.saleItemId) {
+          const [saleItem] = await db.select().from(saleItems).where(eq(saleItems.id, item.saleItemId))
+          if (saleItem) {
+            const newQuantityReturned = (saleItem.quantityReturned || 0) + item.quantity
+            await db
+              .update(saleItems)
+              .set({ quantityReturned: newQuantityReturned })
+              .where(eq(saleItems.id, item.saleItemId))
+            console.log(`[Storage] Updated saleItem ${item.saleItemId} quantityReturned to ${newQuantityReturned}`)
+          }
+        }
 
         if (returnItem.stockRestored) {
           console.log(`[Storage] Restoring stock for color ${item.colorId}, quantity: ${item.quantity}`)
@@ -2836,6 +2850,7 @@ export class DatabaseStorage implements IStorage {
           quantity: data.quantity,
           rate: data.rate,
           subtotal: data.subtotal,
+          quantityReturned: data.quantityReturned, // Keep quantityReturned during upsert
         })
         .where(eq(saleItems.id, data.id))
     } else {
