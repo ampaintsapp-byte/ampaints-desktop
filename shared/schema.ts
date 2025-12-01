@@ -84,6 +84,7 @@ export const saleItems = sqliteTable("sale_items", {
   quantity: integer("quantity").notNull(),
   rate: text("rate").notNull(), // stored as text to preserve decimal precision
   subtotal: text("subtotal").notNull(), // stored as text to preserve decimal precision
+  quantityReturned: integer("quantity_returned").notNull().default(0),
 })
 
 // Stock In History table - tracks all stock additions
@@ -345,6 +346,7 @@ export const insertSaleItemSchema = createInsertSchema(saleItems)
     quantity: z.number().int().min(1),
     rate: z.string().or(z.number()),
     subtotal: z.string().or(z.number()),
+    quantityReturned: z.number().int().min(0).optional(),
   })
 
 export const insertStockInHistorySchema = createInsertSchema(stockInHistory)
@@ -460,11 +462,13 @@ export type ColorWithVariantAndProduct = Color & {
 export type SaleWithItems = Sale & {
   saleItems: (SaleItem & {
     color: ColorWithVariantAndProduct
+    quantityReturned?: number
   })[]
 }
 
 export type SaleItemWithDetails = SaleItem & {
   color: ColorWithVariantAndProduct
+  quantityReturned?: number
 }
 
 export type StockInHistoryWithColor = StockInHistory & {
