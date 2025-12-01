@@ -1315,9 +1315,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/stock-out/history", async (_req, res) => {
     try {
       console.log("[API] Fetching stock out history (sold items)")
-      const history = await storage.getStockOutHistory()
-      console.log(`[API] Returning ${history.length} stock out records`)
-      res.json(history)
+      
+      // Fetch all sale items with their related data
+      const allSales = await storage.getSales()
+      const allColors = await storage.getColors()
+      
+      // Create a map of colors by ID for quick lookup
+      const colorMap = new Map(allColors.map(c => [c.id, c]))
+      
+      // Build stock out history from sale items
+      const stockOutHistory = []
+      
+      for (const sale of allSales) {
+        if (sale.isManualBalance) continue // Skip manual balance entries
+        
+        const saleItems = await storage.getSaleItems(sale.id)
+        for (const item of saleItems) {
+          const color = colorMap.get(item.colorId)
+          if (color) {
+            stockOutHistory.push({
+              id: item.id,
+              saleId: sale.id,
+              colorId: item.colorId,
+              quantity: item.quantity,
+              rate: item.rate,
+              subtotal: item.subtotal,
+              color: color,
+              soldAt: sale.createdAt,
+              customerName: sale.customerName,
+              customerPhone: sale.customerPhone,
+            })
+          }
+        }
+      }
+      
+      // Sort by date (newest first)
+      stockOutHistory.sort((a, b) => new Date(b.soldAt).getTime() - new Date(a.soldAt).getTime())
+      
+      console.log(`[API] Returning ${stockOutHistory.length} stock out records`)
+      res.json(stockOutHistory)
     } catch (error) {
       console.error("[API] Error fetching stock out history:", error)
       res.json([])

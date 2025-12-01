@@ -793,17 +793,9 @@ export default function BillPrint() {
               <Download className="h-4 w-4 mr-2" />
               Download PDF
             </Button>
-            <Button onClick={shareToWhatsApp} className="bg-green-500 hover:bg-green-600 text-white" data-testid="button-share-whatsapp">
-              <MessageCircle className="h-4 w-4 mr-2" />
-              WhatsApp
-            </Button>
             <Button onClick={printThermal} className="font-medium" data-testid="button-print-receipt">
               <Receipt className="h-4 w-4 mr-2" />
               Print
-            </Button>
-            <Button onClick={directPrint} variant="secondary" className="font-bold" data-testid="button-direct-print">
-              <Printer className="h-4 w-4 mr-2" />
-              DP
             </Button>
 
             <div className="flex gap-2">

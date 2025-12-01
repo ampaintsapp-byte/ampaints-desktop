@@ -1464,6 +1464,10 @@ export class DatabaseStorage implements IStorage {
     await db.insert(saleItems).values(saleItemsToInsert)
 
     console.log(`[Storage] Updating stock for ${items.length} items...`)
+    const { sqliteDb } = await import("./db")
+    const today = new Date()
+    const stockOutDate = `${String(today.getDate()).padStart(2, "0")}-${String(today.getMonth() + 1).padStart(2, "0")}-${today.getFullYear()}`
+    
     for (const item of items) {
       const [currentColor] = await db.select().from(colors).where(eq(colors.id, item.colorId))
       const previousStock = currentColor?.stockQuantity ?? 0
@@ -1476,9 +1480,39 @@ export class DatabaseStorage implements IStorage {
         .where(eq(colors.id, item.colorId))
 
       const [updatedColor] = await db.select().from(colors).where(eq(colors.id, item.colorId))
+      const newStock = updatedColor?.stockQuantity ?? 0
+      
       console.log(
-        `[Storage] Stock reduced: ${currentColor?.colorName || item.colorId} - Previous: ${previousStock}, Sold: ${item.quantity}, New: ${updatedColor?.stockQuantity}`,
+        `[Storage] Stock reduced: ${currentColor?.colorName || item.colorId} - Previous: ${previousStock}, Sold: ${item.quantity}, New: ${newStock}`,
       )
+      
+      // Record in stock_out_history
+      if (sqliteDb) {
+        try {
+          sqliteDb
+            .prepare(`
+            INSERT INTO stock_out_history (id, color_id, quantity, previous_stock, new_stock, movement_type, reference_id, reference_type, reason, stock_out_date, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+            .run(
+              crypto.randomUUID(),
+              item.colorId,
+              item.quantity,
+              previousStock,
+              newStock,
+              "sale",
+              sale.id,
+              "sale",
+              "Sold via POS",
+              stockOutDate,
+              `Customer: ${insertSale.customerName}`,
+              Date.now(),
+            )
+          console.log(`[Storage] Stock out history recorded for: ${currentColor?.colorName}`)
+        } catch (err) {
+          console.error("[Storage] Failed to record stock out history:", err)
+        }
+      }
     }
 
     // AUTO-SYNC TRIGGER
@@ -2045,9 +2079,30 @@ export class DatabaseStorage implements IStorage {
           console.log(`[Storage] Restoring stock for color ${item.colorId}, quantity: ${item.quantity}`)
           const [color] = await db.select().from(colors).where(eq(colors.id, item.colorId))
           if (color) {
+            const previousStock = color.stockQuantity
             const newStock = color.stockQuantity + item.quantity
             await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, item.colorId))
             console.log(`[Storage] Stock restored: ${color.colorName} - New stock: ${newStock}`)
+
+            // Record in stock history as return
+            const today = new Date()
+            const stockInDate = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`
+            
+            await db.insert(stockInHistory).values({
+              id: crypto.randomUUID(),
+              colorId: item.colorId,
+              quantity: item.quantity,
+              previousStock: previousStock,
+              newStock: newStock,
+              stockInDate: stockInDate,
+              notes: returnData.reason || "Item returned",
+              type: "return",
+              saleId: returnData.saleId || null,
+              customerName: returnData.customerName,
+              customerPhone: returnData.customerPhone,
+              createdAt: new Date(),
+            })
+            console.log(`[Storage] Stock history recorded for return: ${color.colorName}`)
           } else {
             console.warn(`[Storage] Color not found for stock restoration: ${item.colorId}`)
           }
@@ -2128,9 +2183,30 @@ export class DatabaseStorage implements IStorage {
       await db.insert(returnItems).values(returnItem)
 
       if (restoreStock) {
+        const previousStock = color.stockQuantity
         const newStock = color.stockQuantity + quantity
         await db.update(colors).set({ stockQuantity: newStock }).where(eq(colors.id, colorId))
         console.log(`[Storage] Quick return stock restored: ${color.colorName} - New stock: ${newStock}`)
+
+        // Record in stock history as return
+        const today = new Date()
+        const stockInDate = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`
+        
+        await db.insert(stockInHistory).values({
+          id: crypto.randomUUID(),
+          colorId: colorId,
+          quantity: quantity,
+          previousStock: previousStock,
+          newStock: newStock,
+          stockInDate: stockInDate,
+          notes: reason || "Quick return",
+          type: "return",
+          saleId: null,
+          customerName: customerName,
+          customerPhone: customerPhone,
+          createdAt: new Date(),
+        })
+        console.log(`[Storage] Stock history recorded for quick return: ${color.colorName}`)
       }
 
       // AUTO-SYNC TRIGGER
@@ -2656,9 +2732,9 @@ export class DatabaseStorage implements IStorage {
             totalPurchased: consolidatedData.totalAmount.toString(),
             totalPaid: consolidatedData.totalPaid.toString(),
             currentBalance: consolidatedData.currentOutstanding.toString(),
-            lastTransactionDate: new Date().getTime(),
+            lastTransactionDate: Date.now(),
             accountStatus: consolidatedData.paymentStatus === "paid" ? "active" : "active",
-            updatedAt: new Date().getTime(),
+            updatedAt: new Date(),
           })
           .where(eq(customerAccounts.customerPhone, customerPhone))
       } else {
@@ -2669,10 +2745,10 @@ export class DatabaseStorage implements IStorage {
           totalPurchased: consolidatedData.totalAmount.toString(),
           totalPaid: consolidatedData.totalPaid.toString(),
           currentBalance: consolidatedData.currentOutstanding.toString(),
-          lastTransactionDate: new Date().getTime(),
+          lastTransactionDate: Date.now(),
           accountStatus: "active",
-          createdAt: new Date().getTime(),
-          updatedAt: new Date().getTime(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
         })
       }
 

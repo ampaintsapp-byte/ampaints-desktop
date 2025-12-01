@@ -56,7 +56,7 @@ interface PaymentHistoryWithSale extends PaymentHistory {
   sale: Sale
 }
 
-type TransactionType = "bill" | "payment" | "cash_loan"
+type TransactionType = "bill" | "payment" | "cash_loan" | "return"
 
 interface SaleItemDisplay {
   productName: string
@@ -166,6 +166,18 @@ export default function CustomerStatement() {
     queryFn: async () => {
       const res = await fetch(`/api/payment-history/customer/${encodeURIComponent(customerPhone)}`)
       if (!res.ok) throw new Error("Failed to fetch payment history")
+      return res.json()
+    },
+    enabled: !!customerPhone,
+    refetchOnWindowFocus: true,
+  })
+
+  // Fetch customer returns
+  const { data: customerReturns = [] } = useQuery<any[]>({
+    queryKey: ["/api/returns/customer", customerPhone],
+    queryFn: async () => {
+      const res = await fetch(`/api/returns/customer/${encodeURIComponent(customerPhone)}`)
+      if (!res.ok) throw new Error("Failed to fetch returns")
       return res.json()
     },
     enabled: !!customerPhone,
@@ -378,20 +390,56 @@ export default function CustomerStatement() {
       saleId: payment.saleId,
     }))
 
-    // Combine and sort by date (oldest first)
-    txns.push(...billTransactions, ...paymentTransactions)
+    // Collect all returns as transactions (refunds reduce balance)
+    const returnTransactions: Transaction[] = customerReturns.map((ret) => {
+      const refundAmount = safeParseFloat(ret.totalRefund)
+      const returnItems: SaleItemDisplay[] = ret.returnItems?.map((item: any) => ({
+        productName: item.color?.variant?.product?.productName || "Product",
+        variantName: item.color?.variant?.packingSize || "Variant",
+        colorName: item.color?.colorName || "Color",
+        colorCode: item.color?.colorCode || "",
+        quantity: item.quantity,
+        rate: safeParseFloat(item.rate),
+        subtotal: safeParseFloat(item.subtotal),
+      })) || []
+
+      return {
+        id: `return-${ret.id}`,
+        date: safeParseDate(ret.createdAt),
+        type: "return" as TransactionType,
+        description: ret.returnType === "full_bill" ? "Full Bill Return" : `Item Return${ret.reason ? ` - ${ret.reason}` : ""}`,
+        reference: `RET-${ret.id.slice(0, 6).toUpperCase()}`,
+        debit: 0,
+        credit: refundAmount,
+        balance: 0,
+        paid: refundAmount,
+        totalAmount: 0,
+        outstanding: 0,
+        notes: ret.reason || undefined,
+        saleId: ret.saleId || undefined,
+        items: returnItems.length > 0 ? returnItems : undefined,
+      }
+    })
+
+    // Combine and sort by date and time (oldest first for balance calculation)
+    txns.push(...billTransactions, ...paymentTransactions, ...returnTransactions)
     txns.sort((a, b) => {
       const dateA = safeParseDate(a.date)
       const dateB = safeParseDate(b.date)
-      return dateA.getTime() - dateB.getTime()
+      const timeDiff = dateA.getTime() - dateB.getTime()
+      // If same timestamp, sort by ID for consistent ordering
+      if (timeDiff === 0) {
+        return a.id.localeCompare(b.id)
+      }
+      return timeDiff
     })
 
     // CORRECTED: Calculate running balance - SIMPLE AND ACCURATE METHOD
     let runningBalance = 0
     
     txns.forEach((txn) => {
-      if (txn.type === "payment") {
-        // Payments reduce the balance (customer pays us)
+      if (txn.type === "payment" || txn.type === "return") {
+        // Payments and returns reduce the balance (customer pays us / we refund)
         runningBalance -= txn.credit
       } else {
         // Bills increase the balance (customer owes us)
@@ -401,9 +449,9 @@ export default function CustomerStatement() {
       txn.balance = runningBalance
     })
 
-    // Return in reverse order (newest first for display)
-    return txns.reverse()
-  }, [allSalesWithItems, paymentHistory])
+    // Return in descending order (newest first for display) - always
+    return [...txns].reverse()
+  }, [allSalesWithItems, paymentHistory, customerReturns])
 
   const scheduledPayments = useMemo(() => {
     const now = new Date()
@@ -637,16 +685,16 @@ export default function CustomerStatement() {
 
     for (const txn of transactions) {
       const dateStr = formatDateShort(txn.date)
-      const outstanding = txn.type !== "payment" ? Math.max(0, txn.totalAmount - txn.paid) : 0
+      const outstanding = txn.type !== "payment" && txn.type !== "return" ? Math.max(0, txn.totalAmount - txn.paid) : 0
       let amountStr = "-"
       let paidStr = "-"
       let dueStr = "-"
 
-      if (txn.type === "payment") {
+      if (txn.type === "payment" || txn.type === "return") {
         paidStr = `Rs. ${Math.round(txn.credit).toLocaleString()}`
       } else {
         amountStr = `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`
-        paidStr = txn.paid > 0 ? `Rs. ${Math.round(txn.paid).toLocaleString()}` : "-"
+        paidStr = "-"
         dueStr = outstanding > 0 ? `Rs. ${Math.round(outstanding).toLocaleString()}` : "CLEAR"
       }
 
@@ -655,11 +703,13 @@ export default function CustomerStatement() {
       const bgColor: [number, number, number] =
         txn.type === "payment"
           ? [220, 245, 220]
-          : txn.type === "cash_loan"
-            ? [255, 240, 210]
-            : txn.status === "paid"
-              ? [210, 235, 255]
-              : [245, 245, 250]
+          : txn.type === "return"
+            ? [255, 230, 200]
+            : txn.type === "cash_loan"
+              ? [255, 240, 210]
+              : txn.status === "paid"
+                ? [210, 235, 255]
+                : [245, 245, 250]
 
       addLedgerRow([dateStr, txn.description, amountStr, paidStr, dueStr, balanceStr], false, bgColor)
 
@@ -960,6 +1010,8 @@ Thank you for your business!`
         return <Receipt className="h-5 w-5 text-blue-600" />
       case "cash_loan":
         return <Landmark className="h-5 w-5 text-amber-600" />
+      case "return":
+        return <Package className="h-5 w-5 text-orange-600" />
     }
   }
 
@@ -971,6 +1023,8 @@ Thank you for your business!`
         return <Badge className="bg-blue-100 text-blue-800 border-0">OUT</Badge>
       case "cash_loan":
         return <Badge className="bg-amber-100 text-amber-800 border-0">LOAN</Badge>
+      case "return":
+        return <Badge className="bg-orange-100 text-orange-800 border-0">RETURN</Badge>
     }
   }
 
@@ -1027,10 +1081,6 @@ Thank you for your business!`
             >
               <Download className="h-4 w-4 mr-2" />
               Download PDF
-            </Button>
-            <Button onClick={shareToWhatsApp} className="bg-emerald-600 text-white" data-testid="button-share-whatsapp">
-              <MessageCircle className="h-4 w-4 mr-2" />
-              WhatsApp
             </Button>
           </div>
         </div>
@@ -1133,7 +1183,6 @@ Thank you for your business!`
                         <TableHead>Description</TableHead>
                         <TableHead className="text-right">Bill Amount</TableHead>
                         <TableHead className="text-right text-emerald-600">Paid</TableHead>
-                        <TableHead className="text-right text-red-600">Outstanding</TableHead>
                         <TableHead className="text-right font-bold">Balance</TableHead>
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
@@ -1141,13 +1190,12 @@ Thank you for your business!`
                     <TableBody>
                       {transactions.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-slate-500">
+                          <TableCell colSpan={7} className="text-center py-8 text-slate-500">
                             No transactions found
                           </TableCell>
                         </TableRow>
                       ) : (
                         transactions.map((txn) => {
-                          const outstanding = txn.type !== "payment" ? Math.max(0, txn.totalAmount - txn.paid) : 0
                           const hasItems = txn.items && txn.items.length > 0
                           const isExpanded = expandedRows.has(txn.id)
                           return (
@@ -1208,25 +1256,12 @@ Thank you for your business!`
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right font-medium">
-                                  {txn.type === "payment" ? "-" : `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`}
+                                  {txn.type === "payment" || txn.type === "return" ? "-" : `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`}
                                 </TableCell>
                                 <TableCell className="text-right font-medium text-emerald-600">
-                                  {txn.type === "payment"
+                                  {txn.type === "payment" || txn.type === "return"
                                     ? `Rs. ${Math.round(txn.credit).toLocaleString()}`
-                                    : txn.paid > 0
-                                      ? `Rs. ${Math.round(txn.paid).toLocaleString()}`
-                                      : "-"}
-                                </TableCell>
-                                <TableCell className="text-right font-medium text-red-600">
-                                  {txn.type === "payment" ? (
-                                    "-"
-                                  ) : txn.type === "cash_loan" && txn.paid === 0 ? (
-                                    `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`
-                                  ) : outstanding > 0 ? (
-                                    `Rs. ${Math.round(outstanding).toLocaleString()}`
-                                  ) : (
-                                    <span className="text-emerald-600">CLEARED</span>
-                                  )}
+                                    : "-"}
                                 </TableCell>
                                 <TableCell className="text-right font-bold text-slate-800">
                                   Rs. {Math.round(txn.balance).toLocaleString()}
@@ -1238,6 +1273,14 @@ Thank you for your business!`
                                         <Eye className="h-4 w-4" />
                                       </Button>
                                     </Link>
+                                  ) : txn.type === "return" ? (
+                                    txn.saleId ? (
+                                      <Link href={`/bill/${txn.saleId}?from=customer`}>
+                                        <Button size="icon" variant="ghost" data-testid={`button-view-return-${txn.id}`}>
+                                          <Eye className="h-4 w-4" />
+                                        </Button>
+                                      </Link>
+                                    ) : null
                                   ) : (
                                     <Button
                                       size="icon"
@@ -1258,7 +1301,7 @@ Thank you for your business!`
                                   key={`${txn.id}-items`}
                                   className="bg-gradient-to-r from-blue-50 to-indigo-50"
                                 >
-                                  <TableCell colSpan={8} className="p-0">
+                                  <TableCell colSpan={7} className="p-0">
                                     <div className="mx-4 my-3 bg-white rounded-lg border border-blue-200 shadow-sm overflow-hidden">
                                       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2">
                                         <div className="flex items-center justify-between">

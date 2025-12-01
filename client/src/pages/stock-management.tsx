@@ -142,6 +142,10 @@ interface StockInHistory {
   notes?: string;
   stockInDate: string;
   createdAt: string;
+  type?: string;
+  saleId?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
 }
 
 /* -------------------------
@@ -465,8 +469,8 @@ export default function StockManagement() {
 
   useEffect(() => {
     const last = quickColors[quickColors.length - 1];
-    if (last && (last.colorName.trim() !== "" || last.colorCode.trim() !== "" || last.stockQuantity.trim() !== "")) {
-      setQuickColors(prev => [...prev, { id: String(Date.now()), colorName: "", colorCode: "", stockQuantity: "" }]);
+    if (last && (last.colorName.trim() !== "" || last.colorCode.trim() !== "")) {
+      setQuickColors(prev => [...prev, { id: String(Date.now()), colorName: "", colorCode: "", stockQuantity: "", rateOverride: "" }]);
     }
   }, [quickColors.length]);
 
@@ -1071,11 +1075,11 @@ export default function StockManagement() {
     }
 
     const finalColors = quickColors
-      .filter(c => c.colorName.trim() !== "" && c.colorCode.trim() !== "" && c.stockQuantity.trim() !== "")
+      .filter(c => c.colorName.trim() !== "" && c.colorCode.trim() !== "")
       .map(c => ({ 
         colorName: c.colorName.trim(), 
         colorCode: c.colorCode.trim(), 
-        stockQuantity: c.stockQuantity.trim(),
+        stockQuantity: c.stockQuantity.trim() || "0",
         rateOverride: c.rateOverride && c.rateOverride.trim() !== "" ? c.rateOverride.trim() : undefined
       }));
 
@@ -1248,65 +1252,6 @@ export default function StockManagement() {
             </Button>
           </div>
         </div>
-      </div>
-
-      {/* Optimized Stats Cards - Removed duplicates */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-all">
-          <CardContent className="p-0">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-xl">
-                <Package className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Products</p>
-                <p className="text-2xl font-bold text-gray-900">{products.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-all">
-          <CardContent className="p-0">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-xl">
-                <Layers className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Variants</p>
-                <p className="text-2xl font-bold text-gray-900">{variantsData.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-all">
-          <CardContent className="p-0">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-xl">
-                <Palette className="h-5 w-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Colors</p>
-                <p className="text-2xl font-bold text-gray-900">{colorsData.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-all">
-          <CardContent className="p-0">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-100 rounded-xl">
-                <TrendingUp className="h-5 w-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Stock Value</p>
-                <p className="text-2xl font-bold text-gray-900">Rs. {Math.round(totalStockValue).toLocaleString()}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Tabs: Products/Variants/Colors/Stock In/Stock In History */}
@@ -2782,16 +2727,19 @@ export default function StockManagement() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredStockInHistory.map(history => (
+                      {filteredStockInHistory.map(history => {
+                        const isReturn = history.type === 'return';
+                        return (
                         <Card 
                           key={history.id} 
-                          className="rounded-2xl p-4 border border-gray-200 hover:shadow-lg transition-all cursor-pointer group"
+                          className={`rounded-2xl p-4 border hover:shadow-lg transition-all cursor-pointer group ${isReturn ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200'}`}
                           onClick={() => {
                             if (canDeleteStockHistory) {
                               setEditingStockHistory(history);
                               setIsEditStockHistoryOpen(true);
                             }
                           }}
+                          data-testid={`card-stock-history-${history.id}`}
                         >
                           <CardContent className="p-0">
                             <div className="flex items-start justify-between mb-3">
@@ -2801,59 +2749,88 @@ export default function StockManagement() {
                                   style={{ backgroundColor: history.color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : history.color.colorCode }}
                                 />
                                 <div>
-                                  <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                                  <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors" data-testid={`text-color-name-${history.id}`}>
                                     {history.color.colorName}
                                   </h3>
-                                  <p className="text-sm font-mono text-gray-600">{history.color.colorCode}</p>
+                                  <p className="text-sm font-mono text-gray-600" data-testid={`text-color-code-${history.id}`}>{history.color.colorCode}</p>
                                 </div>
                               </div>
-                              <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-200 text-xs">
-                                {history.stockInDate}
-                              </Badge>
+                              <div className="flex flex-col items-end gap-1">
+                                {isReturn && (
+                                  <Badge className="bg-amber-500 text-white text-xs" data-testid={`badge-returned-${history.id}`}>
+                                    Returned
+                                  </Badge>
+                                )}
+                                <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-200 text-xs" data-testid={`badge-date-${history.id}`}>
+                                  {history.stockInDate}
+                                </Badge>
+                              </div>
                             </div>
 
                             <div className="space-y-2">
                               <div className="flex justify-between items-center text-sm">
                                 <span className="text-gray-600">Product</span>
-                                <span className="text-gray-500 truncate">{history.color.variant.product.productName}</span>
+                                <span className="text-gray-500 truncate" data-testid={`text-product-${history.id}`}>{history.color.variant.product.productName}</span>
                               </div>
                               <div className="flex justify-between items-center text-sm">
                                 <span className="text-gray-600">Size</span>
-                                <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-200">
+                                <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-200" data-testid={`badge-size-${history.id}`}>
                                   {history.color.variant.packingSize}
                                 </Badge>
                               </div>
+                              
+                              {/* Customer Info for Returns */}
+                              {isReturn && history.customerName && (
+                                <div className="bg-amber-100/50 p-2 rounded-lg border border-amber-200 space-y-1" data-testid={`return-info-${history.id}`}>
+                                  <div className="flex justify-between items-center text-sm">
+                                    <span className="text-amber-700 font-medium">Customer</span>
+                                    <span className="text-gray-800 font-semibold" data-testid={`text-return-customer-${history.id}`}>{history.customerName}</span>
+                                  </div>
+                                  {history.customerPhone && (
+                                    <div className="flex justify-between items-center text-sm">
+                                      <span className="text-amber-700 font-medium">Phone</span>
+                                      <span className="text-gray-700" data-testid={`text-return-phone-${history.id}`}>{history.customerPhone}</span>
+                                    </div>
+                                  )}
+                                  {history.saleId && (
+                                    <div className="flex justify-between items-center text-sm">
+                                      <span className="text-amber-700 font-medium">Bill Ref</span>
+                                      <span className="text-gray-700 font-mono text-xs" data-testid={`text-return-bill-${history.id}`}>{history.saleId.substring(0, 8)}...</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               
                               {/* Stock Information */}
                               <div className="grid grid-cols-3 gap-2 text-center mt-3 p-2 bg-gray-50 rounded-lg">
                                 <div className="space-y-1">
                                   <p className="text-xs text-gray-600">Previous</p>
-                                  <p className="font-mono text-sm font-semibold text-orange-600">{history.previousStock}</p>
+                                  <p className="font-mono text-sm font-semibold text-orange-600" data-testid={`text-previous-stock-${history.id}`}>{history.previousStock}</p>
                                 </div>
                                 <div className="space-y-1">
-                                  <p className="text-xs text-gray-600">Added</p>
-                                  <p className="font-mono text-sm font-semibold text-green-600">+{history.quantity}</p>
+                                  <p className="text-xs text-gray-600">{isReturn ? 'Restored' : 'Added'}</p>
+                                  <p className={`font-mono text-sm font-semibold ${isReturn ? 'text-amber-600' : 'text-green-600'}`} data-testid={`text-quantity-${history.id}`}>+{history.quantity}</p>
                                 </div>
                                 <div className="space-y-1">
                                   <p className="text-xs text-gray-600">New</p>
-                                  <p className="font-mono text-sm font-semibold text-blue-600">{history.newStock}</p>
+                                  <p className="font-mono text-sm font-semibold text-blue-600" data-testid={`text-new-stock-${history.id}`}>{history.newStock}</p>
                                 </div>
                               </div>
 
                               {history.notes && (
-                                <div className="text-xs text-gray-600 bg-gray-50 p-2 rounded-lg mt-2">
+                                <div className={`text-xs p-2 rounded-lg mt-2 ${isReturn ? 'text-amber-700 bg-amber-50' : 'text-gray-600 bg-gray-50'}`} data-testid={`text-notes-${history.id}`}>
                                   <p className="line-clamp-2">{history.notes}</p>
                                 </div>
                               )}
 
                               <div className="flex justify-between items-center text-xs text-gray-500 pt-2 border-t border-gray-200">
-                                <span>{formatDateShort(history.createdAt)}</span>
-                                <span>{new Date(history.createdAt).toLocaleTimeString()}</span>
+                                <span data-testid={`text-date-${history.id}`}>{formatDateShort(history.createdAt)}</span>
+                                <span data-testid={`text-time-${history.id}`}>{new Date(history.createdAt).toLocaleTimeString()}</span>
                               </div>
                             </div>
                           </CardContent>
                         </Card>
-                      ))}
+                      )})}
                     </div>
                   )}
                 </div>
@@ -3323,7 +3300,7 @@ export default function StockManagement() {
                         {quickColors.map((color, index) => (
                           <div key={color.id} className="space-y-2 p-3 bg-white rounded-lg border border-gray-200">
                             <div className="grid grid-cols-12 gap-3 items-center">
-                              <div className="col-span-3">
+                              <div className="col-span-4">
                                 <Input 
                                   placeholder="Color name" 
                                   value={color.colorName} 
@@ -3331,21 +3308,11 @@ export default function StockManagement() {
                                   className="border-gray-300"
                                 />
                               </div>
-                              <div className="col-span-3">
+                              <div className="col-span-4">
                                 <Input 
                                   placeholder="Color code" 
                                   value={color.colorCode} 
                                   onChange={e => updateColor(index, "colorCode", e.target.value)} 
-                                  className="border-gray-300"
-                                />
-                              </div>
-                              <div className="col-span-2">
-                                <Input 
-                                  type="number" 
-                                  min="0" 
-                                  placeholder="Stock qty" 
-                                  value={color.stockQuantity} 
-                                  onChange={e => updateColor(index, "stockQuantity", e.target.value)} 
                                   className="border-gray-300"
                                 />
                               </div>

@@ -161,6 +161,7 @@ export default function Returns() {
       queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] })
 
       queryClient.refetchQueries({ queryKey: ["/api/colors"] })
       queryClient.refetchQueries({ queryKey: ["/api/sales"] })
@@ -196,6 +197,7 @@ export default function Returns() {
       queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] })
 
       queryClient.refetchQueries({ queryKey: ["/api/colors"] })
 

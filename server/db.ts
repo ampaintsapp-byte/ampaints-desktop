@@ -180,6 +180,27 @@ function updateSchema() {
 
     updateStmt.run()
     console.log("[Database] ✅ Settings table updated with default values")
+
+    // Check if stock_in_history table needs new columns for returns tracking
+    const checkStockHistoryType = sqlite
+      .prepare(`
+      SELECT name FROM pragma_table_info('stock_in_history') WHERE name = 'type'
+    `)
+      .get()
+
+    if (!checkStockHistoryType) {
+      console.log("[Database] Adding return tracking columns to stock_in_history table...")
+      try {
+        sqlite.exec(`ALTER TABLE stock_in_history ADD COLUMN type TEXT NOT NULL DEFAULT 'stock_in'`)
+        sqlite.exec(`ALTER TABLE stock_in_history ADD COLUMN sale_id TEXT`)
+        sqlite.exec(`ALTER TABLE stock_in_history ADD COLUMN customer_name TEXT`)
+        sqlite.exec(`ALTER TABLE stock_in_history ADD COLUMN customer_phone TEXT`)
+        console.log("[Database] ✅ Return tracking columns added to stock_in_history table")
+      } catch (alterError) {
+        console.error("[Database] Error adding stock_in_history columns:", alterError)
+      }
+    }
+
   } catch (error) {
     console.error("[Database] ❌ Error updating schema:", error)
     // Don't throw error - continue with existing schema
@@ -291,6 +312,10 @@ function createTables() {
         new_stock INTEGER NOT NULL,
         stock_in_date TEXT NOT NULL,
         notes TEXT,
+        type TEXT NOT NULL DEFAULT 'stock_in',
+        sale_id TEXT,
+        customer_name TEXT,
+        customer_phone TEXT,
         created_at INTEGER NOT NULL,
         FOREIGN KEY (color_id) REFERENCES colors(id) ON DELETE CASCADE
       );

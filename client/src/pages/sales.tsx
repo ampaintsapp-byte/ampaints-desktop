@@ -1,10 +1,9 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Receipt, RefreshCw, MoreVertical, Trash2, Eye, Printer } from "lucide-react";
+import { Search, RefreshCw, MoreVertical, Trash2, Eye, Printer, RotateCcw, Calendar, TrendingUp, Wallet, AlertCircle, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -28,6 +27,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Sale {
   id: string;
@@ -36,6 +42,18 @@ interface Sale {
   totalAmount: string;
   amountPaid: string;
   paymentStatus: string;
+  createdAt: string;
+}
+
+interface Return {
+  id: string;
+  saleId: string | null;
+  customerName: string;
+  customerPhone: string;
+  returnType: string;
+  totalRefund: string;
+  reason: string | null;
+  status: string;
   createdAt: string;
 }
 
@@ -55,6 +73,22 @@ export default function Sales() {
   const { data: sales = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
   });
+
+  const { data: returns = [] } = useQuery<Return[]>({
+    queryKey: ["/api/returns"],
+  });
+
+  const returnsBySaleId = useMemo(() => {
+    const map = new Map<string, Return[]>();
+    returns.forEach((ret) => {
+      if (ret.saleId) {
+        const existing = map.get(ret.saleId) || [];
+        existing.push(ret);
+        map.set(ret.saleId, existing);
+      }
+    });
+    return map;
+  }, [returns]);
 
   const deleteSaleMutation = useMutation({
     mutationFn: async (saleId: string) => {
@@ -188,265 +222,365 @@ export default function Sales() {
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case "paid":
-        return <Badge variant="default">Paid</Badge>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+            Paid
+          </span>
+        );
       case "partial":
-        return <Badge variant="secondary">Partial</Badge>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            Partial
+          </span>
+        );
       case "unpaid":
-        return <Badge variant="outline">Unpaid</Badge>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+            Unpaid
+          </span>
+        );
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400">
+            {status}
+          </span>
+        );
     }
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-sales-title">Sales</h1>
-          <p className="text-sm text-muted-foreground">View all sales transactions</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
+      <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
+        
+        {/* Header Section - Clean & Minimal */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-foreground tracking-tight" data-testid="text-sales-title">
+              Sales
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {sales.length} transactions
+            </p>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={refreshSales}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
         </div>
-        <Button variant="outline" onClick={refreshSales}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>All Sales</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by customer name or phone..."
-                    value={customerSearchQuery}
-                    onChange={(e) => setCustomerSearchQuery(e.target.value)}
-                    className="pl-10"
-                    data-testid="input-sales-search"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={dateFilter}
-                    onChange={(e) => setDateFilter(e.target.value)}
-                    className="border rounded-md px-3 py-2 text-sm"
-                    data-testid="select-date-filter"
-                  >
-                    <option value="all">All Dates</option>
-                    <option value="today">Today</option>
-                    <option value="yesterday">Yesterday</option>
-                    <option value="week">Last 7 Days</option>
-                    <option value="month">Last 30 Days</option>
-                    <option value="custom">Custom Range</option>
-                  </select>
-
-                  {dateFilter === "custom" && (
-                    <div className="flex gap-2">
-                      <Input
-                        type="date"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="text-sm"
-                        placeholder="Start Date"
-                      />
-                      <Input
-                        type="date"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="text-sm"
-                        placeholder="End Date"
-                      />
-                    </div>
-                  )}
-                </div>
+        {/* Glassy Metrics Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <TrendingUp className="h-4 w-4" />
               </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Total</p>
+                <p className="text-lg font-semibold tabular-nums">
+                  {totals.count}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                <Wallet className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Amount</p>
+                <p className="text-lg font-semibold tabular-nums">
+                  Rs. {Math.round(totals.totalAmount).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-green-500/10 text-green-600 dark:text-green-400">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Received</p>
+                <p className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  Rs. {Math.round(totals.totalPaid).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="relative overflow-hidden rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400">
+                <AlertCircle className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Outstanding</p>
+                <p className="text-lg font-semibold tabular-nums text-red-600 dark:text-red-400">
+                  Rs. {Math.round(totals.totalDue).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
 
-              {filteredSales.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-3">
-                      <div className="text-xs text-muted-foreground">Total Sales</div>
-                      <div className="text-lg font-semibold">{totals.count}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-3">
-                      <div className="text-xs text-muted-foreground">Total Amount</div>
-                      <div className="text-lg font-semibold">Rs. {Math.round(totals.totalAmount).toLocaleString()}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-3">
-                      <div className="text-xs text-muted-foreground">Total Paid</div>
-                      <div className="text-lg font-semibold">Rs. {Math.round(totals.totalPaid).toLocaleString()}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-3">
-                      <div className="text-xs text-muted-foreground">Total Due</div>
-                      <div className="text-lg font-semibold text-destructive">
-                        Rs. {Math.round(totals.totalDue).toLocaleString()}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+        {/* Glassy Filter Bar */}
+        <div className="rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-3 shadow-sm">
+          <div className="flex flex-col gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search customer..."
+                value={customerSearchQuery}
+                onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                className="pl-9 bg-white/50 dark:bg-zinc-800/50 border-white/30 dark:border-zinc-700/50 h-9"
+                data-testid="input-sales-search"
+              />
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              <Select value={dateFilter} onValueChange={setDateFilter}>
+                <SelectTrigger className="w-full sm:w-[140px] bg-white/50 dark:bg-zinc-800/50 border-white/30 dark:border-zinc-700/50 h-9" data-testid="select-date-filter">
+                  <Calendar className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Date" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="yesterday">Yesterday</SelectItem>
+                  <SelectItem value="week">Last 7 Days</SelectItem>
+                  <SelectItem value="month">Last 30 Days</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
 
-              {filteredSales.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {customerSearchQuery || dateFilter !== "all" ? "No sales found matching your filters." : "No sales yet."}
-                </div>
-              ) : (
+              {dateFilter === "custom" && (
                 <>
-                  <div className="grid gap-3">
-                    {filteredSales.map((sale) => {
-                      const totalFloat = parseFloat(sale.totalAmount);
-                      const paidFloat = parseFloat(sale.amountPaid);
-                      const totalAmount = Math.round(totalFloat);
-                      const amountPaid = Math.round(paidFloat);
-                      const amountDue = Math.round(totalFloat - paidFloat);
-
-                      return (
-                        <Card key={sale.id} className="hover-elevate" data-testid={`card-sale-${sale.id}`}>
-                          <CardContent className="p-4">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1 min-w-0 space-y-2">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Receipt className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-sm font-semibold">{sale.customerName}</span>
-                                  {getPaymentStatusBadge(sale.paymentStatus)}
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                                  <div>
-                                    <span className="text-muted-foreground">Phone: </span>
-                                    <span className="font-mono">{sale.customerPhone}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Date: </span>
-                                    <span>{formatDateShort(sale.createdAt)}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Time: </span>
-                                    <span>{new Date(sale.createdAt).toLocaleTimeString()}</span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-4 text-xs font-mono">
-                                  <div>
-                                    <span className="text-muted-foreground">Total: </span>
-                                    <span className="font-semibold">Rs. {totalAmount.toLocaleString()}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Paid: </span>
-                                    <span className="font-semibold">Rs. {amountPaid.toLocaleString()}</span>
-                                  </div>
-                                  {amountDue > 0 && (
-                                    <div>
-                                      <span className="text-muted-foreground">Due: </span>
-                                      <span className="font-semibold text-destructive">Rs. {amountDue.toLocaleString()}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Link
-                                  href={`/bill/${sale.id}`}
-                                  className="text-sm text-primary hover:underline whitespace-nowrap"
-                                  data-testid={`link-view-bill-${sale.id}`}
-                                >
-                                  View Bill
-                                </Link>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" data-testid={`button-sale-menu-${sale.id}`}>
-                                      <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/bill/${sale.id}`} className="flex items-center gap-2 cursor-pointer">
-                                        <Eye className="h-4 w-4" />
-                                        View Details
-                                      </Link>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/bill/${sale.id}`} className="flex items-center gap-2 cursor-pointer">
-                                        <Printer className="h-4 w-4" />
-                                        Print Bill
-                                      </Link>
-                                    </DropdownMenuItem>
-                                    {canDeleteSales && (
-                                      <>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem
-                                          className="text-destructive focus:text-destructive flex items-center gap-2 cursor-pointer"
-                                          onClick={() => handleDeleteClick(sale)}
-                                          data-testid={`button-delete-sale-${sale.id}`}
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                          Delete Sale
-                                        </DropdownMenuItem>
-                                      </>
-                                    )}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-2 pt-4 border-t">
-                    <p className="text-xs text-muted-foreground">
-                      Showing {filteredSales.length} of {sales.length} sales
-                      {dateFilter !== "all" && ` • Filtered by ${dateFilter}`}
-                    </p>
-                    
-                    <div className="flex items-center gap-4 text-xs font-mono font-semibold">
-                      <div>
-                        <span className="text-muted-foreground">Grand Total: </span>
-                        <span>Rs. {Math.round(totals.totalAmount).toLocaleString()}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Total Paid: </span>
-                        <span>Rs. {Math.round(totals.totalPaid).toLocaleString()}</span>
-                      </div>
-                      {totals.totalDue > 0 && (
-                        <div>
-                          <span className="text-muted-foreground">Total Due: </span>
-                          <span className="text-destructive">Rs. {Math.round(totals.totalDue).toLocaleString()}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="flex-1 min-w-[120px] bg-white/50 dark:bg-zinc-800/50 border-white/30 dark:border-zinc-700/50 h-9 text-xs"
+                  />
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="flex-1 min-w-[120px] bg-white/50 dark:bg-zinc-800/50 border-white/30 dark:border-zinc-700/50 h-9 text-xs"
+                  />
                 </>
               )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </div>
 
+        {/* Sales List */}
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-4">
+                <Skeleton className="h-5 w-32 mb-3" />
+                <Skeleton className="h-4 w-48 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
+          </div>
+        ) : filteredSales.length === 0 ? (
+          <div className="rounded-xl bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/20 dark:border-zinc-800/50 p-12 text-center">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center">
+                <TrendingUp className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">No sales found</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {customerSearchQuery || dateFilter !== "all" 
+                    ? "Try adjusting your filters" 
+                    : "Sales will appear here"}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredSales.map((sale) => {
+              const totalFloat = parseFloat(sale.totalAmount);
+              const paidFloat = parseFloat(sale.amountPaid);
+              const totalAmount = Math.round(totalFloat);
+              const amountPaid = Math.round(paidFloat);
+              const amountDue = Math.round(totalFloat - paidFloat);
+              const saleReturns = returnsBySaleId.get(sale.id) || [];
+              const totalRefund = saleReturns.reduce((sum, r) => sum + parseFloat(r.totalRefund || "0"), 0);
+
+              return (
+                <div
+                  key={sale.id}
+                  className="group rounded-xl bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl border border-white/30 dark:border-zinc-800/50 p-4 shadow-sm hover:shadow-md hover:bg-white/80 dark:hover:bg-zinc-900/80 transition-all duration-200"
+                  data-testid={`card-sale-${sale.id}`}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    {/* Left - Customer Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-medium text-foreground truncate">
+                          {sale.customerName}
+                        </span>
+                        {getPaymentStatusBadge(sale.paymentStatus)}
+                        {saleReturns.length > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                            {saleReturns.length}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span className="font-mono">{sale.customerPhone}</span>
+                        <span className="opacity-50">|</span>
+                        <span>{formatDateShort(sale.createdAt)}</span>
+                      </div>
+                    </div>
+
+                    {/* Center - Amount Info */}
+                    <div className="hidden sm:flex items-center gap-6 text-sm">
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Total</p>
+                        <p className="font-semibold tabular-nums">Rs. {totalAmount.toLocaleString()}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Paid</p>
+                        <p className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                          Rs. {amountPaid.toLocaleString()}
+                        </p>
+                      </div>
+                      {amountDue > 0 && (
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Due</p>
+                          <p className="font-semibold tabular-nums text-red-600 dark:text-red-400">
+                            Rs. {amountDue.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+                      {totalRefund > 0 && (
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Refund</p>
+                          <p className="font-semibold tabular-nums text-orange-600 dark:text-orange-400">
+                            Rs. {Math.round(totalRefund).toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Mobile Amount Info */}
+                    <div className="sm:hidden text-right">
+                      <p className="font-semibold tabular-nums">Rs. {totalAmount.toLocaleString()}</p>
+                      {amountDue > 0 && (
+                        <p className="text-xs text-red-600 dark:text-red-400">
+                          Due: Rs. {amountDue.toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Right - Actions */}
+                    <div className="flex items-center gap-1">
+                      <Link href={`/bill/${sale.id}`}>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <span className="text-xs mr-1">View</span>
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </Link>
+                      
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            data-testid={`button-sale-menu-${sale.id}`}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem asChild>
+                            <Link href={`/bill/${sale.id}`} className="flex items-center gap-2 cursor-pointer">
+                              <Eye className="h-4 w-4" />
+                              View Details
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/bill/${sale.id}`} className="flex items-center gap-2 cursor-pointer">
+                              <Printer className="h-4 w-4" />
+                              Print Bill
+                            </Link>
+                          </DropdownMenuItem>
+                          {canDeleteSales && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive flex items-center gap-2 cursor-pointer"
+                                onClick={() => handleDeleteClick(sale)}
+                                data-testid={`button-delete-sale-${sale.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Footer Summary */}
+        {filteredSales.length > 0 && (
+          <div className="rounded-xl bg-white/40 dark:bg-zinc-900/40 backdrop-blur-lg border border-white/20 dark:border-zinc-800/50 px-4 py-3">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-2 text-xs">
+              <span className="text-muted-foreground">
+                Showing {filteredSales.length} of {sales.length}
+                {dateFilter !== "all" && <span className="opacity-60"> • {dateFilter}</span>}
+              </span>
+              <div className="flex items-center gap-4 font-medium">
+                <span className="tabular-nums">
+                  Total: <span className="text-foreground">Rs. {Math.round(totals.totalAmount).toLocaleString()}</span>
+                </span>
+                {totals.totalDue > 0 && (
+                  <span className="tabular-nums text-red-600 dark:text-red-400">
+                    Due: Rs. {Math.round(totals.totalDue).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Delete Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border-white/20 dark:border-zinc-800/50">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Sale</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete this sale for <strong>{saleToDelete?.customerName}</strong>?
               <br /><br />
               This will:
-              <ul className="list-disc list-inside mt-2 space-y-1">
+              <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
                 <li>Delete all items from this sale</li>
                 <li>Restore stock quantities to inventory</li>
                 <li>Delete all payment history for this sale</li>
@@ -462,7 +596,7 @@ export default function Sales() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={deleteSaleMutation.isPending}
             >
-              {deleteSaleMutation.isPending ? "Deleting..." : "Delete Sale"}
+              {deleteSaleMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { log } from "./utils";
-import { initializeDatabase } from "./db";
+import { isDatabaseReady } from "./db";
 
 const app = express();
 
@@ -51,10 +51,12 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
-    // Initialize database first
-    console.log("[Server] Initializing database...");
-    await initializeDatabase();
-    console.log("[Server] Database initialized successfully");
+    // Check if database is ready (already initialized when db module was loaded)
+    if (!isDatabaseReady()) {
+      console.error("[Server] Database not initialized!");
+      process.exit(1);
+    }
+    console.log("[Server] Database is ready");
 
     // Register routes after database is ready
     console.log("[Server] Registering API routes...");

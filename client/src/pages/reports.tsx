@@ -39,9 +39,10 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { Link } from "wouter";
-import type { Sale, PaymentHistory } from "@shared/schema";
+import type { Sale, PaymentHistory, Return } from "@shared/schema";
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { useDateFormat } from "@/hooks/use-date-format";
+import { RotateCcw } from "lucide-react";
 
 interface PaymentHistoryWithSale extends PaymentHistory {
   sale: Sale | null;
@@ -68,6 +69,11 @@ export default function Reports() {
 
   const { data: paymentHistory = [], isLoading: historyLoading } = useQuery<PaymentHistoryWithSale[]>({
     queryKey: ["/api/payment-history"],
+    refetchOnWindowFocus: true,
+  });
+
+  const { data: returns = [], isLoading: returnsLoading } = useQuery<Return[]>({
+    queryKey: ["/api/returns"],
     refetchOnWindowFocus: true,
   });
 
@@ -247,6 +253,9 @@ export default function Reports() {
     const totalUnpaidAmount = totalSalesAmount - totalPaidAmount;
     const totalRecoveryPayments = paymentHistory.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
     
+    const totalReturnsAmount = returns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
+    const returnsCount = returns.length;
+    
     const unpaidBillsCount = allSales.filter((sale) => sale.paymentStatus !== "paid").length;
     const paidBillsCount = allSales.filter((sale) => sale.paymentStatus === "paid").length;
     const totalBillsCount = allSales.length;
@@ -258,13 +267,15 @@ export default function Reports() {
       totalPaidAmount,
       totalUnpaidAmount,
       totalRecoveryPayments,
+      totalReturnsAmount,
+      returnsCount,
       unpaidBillsCount,
       paidBillsCount,
       totalBillsCount,
       totalPaymentRecords: paymentHistory.length,
       uniqueCustomers,
     };
-  }, [allSales, paymentHistory]);
+  }, [allSales, paymentHistory, returns]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -414,7 +425,7 @@ export default function Reports() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card data-testid="card-total-sales">
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Sales</CardTitle>
@@ -475,6 +486,22 @@ export default function Reports() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {stats.totalPaymentRecords} payment records
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-returns">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Returns</CardTitle>
+            <RotateCcw className="h-5 w-5 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold flex items-center gap-1 text-orange-600 dark:text-orange-400">
+              <IndianRupee className="h-5 w-5" />
+              {stats.totalReturnsAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.returnsCount} returns total
             </p>
           </CardContent>
         </Card>

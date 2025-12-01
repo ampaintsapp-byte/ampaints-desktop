@@ -100,6 +100,10 @@ export const stockInHistory = sqliteTable("stock_in_history", {
   newStock: integer("new_stock").notNull(),
   stockInDate: text("stock_in_date").notNull(), // Store as TEXT in DD-MM-YYYY format
   notes: text("notes"),
+  type: text("type").notNull().default("stock_in"), // 'stock_in' for manual addition, 'return' for returned items
+  saleId: text("sale_id"), // Optional: reference to sale for returns
+  customerName: text("customer_name"), // Optional: customer name for returns
+  customerPhone: text("customer_phone"), // Optional: customer phone for returns
   createdAt: integer("created_at", { mode: "timestamp" })
     .$defaultFn(() => new Date())
     .notNull(),
