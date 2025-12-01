@@ -1694,17 +1694,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      // Record payment with proper balance tracking
-      const updatedSale = await storage.updateSalePayment(req.params.id, amount, paymentMethod, notes)
+      try {
+        // Record payment with proper balance tracking
+        const updatedSale = await storage.updateSalePayment(req.params.id, amount, paymentMethod, notes)
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
+        // Invalidate real-time queries
+        invalidateCustomerQueries(sale.customerPhone)
+        invalidateGlobalQueries()
 
-      // Auto-sync trigger
-      detectChanges("payments")
+        // Auto-sync trigger
+        detectChanges("payments")
 
-      res.json(updatedSale)
+        res.json(updatedSale)
+      } catch (storageError) {
+        console.error("[API] Storage error on payment update:", storageError)
+        res.status(500).json({
+          error: storageError instanceof Error ? storageError.message : "Failed to record payment",
+        })
+      }
     } catch (error) {
       console.error("Error recording payment:", error)
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to record payment" })

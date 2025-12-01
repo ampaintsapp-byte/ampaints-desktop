@@ -2534,7 +2534,10 @@ export class DatabaseStorage implements IStorage {
   async syncCustomerAccount(customerPhone: string): Promise<void> {
     try {
       const consolidatedData = await this.getConsolidatedCustomerAccount(customerPhone)
-      if (!consolidatedData) return
+      if (!consolidatedData) {
+        console.log(`[Storage] No sales found for customer ${customerPhone}, skipping sync`)
+        return
+      }
 
       const existingAccount = await db
         .select()
@@ -2545,7 +2548,7 @@ export class DatabaseStorage implements IStorage {
         await db
           .update(customerAccounts)
           .set({
-            customerName: consolidatedData.customerName, // Ensure name is updated
+            customerName: consolidatedData.customerName,
             totalPurchased: consolidatedData.totalAmount.toString(),
             totalPaid: consolidatedData.totalPaid.toString(),
             currentBalance: consolidatedData.currentOutstanding.toString(),
@@ -2572,6 +2575,7 @@ export class DatabaseStorage implements IStorage {
       this.detectChanges("customer_accounts")
     } catch (error) {
       console.error("[Storage] Error syncing customer account:", error)
+      throw error
     }
   }
 
