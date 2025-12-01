@@ -1153,7 +1153,7 @@ export class DatabaseStorage implements IStorage {
       paymentMethod: data.paymentMethod || "cash",
       notes: data.notes || null,
       createdAt: new Date(),
-      payment_date: new Date().toISOString(),
+      paymentDate: new Date().toISOString(),
     }
 
     await db.insert(paymentHistory).values(paymentRecord)

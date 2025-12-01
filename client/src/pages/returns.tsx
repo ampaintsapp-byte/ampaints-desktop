@@ -142,6 +142,8 @@ export default function Returns() {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
 
+      queryClient.refetchQueries({ queryKey: ["/api/colors"] })
+
       // Force immediate refetch for fresh data
       refetchReturns()
 
@@ -173,6 +175,8 @@ export default function Returns() {
       queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+
+      queryClient.refetchQueries({ queryKey: ["/api/colors"] })
 
       // Force immediate refetch for fresh data
       refetchReturns()
