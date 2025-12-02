@@ -9,6 +9,10 @@ declare global {
       importDatabase: () => Promise<{ success: boolean; path?: string; error?: string }>;
       getActivationStatus: () => Promise<boolean>;
       setActivationStatus: (status: boolean) => Promise<boolean>;
+      sharePdfToWhatsApp: (data: { pdfBase64: string; fileName: string; phoneNumber: string }) => 
+        Promise<{ success: boolean; path?: string; message?: string; error?: string }>;
+      savePdfToDocuments: (data: { pdfBase64: string; fileName: string }) => 
+        Promise<{ success: boolean; path?: string; error?: string }>;
     };
   }
 }

@@ -48,6 +48,9 @@ export default function BillPrint() {
   const [customRate, setCustomRate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingItems, setEditingItems] = useState<{ [key: string]: { quantity: string; rate: string } }>({});
+  const [editCustomerDialogOpen, setEditCustomerDialogOpen] = useState(false);
+  const [editedCustomerName, setEditedCustomerName] = useState("");
+  const [editedCustomerPhone, setEditedCustomerPhone] = useState("");
   
   const referrer = new URLSearchParams(searchParams).get('from');
 
@@ -225,10 +228,10 @@ export default function BillPrint() {
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(sale.customerName, rightBoxX, yPos + 13);
+    pdf.text(displayCustomerName, rightBoxX, yPos + 13);
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(sale.customerPhone, rightBoxX, yPos + 20);
+    pdf.text(displayCustomerPhone, rightBoxX, yPos + 20);
 
     yPos += 38;
 
@@ -393,10 +396,10 @@ export default function BillPrint() {
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(sale.customerName, rightBoxX, yPos + 13);
+    pdf.text(displayCustomerName, rightBoxX, yPos + 13);
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(sale.customerPhone, rightBoxX, yPos + 20);
+    pdf.text(displayCustomerPhone, rightBoxX, yPos + 20);
 
     yPos += 38;
 
@@ -745,25 +748,71 @@ export default function BillPrint() {
 
   const formatDate = (d: string) => formatDateShort(d);
 
+  // Get display customer name and phone (uses edited values if set)
+  const displayCustomerName = editedCustomerName || sale?.customerName || "";
+  const displayCustomerPhone = editedCustomerPhone || sale?.customerPhone || "";
+
+  // Open customer edit dialog
+  const openEditCustomerDialog = () => {
+    if (sale) {
+      setEditedCustomerName(editedCustomerName || sale.customerName);
+      setEditedCustomerPhone(editedCustomerPhone || sale.customerPhone);
+      setEditCustomerDialogOpen(true);
+    }
+  };
+
+  // Save customer edits (just for print - not saved to database)
+  const saveCustomerEdits = () => {
+    setEditCustomerDialogOpen(false);
+    toast({
+      title: "Customer Info Updated",
+      description: "Updated info will be used for printing and PDF. Original bill data unchanged.",
+    });
+  };
+
+  // Reset customer edits
+  const resetCustomerEdits = () => {
+    setEditedCustomerName("");
+    setEditedCustomerPhone("");
+    setEditCustomerDialogOpen(false);
+  };
+
   // Show error if bill not found
   if (error) {
     return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <div className="text-center space-y-4">
-          <h1 className="text-2xl font-bold text-red-600">Bill Not Found</h1>
-          <p className="text-muted-foreground">The bill you are looking for does not exist or has been deleted.</p>
-          <Link href="/pos">
-            <Button>
-              <ArrowLeft className="h-4 w-4 mr-2" /> Back to POS
-            </Button>
-          </Link>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-indigo-950/20 p-6">
+        <div className="max-w-md mx-auto">
+          <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-2xl p-8 border border-slate-100 dark:border-slate-700/50 shadow-sm text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto">
+              <Receipt className="h-8 w-8 text-red-600 dark:text-red-400" />
+            </div>
+            <h1 className="text-2xl font-bold text-red-600 dark:text-red-400">Bill Not Found</h1>
+            <p className="text-slate-600 dark:text-slate-400">The bill you are looking for does not exist or has been deleted.</p>
+            <Link href="/pos">
+              <Button className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md">
+                <ArrowLeft className="h-4 w-4 mr-2" /> Back to POS
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (isLoading) return <div className="p-6"><Skeleton className="h-96 w-full max-w-2xl mx-auto" /></div>;
-  if (!sale) return <div className="p-6 text-center text-muted-foreground">Bill not found</div>;
+  if (isLoading) return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-indigo-950/20 p-6">
+      <div className="max-w-2xl mx-auto space-y-6">
+        <Skeleton className="h-20 w-full rounded-2xl" />
+        <Skeleton className="h-96 w-full rounded-2xl" />
+      </div>
+    </div>
+  );
+  
+  if (!sale) return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-indigo-950/20 p-6 flex items-center justify-center">
+      <p className="text-slate-600 dark:text-slate-400">Bill not found</p>
+    </div>
+  );
 
   const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
   const isPaid = sale.paymentStatus === "paid";
@@ -780,205 +829,291 @@ export default function BillPrint() {
 
   return (
     <>
-      <div className="p-6 max-w-2xl mx-auto">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-indigo-950/20 p-6">
+        <div className="max-w-2xl mx-auto space-y-6">
 
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6 no-print flex-wrap gap-2">
-          <Button variant="outline" onClick={handleGoBack} data-testid="button-back">
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back
-          </Button>
-
-          <div className="flex gap-2 flex-wrap">
-            <Button onClick={downloadBillPDF} variant="outline" data-testid="button-download-pdf">
-              <Download className="h-4 w-4 mr-2" />
-              Download PDF
-            </Button>
-            <Button onClick={printThermal} className="font-medium" data-testid="button-print-receipt">
-              <Receipt className="h-4 w-4 mr-2" />
-              Print
+        {/* Banking-Style Header */}
+        <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm no-print">
+          <div className="flex justify-between items-center flex-wrap gap-4">
+            <Button 
+              variant="outline" 
+              onClick={handleGoBack} 
+              className="border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900"
+              data-testid="button-back"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" /> Back
             </Button>
 
-            <div className="flex gap-2">
-              {editMode ? (
-                <>
-                  <Button variant="outline" onClick={cancelEditMode} data-testid="button-cancel-edit">
-                    <X className="h-4 w-4 mr-2" /> Cancel
-                  </Button>
-                  <Button onClick={saveAllChanges} data-testid="button-save-changes">
-                    <Save className="h-4 w-4 mr-2" /> Save Changes
-                  </Button>
-                </>
-              ) : (canEditSales || canDeleteSales) ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" data-testid="button-bill-menu">
-                      <MoreVertical className="h-4 w-4" />
+            <div className="flex gap-2 flex-wrap">
+              <Button 
+                onClick={downloadBillPDF} 
+                variant="outline" 
+                className="border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900"
+                data-testid="button-download-pdf"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download PDF
+              </Button>
+              <Button 
+                onClick={printThermal} 
+                className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md"
+                data-testid="button-print-receipt"
+              >
+                <Receipt className="h-4 w-4 mr-2" />
+                Print
+              </Button>
+
+              <div className="flex gap-2">
+                {editMode ? (
+                  <>
+                    <Button 
+                      variant="outline" 
+                      onClick={cancelEditMode} 
+                      className="border-slate-200 dark:border-slate-700"
+                      data-testid="button-cancel-edit"
+                    >
+                      <X className="h-4 w-4 mr-2" /> Cancel
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {canEditSales && (
-                      <DropdownMenuItem onClick={startEditMode} data-testid="menu-edit-bill">
-                        <Edit className="h-4 w-4 mr-2" /> Edit Bill
-                      </DropdownMenuItem>
-                    )}
-                    {canEditSales && (
-                      <DropdownMenuItem onClick={() => setAddItemDialogOpen(true)} data-testid="menu-add-item">
-                        <Plus className="h-4 w-4 mr-2" /> Add Item
-                      </DropdownMenuItem>
-                    )}
-                    {canDeleteSales && (
-                      <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-red-600" data-testid="menu-delete-bill">
-                        <Trash2 className="h-4 w-4 mr-2" /> Delete Bill
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
+                    <Button 
+                      onClick={saveAllChanges} 
+                      className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md"
+                      data-testid="button-save-changes"
+                    >
+                      <Save className="h-4 w-4 mr-2" /> Save Changes
+                    </Button>
+                  </>
+                ) : (canEditSales || canDeleteSales) ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className="border-slate-200 dark:border-slate-700"
+                        data-testid="button-bill-menu"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
+                      {canEditSales && (
+                        <DropdownMenuItem onClick={startEditMode} data-testid="menu-edit-bill">
+                          <Edit className="h-4 w-4 mr-2" /> Edit Bill
+                        </DropdownMenuItem>
+                      )}
+                      {canEditSales && (
+                        <DropdownMenuItem onClick={() => setAddItemDialogOpen(true)} data-testid="menu-add-item">
+                          <Plus className="h-4 w-4 mr-2" /> Add Item
+                        </DropdownMenuItem>
+                      )}
+                      {canDeleteSales && (
+                        <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-red-600" data-testid="menu-delete-bill">
+                          <Trash2 className="h-4 w-4 mr-2" /> Delete Bill
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Screen View */}
-        <Card className="print:hidden">
-          <CardContent className="p-8 space-y-6">
-            <div className="text-center border-b pb-4">
-              <p className="text-xs mt-1">Invoice: {sale.id.slice(0, 8).toUpperCase()}</p>
+        {/* Screen View - Banking Style Invoice Card */}
+        <Card className="print:hidden bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm border-slate-100 dark:border-slate-700/50 shadow-sm rounded-2xl overflow-hidden">
+          {/* Gradient Invoice Header */}
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Receipt className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold">Invoice</h1>
+                  <p className="text-white/80 text-sm font-mono">#{sale.id.slice(0, 8).toUpperCase()}</p>
+                </div>
+              </div>
+              <Badge 
+                className={`${isPaid ? 'bg-emerald-500/20 text-emerald-100 border-emerald-400/30' : 'bg-amber-500/20 text-amber-100 border-amber-400/30'} border`}
+              >
+                {sale.paymentStatus.toUpperCase()}
+              </Badge>
+            </div>
+          </div>
+
+          <CardContent className="p-6 space-y-6">
+            {/* Customer & Date Info */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Customer</span>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={openEditCustomerDialog}
+                    data-testid="button-edit-customer"
+                  >
+                    <Edit className="h-3 w-3 text-slate-400" />
+                  </Button>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                    {displayCustomerName}
+                    {(editedCustomerName || editedCustomerPhone) && (
+                      <Badge variant="secondary" className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Edited</Badge>
+                    )}
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 font-mono">{displayCustomerPhone}</p>
+                </div>
+              </div>
+              <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-xl p-4 space-y-3">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Date & Time</span>
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-white">{formatDateShort(sale.createdAt)}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{new Date(sale.createdAt).toLocaleTimeString()}</p>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="text-muted-foreground">Customer:</span> <strong>{sale.customerName}</strong></div>
-              <div><span className="text-muted-foreground">Phone:</span> <strong>{sale.customerPhone}</strong></div>
-              <div><span className="text-muted-foreground">Date:</span> <strong>{formatDateShort(sale.createdAt)}</strong></div>
-              <div><span className="text-muted-foreground">Time:</span> <strong>{new Date(sale.createdAt).toLocaleTimeString()}</strong></div>
-            </div>
-
-            <div className="border-t pt-4">
-              <h2 className="font-semibold mb-3 flex justify-between items-center">
-                <span>Items</span>
+            {/* Items Table */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <h2 className="font-semibold text-slate-900 dark:text-white">Items</h2>
                 {editMode && (
-                  <Badge variant="secondary" className="flex items-center gap-1">
-                    <Edit className="h-3 w-3" /> Edit Mode
+                  <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-0">
+                    <Edit className="h-3 w-3 mr-1" /> Edit Mode
                   </Badge>
                 )}
-              </h2>
+              </div>
 
-              <table className="w-full text-sm">
-                <thead className="border-b">
-                  <tr>
-                    <th className="text-left pb-2">Product</th>
-                    <th className="text-right pb-2">Qty</th>
-                    <th className="text-right pb-2">Rate</th>
-                    <th className="text-right pb-2">Amount</th>
-                    {editMode && <th className="text-right pb-2">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sale.saleItems.map((item) => (
-                    <tr key={item.id} className="border-b last:border-0">
-                      <td className="py-3 font-medium">
-                        {getProductLine(item)}
-                      </td>
-                      <td className="py-3 text-right">
-                        {editMode ? (
-                          <Input
-                            type="number"
-                            min="1"
-                            value={editingItems[item.id]?.quantity || item.quantity}
-                            onChange={(e) => updateEditingItem(item.id, 'quantity', e.target.value)}
-                            className="w-20 text-right ml-auto"
-                          />
-                        ) : (
-                          item.quantity
-                        )}
-                      </td>
-                      <td className="py-3 text-right">
-                        {editMode ? (
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={editingItems[item.id]?.rate || item.rate}
-                            onChange={(e) => updateEditingItem(item.id, 'rate', e.target.value)}
-                            className="w-24 text-right ml-auto"
-                          />
-                        ) : (
-                          `Rs. ${Math.round(parseFloat(item.rate))}`
-                        )}
-                      </td>
-                      <td className="py-3 text-right font-bold">
-                        Rs. {Math.round(parseFloat(item.subtotal))}
-                      </td>
-                      {editMode && (
-                        <td className="py-3 text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => deleteItem(item.id, item.color.colorName)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </td>
-                      )}
+              <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-100 dark:bg-zinc-800">
+                    <tr>
+                      <th className="text-left py-3 px-4 text-slate-600 dark:text-slate-400 font-medium">Product</th>
+                      <th className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-medium">Qty</th>
+                      <th className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-medium">Rate</th>
+                      <th className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-medium">Amount</th>
+                      {editMode && <th className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-medium">Actions</th>}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {sale.saleItems.map((item) => (
+                      <tr key={item.id} className="bg-white dark:bg-zinc-900/30">
+                        <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
+                          {getProductLine(item)}
+                        </td>
+                        <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                          {editMode ? (
+                            <Input
+                              type="number"
+                              min="1"
+                              value={editingItems[item.id]?.quantity || item.quantity}
+                              onChange={(e) => updateEditingItem(item.id, 'quantity', e.target.value)}
+                              className="w-20 text-right ml-auto border-slate-200 dark:border-slate-700"
+                            />
+                          ) : (
+                            <span className="font-mono">{item.quantity}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right text-slate-700 dark:text-slate-300">
+                          {editMode ? (
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={editingItems[item.id]?.rate || item.rate}
+                              onChange={(e) => updateEditingItem(item.id, 'rate', e.target.value)}
+                              className="w-24 text-right ml-auto border-slate-200 dark:border-slate-700"
+                            />
+                          ) : (
+                            <span className="font-mono">Rs. {Math.round(parseFloat(item.rate))}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-white font-mono">
+                          Rs. {Math.round(parseFloat(item.subtotal))}
+                        </td>
+                        {editMode && (
+                          <td className="py-3 px-4 text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deleteItem(item.id, item.color.colorName)}
+                              className="text-red-600 border-red-200 dark:border-red-900/50"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="border-t pt-4 space-y-2 text-lg">
-              <div className="flex justify-between font-bold">
-                <span>Total : </span>
-                <span>{Math.round(parseFloat(sale.totalAmount))}</span>
+            {/* Payment Summary */}
+            <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-zinc-900/50 dark:to-zinc-800/50 rounded-xl p-4 space-y-3">
+              <div className="flex justify-between items-center text-slate-700 dark:text-slate-300">
+                <span>Subtotal</span>
+                <span className="font-mono font-semibold">Rs. {Math.round(parseFloat(sale.totalAmount)).toLocaleString()}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Paid : </span>
-                <span>{Math.round(parseFloat(sale.amountPaid))}</span>
+              <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400">
+                <span>Amount Paid</span>
+                <span className="font-mono font-semibold">Rs. {Math.round(parseFloat(sale.amountPaid)).toLocaleString()}</span>
               </div>
               {!isPaid && (
-                <div className="flex justify-between text-red-600 font-bold">
-                  <span>Balance : </span>
-                  <span>{Math.round(outstanding)}</span>
+                <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-700">
+                  <span className="text-lg font-bold text-red-600 dark:text-red-400">Balance Due</span>
+                  <span className="text-xl font-bold font-mono text-red-600 dark:text-red-400">Rs. {Math.round(outstanding).toLocaleString()}</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span>Status : </span>
-                <Badge variant={isPaid ? "default" : "secondary"}>
-                  {sale.paymentStatus.toUpperCase()}
-                </Badge>
-              </div>
-            </div>
-
-            <div className="text-center border-t pt-4">
+              {isPaid && (
+                <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-700">
+                  <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">Status</span>
+                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0 text-base px-4 py-1">
+                    PAID IN FULL
+                  </Badge>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
 
       {/* PRINT ONLY: Thermal Receipt */}
-      <ThermalReceipt sale={sale} receiptSettings={receiptSettings} />
+      <ThermalReceipt 
+        sale={sale} 
+        receiptSettings={receiptSettings}
+        customerNameOverride={editedCustomerName || undefined}
+        customerPhoneOverride={editedCustomerPhone || undefined}
+      />
 
       {/* Delete Bill Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
           <DialogHeader>
-            <DialogTitle>Delete Bill Completely?</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Delete Bill Completely?
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
               This will permanently delete:
             </p>
-            <ul className="text-sm list-disc list-inside space-y-1 text-muted-foreground">
+            <ul className="text-sm list-disc list-inside space-y-1 text-slate-600 dark:text-slate-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
               <li>All items in this bill</li>
               <li>Bill payment information</li>
               <li>Complete sale record</li>
             </ul>
-            <p className="text-sm font-medium text-red-600">
+            <p className="text-sm font-medium text-red-600 dark:text-red-400">
               This action cannot be undone and all data will be lost permanently.
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} className="border-slate-200 dark:border-slate-700">Cancel</Button>
             <Button variant="destructive" onClick={deleteSale}>
               <Trash2 className="h-4 w-4 mr-2" />
               Delete Completely
@@ -989,54 +1124,68 @@ export default function BillPrint() {
 
       {/* Add Item Dialog */}
       <Dialog open={addItemDialogOpen} onOpenChange={setAddItemDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Add Item</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-2xl bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <Plus className="h-5 w-5 text-indigo-500" />
+              Add Item
+            </DialogTitle>
+          </DialogHeader>
           <Input 
             placeholder="Search by color code, color name, product, company..." 
             value={searchQuery} 
-            onChange={e => setSearchQuery(e.target.value)} 
+            onChange={e => setSearchQuery(e.target.value)}
+            className="border-slate-200 dark:border-slate-700"
           />
           <div className="max-h-64 overflow-y-auto my-4 space-y-2">
             {filteredColors.map(c => (
-              <Card
+              <div
                 key={c.id}
-                className={`p-4 cursor-pointer transition ${selectedColor?.id === c.id ? "border-primary bg-accent" : ""}`}
+                className={`p-4 cursor-pointer transition rounded-xl border ${
+                  selectedColor?.id === c.id 
+                    ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20" 
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-800/50 hover-elevate"
+                }`}
                 onClick={() => setSelectedColor(c)}
               >
-                <div className="flex justify-between">
+                <div className="flex justify-between items-start">
                   <div>
-                    <p className="font-semibold">{c.variant.product.productName} - {c.colorName} {c.colorCode} - {c.variant.packingSize}</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-semibold text-slate-900 dark:text-white">{c.variant.product.productName} - {c.colorName} {c.colorCode} - {c.variant.packingSize}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
                       {c.variant.product.company} • {c.variant.product.productName}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-mono">Rs. {Math.round(parseFloat(c.variant.rate))}</p>
-                    <Badge variant={c.stockQuantity > 0 ? "default" : "destructive"}>
+                    <p className="font-mono font-semibold text-indigo-600 dark:text-indigo-400">Rs. {Math.round(parseFloat(c.variant.rate))}</p>
+                    <Badge 
+                      variant="outline"
+                      className={`${c.stockQuantity > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'}`}
+                    >
                       Stock: {c.stockQuantity}
                     </Badge>
                   </div>
                 </div>
-              </Card>
+              </div>
             ))}
           </div>
 
           {selectedColor && (
-            <div className="space-y-4 border-t pt-4">
+            <div className="space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
               <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity</Label>
+                <Label htmlFor="quantity" className="text-slate-700 dark:text-slate-300">Quantity</Label>
                 <Input 
                   id="quantity"
                   type="number" 
                   min="1" 
                   value={quantity} 
-                  onChange={e => setQuantity(e.target.value)} 
+                  onChange={e => setQuantity(e.target.value)}
+                  className="border-slate-200 dark:border-slate-700"
                 />
-                <p className="text-xs text-muted-foreground">Zero stock allowed</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Zero stock allowed</p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="rate">
+                <Label htmlFor="rate" className="text-slate-700 dark:text-slate-300">
                   Rate (Default: Rs. {Math.round(parseFloat(selectedColor.variant.rate))})
                 </Label>
                 <Input 
@@ -1047,15 +1196,16 @@ export default function BillPrint() {
                   value={customRate} 
                   onChange={e => setCustomRate(e.target.value)} 
                   placeholder={`Enter custom rate (default: ${selectedColor.variant.rate})`}
+                  className="border-slate-200 dark:border-slate-700"
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   You can change the rate from default price
                 </p>
               </div>
 
               {customRate && customRate !== selectedColor.variant.rate && (
-                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <p className="text-sm text-yellow-800 font-medium">
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                  <p className="text-sm text-amber-800 dark:text-amber-400 font-medium">
                     Custom rate applied: Rs. {Math.round(parseFloat(customRate))} 
                     {parseFloat(customRate) > parseFloat(selectedColor.variant.rate) ? 
                       ` (+${Math.round(parseFloat(customRate) - parseFloat(selectedColor.variant.rate))})` : 
@@ -1073,9 +1223,57 @@ export default function BillPrint() {
               setSelectedColor(null);
               setCustomRate("");
               setSearchQuery("");
-            }}>Cancel</Button>
-            <Button onClick={handleAddItem} disabled={!selectedColor}>
+            }} className="border-slate-200 dark:border-slate-700">Cancel</Button>
+            <Button onClick={handleAddItem} disabled={!selectedColor} className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md">
+              <Plus className="h-4 w-4 mr-2" />
               Add Item
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Customer Dialog */}
+      <Dialog open={editCustomerDialogOpen} onOpenChange={setEditCustomerDialogOpen}>
+        <DialogContent aria-describedby={undefined} className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <Edit className="h-5 w-5 text-indigo-500" />
+              Edit Customer Details for Print
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="customerName" className="text-slate-700 dark:text-slate-300">Customer Name</Label>
+              <Input
+                id="customerName"
+                value={editedCustomerName}
+                onChange={(e) => setEditedCustomerName(e.target.value)}
+                placeholder="Enter customer name"
+                data-testid="input-customer-name"
+                className="border-slate-200 dark:border-slate-700"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customerPhone" className="text-slate-700 dark:text-slate-300">Phone Number</Label>
+              <Input
+                id="customerPhone"
+                value={editedCustomerPhone}
+                onChange={(e) => setEditedCustomerPhone(e.target.value)}
+                placeholder="Enter phone number"
+                data-testid="input-customer-phone"
+                className="border-slate-200 dark:border-slate-700"
+              />
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-zinc-800 p-3 rounded-lg">
+              These changes are only for printing/PDF. Original bill data remains unchanged.
+            </p>
+          </div>
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" onClick={resetCustomerEdits} className="border-slate-200 dark:border-slate-700">
+              Reset to Original
+            </Button>
+            <Button onClick={saveCustomerEdits} data-testid="button-save-customer" className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-md">
+              Save for Print
             </Button>
           </DialogFooter>
         </DialogContent>

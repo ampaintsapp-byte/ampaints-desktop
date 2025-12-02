@@ -32,7 +32,7 @@ None specified yet.
 - **Audit Reports**: Comprehensive PIN-protected audit section with sidebar navigation menu containing six sections: Stock Audit (IN/OUT/RETURN movements, current inventory), Sales Audit (all sales, payments, outstanding), Unpaid Bills (outstanding balances, due dates), Payment History (unified transaction view combining payments, returns, and manual balances with type badges), Returns (full bill and item returns), and Settings (PIN management, permissions, cloud sync, system info). Features secure 4-digit PIN verification with SHA-256 salted hash storage, session-based token authentication (24-byte random token, 1-hour TTL), downloadable branded PDF reports for each section, and comprehensive filtering options. Default PIN is "0000" with change prompt.
 - **UI Customization**: Settings for store branding (name, logo), product card design (border style, shadow, button/price color), and badge appearance.
 - **Thermal Receipt & Bill Print**: Customizable thermal receipt printing and professional PDF invoice generation with gradient branding and detailed line items.
-- **WhatsApp PDF Sharing**: Direct PDF file sharing to WhatsApp using Web Share API on mobile devices, with text-based fallback for desktop browsers. Works for both invoices and customer statements.
+- **WhatsApp PDF Sharing**: Direct PDF file sharing to WhatsApp using Web Share API on mobile devices, with text-based fallback for desktop browsers. Works for both invoices and customer statements. Electron desktop app uses native IPC handlers (`share-pdf-to-whatsapp`, `save-pdf-to-documents`) to save PDFs to `Documents/PaintPulse/Statements` folder, open WhatsApp Web with customer's phone number, and show saved file in Explorer for easy drag-and-drop attachment.
 - **Shared Receipt Settings**: Centralized hook (`use-receipt-settings.ts`) for consistent store header information across customer statements and bill prints.
 - **Navigation Refresh**: Clicking the same menu item refreshes page content, resetting local state and refetching data.
 - **Database Management**: Web-based export/import functionality, performance-optimized SQLite with composite indexes, and an automatic schema migration system for backward compatibility.
@@ -53,14 +53,24 @@ None specified yet.
 - **Database**: Lightweight, file-based SQLite managed by Drizzle ORM.
 - **Schema Management**: Automatic migration system for smooth upgrades and backward compatibility.
 - **Performance**: Optimized SQLite queries with composite indexes. Smart database pagination system with configurable limits (DEFAULT_LIMIT: 100, MAX_LIMIT: 500) to prevent software hangs with large datasets. Background data loading with React.lazy + Suspense for instant navigation, useDeferredValue for deferred heavy processing, and sidebar hover prefetching to warm caches before navigation. 
-  - **Debounced Search**: All search inputs use 300ms debounce delay via shared `useDebounce` hook (`client/src/hooks/use-debounce.ts`) to prevent excessive filtering on every keystroke.
-  - **Visible Row Limits**: All data tables use visible limits (50 initial rows, load 30 more at a time) with "Load More" buttons to prevent UI hangs with large datasets. Applied across:
-    - Stock Management: Products, Variants, Colors, Stock In, Stock History, Stock Out tabs
-    - Sales: Customer sales list with debounced search
-    - Unpaid Bills: Customer consolidated view with debounced search
-    - Returns: Return history table with debounced search
-    - Reports: All Sales and Recovery Payments tabs with debounced search
-    - Audit: Stock movements and Sales audit tables with debounced search
+  - **Frontend Optimizations**:
+    - **Debounced Search**: All search inputs use 300ms debounce delay via shared `useDebounce` hook (`client/src/hooks/use-debounce.ts`) to prevent excessive filtering on every keystroke.
+    - **Visible Row Limits**: All data tables use visible limits (50 initial rows, load 30 more at a time) with "Load More" buttons to prevent UI hangs with large datasets. Applied across:
+      - Stock Management: Products, Variants, Colors, Stock In, Stock History, Stock Out tabs
+      - Sales: Customer sales list with debounced search
+      - Unpaid Bills: Customer consolidated view with debounced search
+      - Returns: Return history table with debounced search
+      - Reports: All Sales and Recovery Payments tabs with debounced search
+      - Audit: Stock movements and Sales audit tables with debounced search
+  - **Backend Optimizations**:
+    - **Response Compression**: Gzip compression enabled via `compression` middleware for faster API response delivery over network.
+    - **In-Memory Caching**: Frequently accessed endpoints cached with automatic invalidation (60-second TTL):
+      - Products: `/api/products` cached, invalidated on create/update/delete
+      - Variants: `/api/variants` cached, invalidated on create/update/delete
+      - Colors: `/api/colors` cached, invalidated on create/update/delete/stock-in/returns
+      - Settings: `/api/settings` cached, invalidated on update
+    - **Cache Invalidation Strategy**: All modification operations (create, update, delete, stock-in, returns) automatically invalidate relevant caches to ensure data consistency.
+    - **Combined API Endpoints**: Customer statement page uses single combined endpoint (`/api/customer/:phone/statement`) that fetches sales, payments, and returns data in parallel, reducing 3 API calls to 1 with response times of 6-66ms.
 - **Pagination API**: Paginated endpoints for Sales (`/api/sales/paginated`), Unpaid Sales (`/api/sales/unpaid/paginated`), Stock History (`/api/stock-in/history/paginated`), and Payment History (`/api/payment-history/paginated`). Each returns data with pagination metadata (page, limit, total, totalPages, hasMore).
 - **UI/UX**: Clean, responsive interface using Radix UI and Tailwind CSS, with intuitive product card designs and a bank-style customer statement. Glassmorphism theme with blue accent icons and neutral color scheme.
 - **Error Handling**: Enhanced logging and debugging for troubleshooting.

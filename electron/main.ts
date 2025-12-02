@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "path";
 import { pathToFileURL } from "url";
 import fs from "fs";
+import os from "os";
 
 // Initialize electron-store for persisting user settings
 interface StoreType {
@@ -174,6 +175,75 @@ ipcMain.handle("get-activation-status", () => {
 ipcMain.handle("set-activation-status", (_event, status: boolean) => {
   store.set("isActivated", status);
   return true;
+});
+
+// WhatsApp PDF Share handler - shares PDF file to WhatsApp desktop
+ipcMain.handle("share-pdf-to-whatsapp", async (_event, { pdfBase64, fileName, phoneNumber }: { pdfBase64: string; fileName: string; phoneNumber: string }) => {
+  try {
+    // Create PaintPulse statements folder in Documents
+    const documentsPath = app.getPath("documents");
+    const statementsDir = path.join(documentsPath, "PaintPulse", "Statements");
+    
+    // Ensure directory exists
+    const fsPromises = await import("fs/promises");
+    await fsPromises.mkdir(statementsDir, { recursive: true });
+    
+    // Save PDF file
+    const pdfPath = path.join(statementsDir, fileName);
+    const pdfBuffer = Buffer.from(pdfBase64, "base64");
+    await fsPromises.writeFile(pdfPath, pdfBuffer);
+    
+    // Format phone number for WhatsApp (ensure it has country code)
+    let formattedPhone = phoneNumber.replace(/[^\d+]/g, "");
+    if (formattedPhone.startsWith("0")) {
+      formattedPhone = "92" + formattedPhone.slice(1);
+    } else if (!formattedPhone.startsWith("92") && !formattedPhone.startsWith("+92")) {
+      formattedPhone = "92" + formattedPhone;
+    }
+    formattedPhone = formattedPhone.replace(/^\+/, "");
+    
+    // Open WhatsApp with the customer's number
+    const whatsappUrl = `https://wa.me/${formattedPhone}`;
+    await shell.openExternal(whatsappUrl);
+    
+    // Show the saved PDF file in Explorer (so user can easily drag & drop)
+    shell.showItemInFolder(pdfPath);
+    
+    return { 
+      success: true, 
+      path: pdfPath,
+      message: "PDF saved and WhatsApp opened. Please attach the PDF file shown in Explorer to complete sharing."
+    };
+  } catch (error) {
+    console.error("Error sharing PDF to WhatsApp:", error);
+    return { 
+      success: false, 
+      error: (error as Error).message 
+    };
+  }
+});
+
+// Save PDF to Documents folder
+ipcMain.handle("save-pdf-to-documents", async (_event, { pdfBase64, fileName }: { pdfBase64: string; fileName: string }) => {
+  try {
+    const documentsPath = app.getPath("documents");
+    const statementsDir = path.join(documentsPath, "PaintPulse", "Statements");
+    
+    const fsPromises = await import("fs/promises");
+    await fsPromises.mkdir(statementsDir, { recursive: true });
+    
+    const pdfPath = path.join(statementsDir, fileName);
+    const pdfBuffer = Buffer.from(pdfBase64, "base64");
+    await fsPromises.writeFile(pdfPath, pdfBuffer);
+    
+    // Show the saved file in Explorer
+    shell.showItemInFolder(pdfPath);
+    
+    return { success: true, path: pdfPath };
+  } catch (error) {
+    console.error("Error saving PDF:", error);
+    return { success: false, error: (error as Error).message };
+  }
 });
 
 // App lifecycle

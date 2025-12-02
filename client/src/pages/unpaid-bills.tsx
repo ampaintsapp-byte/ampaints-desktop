@@ -488,28 +488,28 @@ export default function UnpaidBills() {
     switch (status) {
       case "overdue":
         return (
-          <Badge variant="destructive" className="flex items-center gap-1 glass-destructive">
+          <Badge variant="destructive" className="flex items-center gap-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800">
             <AlertTriangle className="h-3 w-3" />
             Overdue
           </Badge>
         )
       case "due_soon":
         return (
-          <Badge variant="secondary" className="flex items-center gap-1 glass-warning">
+          <Badge variant="secondary" className="flex items-center gap-1 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800">
             <Clock className="h-3 w-3" />
             Due Soon
           </Badge>
         )
       case "future":
         return (
-          <Badge variant="outline" className="flex items-center gap-1 glass-success">
+          <Badge variant="outline" className="flex items-center gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800">
             <Calendar className="h-3 w-3" />
             Upcoming
           </Badge>
         )
       default:
         return (
-          <Badge variant="outline" className="glass-outline">
+          <Badge variant="outline" className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700">
             No Due Date
           </Badge>
         )
@@ -858,71 +858,26 @@ export default function UnpaidBills() {
     }
   }
 
-  // FIXED: CSS styles with proper error handling
-  const glassStyles = `
-    .glass-card {
-      background: rgba(255, 255, 255, 0.8);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }
-    .glass-destructive {
-      background: rgba(239, 68, 68, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(239, 68, 68, 0.2);
-    }
-    .glass-warning {
-      background: rgba(245, 158, 11, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(245, 158, 11, 0.2);
-    }
-    .glass-success {
-      background: rgba(34, 197, 94, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(34, 197, 94, 0.2);
-    }
-    .glass-outline {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-    }
-    .hover-elevate {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .hover-elevate:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-    }
-    .gradient-bg {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .premium-border {
-      border: 1px solid;
-      border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%) 1;
-    }
-  `
-
   const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)
   const totalCustomers = consolidatedCustomers.length
   const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 p-6 space-y-6">
-      <style>{glassStyles}</style>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-emerald-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-emerald-950/20 p-6 space-y-6">
 
       {/* Header Section */}
-      <div className="glass-card rounded-2xl p-6 border border-white/20 shadow-xl">
+      <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <div className="gradient-bg p-2 rounded-xl">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-2.5 rounded-xl shadow-md">
                 <Wallet className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
                   Account Statements
                 </h1>
-                <p className="text-sm text-slate-600 mt-1">
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                   Track pending balances, payment history, and generate premium statements
                 </p>
               </div>
@@ -932,20 +887,20 @@ export default function UnpaidBills() {
             <div className="flex items-center gap-6 flex-wrap">
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                <span className="text-slate-700">
-                  <strong>{totalCustomers}</strong> Customers
+                <span className="text-slate-600 dark:text-slate-400">
+                  <strong className="text-slate-900 dark:text-white">{totalCustomers}</strong> Customers
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-                <span className="text-slate-700">
-                  Total: <strong>Rs. {Math.round(totalOutstanding).toLocaleString()}</strong>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Total: <strong className="text-amber-600 dark:text-amber-400 font-mono">Rs. {Math.round(totalOutstanding).toLocaleString()}</strong>
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span className="text-slate-700">
-                  Avg: <strong>Rs. {Math.round(averageOutstanding).toLocaleString()}</strong>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Avg: <strong className="text-blue-600 dark:text-blue-400 font-mono">Rs. {Math.round(averageOutstanding).toLocaleString()}</strong>
                 </span>
               </div>
             </div>
@@ -956,7 +911,7 @@ export default function UnpaidBills() {
               <Button
                 variant="outline"
                 onClick={() => setManualBalanceDialogOpen(true)}
-                className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 transition-all duration-300"
+                className="flex items-center gap-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900"
               >
                 <Plus className="h-4 w-4" />
                 Add Balance
@@ -964,7 +919,7 @@ export default function UnpaidBills() {
             )}
 
             <Button
-              className="flex items-center gap-2 gradient-bg text-white hover:shadow-lg transition-all duration-300"
+              className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md"
               onClick={() => {
                 if (consolidatedCustomers.length > 0) {
                   generateDetailedPDFStatement(consolidatedCustomers[0])
@@ -979,7 +934,7 @@ export default function UnpaidBills() {
         </div>
 
         {/* Bill Status Tabs */}
-        <div className="flex items-center gap-2 mt-6">
+        <div className="flex items-center gap-2 mt-6 flex-wrap">
           {[
             { value: "all", label: "All Customers", icon: User },
             { value: "unpaid", label: "Unpaid", icon: Wallet },
@@ -991,8 +946,8 @@ export default function UnpaidBills() {
               onClick={() => setFilters((prev) => ({ ...prev, billStatus: status.value as any }))}
               className={`flex items-center gap-2 ${
                 filters.billStatus === status.value
-                  ? "gradient-bg text-white"
-                  : "glass-card border-white/20"
+                  ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md"
+                  : "border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900"
               }`}
               data-testid={`button-filter-${status.value}`}
             >
@@ -1010,7 +965,7 @@ export default function UnpaidBills() {
               placeholder="Search customers by name or phone..."
               value={filters.search}
               onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-              className="pl-10 glass-card border-white/20 focus:border-purple-300 transition-colors"
+              className="pl-10 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-xl"
               data-testid="input-search-customers"
             />
           </div>
@@ -1020,10 +975,10 @@ export default function UnpaidBills() {
             value={filters.sortBy}
             onValueChange={(value: any) => setFilters((prev) => ({ ...prev, sortBy: value }))}
           >
-            <SelectTrigger className="w-[180px] glass-card border-white/20">
+            <SelectTrigger className="w-[180px] border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-xl">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
-            <SelectContent className="glass-card border-white/20">
+            <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
               <SelectItem value="oldest">Oldest First</SelectItem>
               <SelectItem value="newest">Newest First</SelectItem>
               <SelectItem value="highest">Highest Amount</SelectItem>
@@ -1037,25 +992,25 @@ export default function UnpaidBills() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
-                className="flex items-center gap-2 glass-card border-white/20 hover:border-purple-300 bg-transparent"
+                className="flex items-center gap-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900"
               >
                 <Filter className="h-4 w-4" />
                 Filters
                 {hasActiveFilters && <div className="w-2 h-2 bg-red-500 rounded-full"></div>}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 glass-card border-white/20 p-0">
-              <div className="p-4 border-b border-white/20">
+            <DropdownMenuContent align="end" className="w-80 bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700 p-0">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-purple-500" />
-                  <h4 className="font-semibold text-slate-800">Advanced Filters</h4>
+                  <Sparkles className="h-4 w-4 text-emerald-500" />
+                  <h4 className="font-semibold text-slate-900 dark:text-white">Advanced Filters</h4>
                 </div>
               </div>
 
               <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
                 {/* Payment Status Filter */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium text-slate-700">Payment Status</Label>
+                  <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Payment Status</Label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { value: "all", label: "All" },
@@ -1070,8 +1025,8 @@ export default function UnpaidBills() {
                         onClick={() => setFilters((prev) => ({ ...prev, paymentStatus: status.value as any }))}
                         className={`text-xs ${
                           filters.paymentStatus === status.value
-                            ? "gradient-bg text-white"
-                            : "glass-card border-white/20"
+                            ? "bg-gradient-to-r from-emerald-500 to-teal-600 text-white"
+                            : "border-slate-200 dark:border-slate-700"
                         }`}
                       >
                         {status.label}
@@ -1082,7 +1037,7 @@ export default function UnpaidBills() {
 
                 {/* Amount Range */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium text-slate-700">Amount Range (Rs.)</Label>
+                  <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Amount Range (Rs.)</Label>
                   <div className="flex gap-2">
                     <Input
                       placeholder="Min"
@@ -1094,7 +1049,7 @@ export default function UnpaidBills() {
                         }))
                       }
                       type="number"
-                      className="glass-card border-white/20"
+                      className="border-slate-200 dark:border-slate-700"
                     />
                     <Input
                       placeholder="Max"
@@ -1106,26 +1061,26 @@ export default function UnpaidBills() {
                         }))
                       }
                       type="number"
-                      className="glass-card border-white/20"
+                      className="border-slate-200 dark:border-slate-700"
                     />
                   </div>
                 </div>
 
                 {/* Days Overdue */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium text-slate-700">Minimum Days Overdue</Label>
+                  <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Minimum Days Overdue</Label>
                   <Input
                     placeholder="e.g., 30"
                     value={filters.daysOverdue}
                     onChange={(e) => setFilters((prev) => ({ ...prev, daysOverdue: e.target.value }))}
                     type="number"
-                    className="glass-card border-white/20"
+                    className="border-slate-200 dark:border-slate-700"
                   />
                 </div>
 
                 {/* Due Date Range */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium text-slate-700">Due Date Range</Label>
+                  <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Due Date Range</Label>
                   <div className="grid grid-cols-2 gap-2">
                     <Input
                       placeholder="From"
@@ -1137,7 +1092,7 @@ export default function UnpaidBills() {
                         }))
                       }
                       type="date"
-                      className="glass-card border-white/20"
+                      className="border-slate-200 dark:border-slate-700"
                     />
                     <Input
                       placeholder="To"
@@ -1149,19 +1104,19 @@ export default function UnpaidBills() {
                         }))
                       }
                       type="date"
-                      className="glass-card border-white/20"
+                      className="border-slate-200 dark:border-slate-700"
                     />
                   </div>
                 </div>
               </div>
 
               {hasActiveFilters && (
-                <div className="p-4 border-t border-white/20">
+                <div className="p-4 border-t border-slate-200 dark:border-slate-700">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={clearFilters}
-                    className="w-full glass-card border-white/20 text-slate-600 hover:text-slate-800"
+                    className="w-full text-slate-600 dark:text-slate-400"
                   >
                     <X className="h-4 w-4 mr-2" />
                     Clear All Filters
@@ -1175,34 +1130,34 @@ export default function UnpaidBills() {
 
       {/* Filter Summary */}
       {hasActiveFilters && (
-        <div className="glass-card rounded-xl p-4 border border-white/20">
+        <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-xl p-4 border border-slate-100 dark:border-slate-700/50 shadow-sm">
           <div className="flex items-center gap-3 flex-wrap">
-            <Badge variant="secondary" className="glass-card border-white/20">
+            <Badge variant="secondary" className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 border-0">
               <Filter className="h-3 w-3 mr-1" />
               Active Filters
             </Badge>
             {filters.search && (
-              <Badge variant="outline" className="glass-card border-white/20">
+              <Badge variant="outline" className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                 Search: "{filters.search}"
               </Badge>
             )}
             {filters.paymentStatus !== "all" && (
-              <Badge variant="outline" className="glass-card border-white/20">
+              <Badge variant="outline" className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                 Status: {filters.paymentStatus.replace("_", " ")}
               </Badge>
             )}
             {filters.amountRange.min && (
-              <Badge variant="outline" className="glass-card border-white/20">
+              <Badge variant="outline" className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                 Min: Rs. {Number.parseFloat(filters.amountRange.min).toLocaleString()}
               </Badge>
             )}
             {filters.amountRange.max && (
-              <Badge variant="outline" className="glass-card border-white/20">
+              <Badge variant="outline" className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                 Max: Rs. {Number.parseFloat(filters.amountRange.max).toLocaleString()}
               </Badge>
             )}
             {filters.daysOverdue && (
-              <Badge variant="outline" className="glass-card border-white/20">
+              <Badge variant="outline" className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                 {filters.daysOverdue}+ Days Overdue
               </Badge>
             )}
@@ -1210,7 +1165,7 @@ export default function UnpaidBills() {
               variant="ghost"
               size="sm"
               onClick={clearFilters}
-              className="ml-auto glass-card border-white/20 text-slate-600 hover:text-slate-800"
+              className="ml-auto text-slate-600 dark:text-slate-400"
             >
               <X className="h-3 w-3 mr-1" />
               Clear All
@@ -1221,14 +1176,14 @@ export default function UnpaidBills() {
 
       {/* Results Count */}
       <div className="flex items-center justify-between px-2">
-        <p className="text-sm text-slate-600">
-          Showing <span className="font-semibold text-slate-800">{filteredAndSortedCustomers.length}</span> of{" "}
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          Showing <span className="font-semibold text-slate-900 dark:text-white">{filteredAndSortedCustomers.length}</span> of{" "}
           {consolidatedCustomers.length} customers
         </p>
         {hasActiveFilters && (
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
             Filtered Outstanding:{" "}
-            <span className="font-semibold text-amber-600">
+            <span className="font-semibold text-amber-600 dark:text-amber-400 font-mono">
               Rs.{" "}
               {Math.round(
                 filteredAndSortedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0),
@@ -1242,7 +1197,7 @@ export default function UnpaidBills() {
       {isLoading ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="glass-card rounded-2xl p-6 border border-white/20">
+            <div key={i} className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50">
               <Skeleton className="h-6 w-3/4 mb-4 rounded-lg" />
               <Skeleton className="h-4 w-full mb-2 rounded-lg" />
               <Skeleton className="h-4 w-2/3 mb-4 rounded-lg" />
@@ -1252,15 +1207,15 @@ export default function UnpaidBills() {
           ))}
         </div>
       ) : filteredAndSortedCustomers.length === 0 ? (
-        <div className="glass-card rounded-2xl p-12 text-center border border-white/20">
+        <div className="bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm rounded-2xl p-12 text-center border border-slate-100 dark:border-slate-700/50 shadow-sm">
           <div className="max-w-md mx-auto">
-            <div className="gradient-bg w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-md">
               <CreditCard className="h-8 w-8 text-white" />
             </div>
-            <h3 className="text-xl font-semibold text-slate-800 mb-2">
+            <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
               {hasActiveFilters ? "No customers match your filters" : "All clear! No unpaid bills"}
             </h3>
-            <p className="text-slate-600 mb-6">
+            <p className="text-slate-600 dark:text-slate-400 mb-6">
               {hasActiveFilters
                 ? "Try adjusting your filter criteria"
                 : "All customer payments are up to date and accounted for"}
@@ -1268,7 +1223,7 @@ export default function UnpaidBills() {
             {hasActiveFilters && (
               <Button
                 onClick={clearFilters}
-                className="gradient-bg text-white hover:shadow-lg transition-all duration-300"
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md"
               >
                 Clear Filters
               </Button>
@@ -1285,9 +1240,8 @@ export default function UnpaidBills() {
             return (
               <div
                 key={customer.customerPhone}
-                className="glass-card rounded-2xl p-6 border border-white/20 hover-elevate group cursor-pointer"
+                className="bg-white/90 dark:bg-zinc-800/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-100 dark:border-slate-700/50 shadow-sm hover:shadow-lg transition-all cursor-pointer group"
                 onClick={() => {
-                  // Refresh data before opening customer details
                   refetchAllSales()
                   setLocation(`/customer/${encodeURIComponent(customer.customerPhone)}`)
                 }}
@@ -1299,19 +1253,19 @@ export default function UnpaidBills() {
                     <div
                       className={`p-2 rounded-xl ${
                         hasOverdue
-                          ? "bg-red-100 text-red-600"
+                          ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
                           : hasDueSoon
-                            ? "bg-amber-100 text-amber-600"
-                            : "bg-emerald-100 text-emerald-600"
+                            ? "bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400"
+                            : "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400"
                       }`}
                     >
                       <User className="h-4 w-4" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-slate-800 group-hover:text-purple-600 transition-colors">
+                      <h3 className="font-semibold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                         {customer.customerName}
                       </h3>
-                      <p className="text-sm text-slate-600 flex items-center gap-1">
+                      <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono">
                         <Phone className="h-3 w-3" />
                         {customer.customerPhone}
                       </p>
@@ -1319,7 +1273,7 @@ export default function UnpaidBills() {
                   </div>
                   <div className="flex items-center gap-1">
                     {customer.bills.length > 1 && (
-                      <Badge variant="secondary" className="glass-card border-white/20">
+                      <Badge variant="secondary" className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-0">
                         {customer.bills.length} bills
                       </Badge>
                     )}
@@ -1333,7 +1287,7 @@ export default function UnpaidBills() {
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="glass-card border-white/20">
+                      <DropdownMenuContent align="end" className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation()
@@ -1370,24 +1324,28 @@ export default function UnpaidBills() {
 
                 {/* Status Badges */}
                 <div className="flex items-center gap-2 mb-4 flex-wrap">
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                     <Calendar className="h-3 w-3" />
                     {formatDateShort(customer.oldestBillDate)}
                   </div>
                   <Badge
                     variant={customer.daysOverdue > 30 ? "destructive" : "secondary"}
-                    className="glass-card border-white/20 ml-auto"
+                    className={`ml-auto ${
+                      customer.daysOverdue > 30 
+                        ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-0" 
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-0"
+                    }`}
                   >
                     {customer.daysOverdue} days
                   </Badge>
                   {hasOverdue && (
-                    <Badge variant="destructive" className="glass-destructive">
+                    <Badge className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-0">
                       <AlertTriangle className="h-3 w-3 mr-1" />
                       Overdue
                     </Badge>
                   )}
                   {hasManualBalance && (
-                    <Badge variant="outline" className="glass-outline text-blue-600">
+                    <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800">
                       <Plus className="h-3 w-3 mr-1" />
                       Manual
                     </Badge>
@@ -1395,22 +1353,22 @@ export default function UnpaidBills() {
                 </div>
 
                 {/* Amount Summary */}
-                <div className="space-y-3 mb-4">
+                <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-xl p-3 space-y-2">
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-600">Total Amount</span>
-                    <span className="font-mono font-semibold text-slate-800">
+                    <span className="text-slate-500 dark:text-slate-400">Total Amount</span>
+                    <span className="font-mono font-semibold text-slate-900 dark:text-white tabular-nums">
                       Rs. {Math.round(customer.totalAmount).toLocaleString()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-600">Amount Paid</span>
-                    <span className="font-mono font-semibold text-emerald-600">
+                    <span className="text-slate-500 dark:text-slate-400">Amount Paid</span>
+                    <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
                       Rs. {Math.round(customer.totalPaid).toLocaleString()}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-base border-t border-slate-200 pt-2">
-                    <span className="font-semibold text-slate-800">Outstanding</span>
-                    <span className="font-mono font-bold text-red-600">
+                  <div className="flex justify-between items-center text-base border-t border-slate-200 dark:border-slate-700 pt-2">
+                    <span className="font-semibold text-slate-900 dark:text-white">Outstanding</span>
+                    <span className="font-mono font-bold text-red-600 dark:text-red-400 tabular-nums">
                       Rs. {Math.round(customer.totalOutstanding).toLocaleString()}
                     </span>
                   </div>
@@ -1438,35 +1396,35 @@ export default function UnpaidBills() {
 
       {/* Record Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent className="glass-card border-white/20">
+        <DialogContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Banknote className="h-5 w-5" />
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <Banknote className="h-5 w-5 text-emerald-500" />
               Record Payment
             </DialogTitle>
-            <DialogDescription>Process payment for {selectedCustomer?.customerName}</DialogDescription>
+            <DialogDescription className="text-slate-500 dark:text-slate-400">Process payment for {selectedCustomer?.customerName}</DialogDescription>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-4">
-              <div className="p-4 bg-slate-50 rounded-lg space-y-2 text-sm">
+              <div className="p-4 bg-slate-50 dark:bg-zinc-800 rounded-xl space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Total Bills:</span>
-                  <span className="font-mono">Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</span>
+                  <span className="text-slate-500 dark:text-slate-400">Total Bills:</span>
+                  <span className="font-mono text-slate-900 dark:text-white tabular-nums">Rs. {Math.round(selectedCustomer.totalAmount).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Already Paid:</span>
-                  <span className="font-mono">Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</span>
+                  <span className="text-slate-500 dark:text-slate-400">Already Paid:</span>
+                  <span className="font-mono text-slate-900 dark:text-white tabular-nums">Rs. {Math.round(selectedCustomer.totalPaid).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-semibold border-t border-slate-300 pt-2">
-                  <span>Total Outstanding:</span>
-                  <span className="font-mono text-red-600">
+                <div className="flex justify-between font-semibold border-t border-slate-200 dark:border-slate-700 pt-2">
+                  <span className="text-slate-900 dark:text-white">Total Outstanding:</span>
+                  <span className="font-mono text-red-600 dark:text-red-400 tabular-nums">
                     Rs. {Math.round(selectedCustomer.totalOutstanding).toLocaleString()}
                   </span>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="paymentAmount">Payment Amount (Rs.)</Label>
+                <Label htmlFor="paymentAmount" className="text-slate-700 dark:text-slate-300">Payment Amount (Rs.)</Label>
                 <Input
                   id="paymentAmount"
                   type="number"
@@ -1474,18 +1432,18 @@ export default function UnpaidBills() {
                   placeholder="0"
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
-                  className="glass-card border-white/20"
+                  className="border-slate-200 dark:border-slate-700"
                 />
-                <p className="text-xs text-slate-600">Payment will be applied to oldest bills first</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Payment will be applied to oldest bills first</p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="paymentMethod">Payment Method</Label>
+                <Label htmlFor="paymentMethod" className="text-slate-700 dark:text-slate-300">Payment Method</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger className="glass-card border-white/20">
+                  <SelectTrigger className="border-slate-200 dark:border-slate-700">
                     <SelectValue placeholder="Select payment method" />
                   </SelectTrigger>
-                  <SelectContent className="glass-card border-white/20">
+                  <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
                     <SelectItem value="cash">Cash</SelectItem>
                     <SelectItem value="card">Card</SelectItem>
                     <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
@@ -1496,14 +1454,14 @@ export default function UnpaidBills() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="paymentNotes">Payment Notes (Optional)</Label>
+                <Label htmlFor="paymentNotes" className="text-slate-700 dark:text-slate-300">Payment Notes (Optional)</Label>
                 <Textarea
                   id="paymentNotes"
                   placeholder="Add notes about this payment..."
                   value={paymentNotes}
                   onChange={(e) => setPaymentNotes(e.target.value)}
                   rows={3}
-                  className="glass-card border-white/20"
+                  className="border-slate-200 dark:border-slate-700"
                 />
               </div>
 
@@ -1511,14 +1469,14 @@ export default function UnpaidBills() {
                 <Button
                   variant="outline"
                   onClick={() => setPaymentDialogOpen(false)}
-                  className="glass-card border-white/20"
+                  className="border-slate-200 dark:border-slate-700"
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleRecordPayment}
                   disabled={recordPaymentMutation.isPending}
-                  className="gradient-bg text-white"
+                  className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md"
                 >
                   {recordPaymentMutation.isPending ? "Processing..." : "Record Payment"}
                 </Button>
@@ -1530,39 +1488,39 @@ export default function UnpaidBills() {
 
       {/* Payment History Dialog */}
       <Dialog open={paymentHistoryDialogOpen} onOpenChange={setPaymentHistoryDialogOpen}>
-        <DialogContent className="max-w-2xl glass-card border-white/20">
+        <DialogContent className="max-w-2xl bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <History className="h-5 w-5" />
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <History className="h-5 w-5 text-emerald-500" />
               Payment History
             </DialogTitle>
-            <DialogDescription>All payment records for this customer</DialogDescription>
+            <DialogDescription className="text-slate-500 dark:text-slate-400">All payment records for this customer</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {paymentHistory.length === 0 ? (
-              <div className="text-center py-8 text-slate-600">
+              <div className="text-center py-8 text-slate-500 dark:text-slate-400">
                 <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No payment history found</p>
               </div>
             ) : (
               <div className="space-y-3 max-h-96 overflow-y-auto">
                 {paymentHistory.map((payment) => (
-                  <Card key={payment.id} className="glass-card border-white/20">
+                  <Card key={payment.id} className="bg-slate-50 dark:bg-zinc-800 border-slate-100 dark:border-slate-700">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                            <span className="font-medium">Rs. {Number.parseFloat(payment.amount).toFixed(2)}</span>
-                            <Badge variant="outline" className="glass-card border-white/20">
+                            <CheckCircle className="h-4 w-4 text-emerald-500" />
+                            <span className="font-medium text-slate-900 dark:text-white font-mono tabular-nums">Rs. {Number.parseFloat(payment.amount).toFixed(2)}</span>
+                            <Badge variant="outline" className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                               {payment.paymentMethod}
                             </Badge>
                           </div>
-                          <div className="text-sm text-slate-600">
+                          <div className="text-sm text-slate-500 dark:text-slate-400">
                             {formatDateShort(payment.createdAt)} at {new Date(payment.createdAt).toLocaleTimeString()}
                           </div>
                           {payment.notes && (
-                            <div className="text-sm bg-slate-50 p-2 rounded-md mt-2">{payment.notes}</div>
+                            <div className="text-sm bg-white dark:bg-zinc-900 p-2 rounded-md mt-2 text-slate-600 dark:text-slate-400">{payment.notes}</div>
                           )}
                         </div>
                       </div>
@@ -1575,7 +1533,7 @@ export default function UnpaidBills() {
               <Button
                 variant="outline"
                 onClick={() => setPaymentHistoryDialogOpen(false)}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               >
                 Close
               </Button>
@@ -1586,30 +1544,30 @@ export default function UnpaidBills() {
 
       {/* Notes Dialog */}
       <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
-        <DialogContent className="max-w-2xl glass-card border-white/20">
+        <DialogContent className="max-w-2xl bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <MessageSquare className="h-5 w-5 text-emerald-500" />
               Balance Notes
             </DialogTitle>
-            <DialogDescription>Add and view notes for this customer's balance</DialogDescription>
+            <DialogDescription className="text-slate-500 dark:text-slate-400">Add and view notes for this customer's balance</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {/* Add New Note */}
             <div className="space-y-2">
-              <Label htmlFor="newNote">Add New Note</Label>
+              <Label htmlFor="newNote" className="text-slate-700 dark:text-slate-300">Add New Note</Label>
               <Textarea
                 id="newNote"
                 placeholder="Enter your note here..."
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
                 rows={3}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               />
               <Button
                 onClick={handleAddNote}
                 disabled={addNoteMutation.isPending || !newNote.trim()}
-                className="w-full gradient-bg text-white"
+                className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md"
               >
                 {addNoteMutation.isPending ? "Adding..." : "Add Note"}
               </Button>
@@ -1617,19 +1575,19 @@ export default function UnpaidBills() {
 
             {/* Existing Notes */}
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              <h4 className="font-medium text-slate-800">Previous Notes</h4>
+              <h4 className="font-medium text-slate-900 dark:text-white">Previous Notes</h4>
               {balanceNotes.length === 0 ? (
-                <div className="text-center py-8 text-slate-600">
+                <div className="text-center py-8 text-slate-500 dark:text-slate-400">
                   <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No notes found</p>
                 </div>
               ) : (
                 balanceNotes.map((note) => (
-                  <Card key={note.id} className="glass-card border-white/20">
+                  <Card key={note.id} className="bg-slate-50 dark:bg-zinc-800 border-slate-100 dark:border-slate-700">
                     <CardContent className="p-4">
                       <div className="space-y-2">
-                        <p className="text-sm">{note.note}</p>
-                        <div className="flex justify-between text-xs text-slate-600">
+                        <p className="text-sm text-slate-700 dark:text-slate-300">{note.note}</p>
+                        <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
                           <span>By: {note.createdBy}</span>
                           <span>{formatDateShort(note.createdAt)}</span>
                         </div>
@@ -1644,7 +1602,7 @@ export default function UnpaidBills() {
               <Button
                 variant="outline"
                 onClick={() => setNotesDialogOpen(false)}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               >
                 Close
               </Button>
@@ -1655,22 +1613,22 @@ export default function UnpaidBills() {
 
       {/* Manual Balance Dialog */}
       <Dialog open={manualBalanceDialogOpen} onOpenChange={setManualBalanceDialogOpen}>
-        <DialogContent className="sm:max-w-md glass-card border-white/20">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="h-5 w-5" />
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
+              <Plus className="h-5 w-5 text-emerald-500" />
               Add Pending Balance
             </DialogTitle>
-            <DialogDescription>Create a pending balance entry without POS sale</DialogDescription>
+            <DialogDescription className="text-slate-500 dark:text-slate-400">Create a pending balance entry without POS sale</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Customer</Label>
+              <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Customer</Label>
               <div className="relative">
                 <Input
                   value={manualBalanceForm.customerName}
                   onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, customerName: e.target.value }))}
-                  className="pr-12 glass-card border-white/20"
+                  className="pr-12 border-slate-200 dark:border-slate-700"
                   placeholder="Type or select customer"
                 />
                 <Popover open={customerSuggestionsOpen} onOpenChange={setCustomerSuggestionsOpen}>
@@ -1678,12 +1636,12 @@ export default function UnpaidBills() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                      className="absolute right-0 top-0 h-full px-3"
                     >
                       <Search className="h-4 w-4 text-slate-400" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 p-0 glass-card border-white/20" align="start">
+                  <PopoverContent className="w-80 p-0 bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700" align="start">
                     <Command>
                       <CommandInput placeholder="Search customers..." />
                       <CommandList>
@@ -1703,10 +1661,10 @@ export default function UnpaidBills() {
                               className="flex flex-col items-start gap-2 py-3 px-4 cursor-pointer"
                             >
                               <div className="flex items-center gap-2 w-full">
-                                <User className="h-4 w-4 text-blue-500" />
-                                <span className="font-medium">{customer.customerName}</span>
+                                <User className="h-4 w-4 text-emerald-500" />
+                                <span className="font-medium text-slate-900 dark:text-white">{customer.customerName}</span>
                               </div>
-                              <div className="flex items-center gap-4 text-xs text-slate-600 w-full pl-6">
+                              <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 w-full pl-6">
                                 <div className="flex items-center gap-1">
                                   <Phone className="h-3 w-3" />
                                   {customer.customerPhone}
@@ -1726,45 +1684,45 @@ export default function UnpaidBills() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="customerPhone">Phone</Label>
+              <Label htmlFor="customerPhone" className="text-slate-700 dark:text-slate-300">Phone</Label>
               <Input
                 id="customerPhone"
                 placeholder="Enter phone number"
                 value={manualBalanceForm.customerPhone}
                 onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, customerPhone: e.target.value }))}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="totalAmount">Amount (Rs.)</Label>
+              <Label htmlFor="totalAmount" className="text-slate-700 dark:text-slate-300">Amount (Rs.)</Label>
               <Input
                 id="totalAmount"
                 type="number"
                 placeholder="Enter amount"
                 value={manualBalanceForm.totalAmount}
                 onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, totalAmount: e.target.value }))}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="dueDate">Due Date (Optional)</Label>
+              <Label htmlFor="dueDate" className="text-slate-700 dark:text-slate-300">Due Date (Optional)</Label>
               <Input
                 id="dueDate"
                 type="date"
                 value={manualBalanceForm.dueDate}
                 onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, dueDate: e.target.value }))}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Label htmlFor="notes" className="text-slate-700 dark:text-slate-300">Notes (Optional)</Label>
               <Textarea
                 id="notes"
                 placeholder="Add notes about this balance"
                 value={manualBalanceForm.notes}
                 onChange={(e) => setManualBalanceForm((prev) => ({ ...prev, notes: e.target.value }))}
                 rows={3}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               />
             </div>
             <DialogFooter>
@@ -1780,7 +1738,7 @@ export default function UnpaidBills() {
                     notes: "",
                   })
                 }}
-                className="glass-card border-white/20"
+                className="border-slate-200 dark:border-slate-700"
               >
                 Cancel
               </Button>
@@ -1801,7 +1759,7 @@ export default function UnpaidBills() {
                   createManualBalanceMutation.mutate(manualBalanceForm)
                 }}
                 disabled={createManualBalanceMutation.isPending}
-                className="gradient-bg text-white"
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md"
               >
                 {createManualBalanceMutation.isPending ? "Adding..." : "Add Balance"}
               </Button>

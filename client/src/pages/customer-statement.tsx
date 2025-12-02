@@ -45,6 +45,7 @@ import {
   Package,
 } from "lucide-react"
 import { useState, useMemo, Fragment } from "react"
+import { SiWhatsapp } from "react-icons/si"
 import { useToast } from "@/hooks/use-toast"
 import { useDateFormat } from "@/hooks/use-date-format"
 import { useReceiptSettings } from "@/hooks/use-receipt-settings"
@@ -148,41 +149,31 @@ export default function CustomerStatement() {
     })
   }
 
-  const { data: allSalesWithItems = [], isLoading: salesLoading } = useQuery<SaleWithItems[]>({
-    queryKey: ["/api/sales/customer", customerPhone, "with-items"],
+  // OPTIMIZED: Single combined API call for all customer statement data
+  const { data: statementData, isLoading: statementLoading } = useQuery<{
+    sales: SaleWithItems[]
+    payments: PaymentHistoryWithSale[]
+    returns: any[]
+    summary: { totalSales: number; totalPayments: number; totalReturns: number }
+  }>({
+    queryKey: ["/api/customer", customerPhone, "statement"],
     queryFn: async () => {
-      const res = await fetch(`/api/sales/customer/${encodeURIComponent(customerPhone)}/with-items`)
-      if (!res.ok) throw new Error("Failed to fetch customer sales")
+      const res = await fetch(`/api/customer/${encodeURIComponent(customerPhone)}/statement`)
+      if (!res.ok) throw new Error("Failed to fetch customer statement")
       return res.json()
     },
     enabled: !!customerPhone,
     refetchOnWindowFocus: true,
+    staleTime: 30000, // Cache for 30 seconds
   })
 
+  // Extract data from combined response
+  const allSalesWithItems = statementData?.sales || []
   const allSales = allSalesWithItems as Sale[]
-
-  const { data: paymentHistory = [], isLoading: historyLoading } = useQuery<PaymentHistoryWithSale[]>({
-    queryKey: ["/api/payment-history/customer", customerPhone],
-    queryFn: async () => {
-      const res = await fetch(`/api/payment-history/customer/${encodeURIComponent(customerPhone)}`)
-      if (!res.ok) throw new Error("Failed to fetch payment history")
-      return res.json()
-    },
-    enabled: !!customerPhone,
-    refetchOnWindowFocus: true,
-  })
-
-  // Fetch customer returns
-  const { data: customerReturns = [] } = useQuery<any[]>({
-    queryKey: ["/api/returns/customer", customerPhone],
-    queryFn: async () => {
-      const res = await fetch(`/api/returns/customer/${encodeURIComponent(customerPhone)}`)
-      if (!res.ok) throw new Error("Failed to fetch returns")
-      return res.json()
-    },
-    enabled: !!customerPhone,
-    refetchOnWindowFocus: true,
-  })
+  const paymentHistory = statementData?.payments || []
+  const customerReturns = statementData?.returns || []
+  const salesLoading = statementLoading
+  const historyLoading = statementLoading
 
   const recordPaymentMutation = useMutation({
     mutationFn: async (data: { saleId: string; amount: number; paymentMethod: string; notes: string }) => {
@@ -194,8 +185,7 @@ export default function CustomerStatement() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/customer", customerPhone] })
-      queryClient.invalidateQueries({ queryKey: ["/api/payment-history/customer", customerPhone] })
+      queryClient.invalidateQueries({ queryKey: ["/api/customer", customerPhone, "statement"] })
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
       setPaymentDialogOpen(false)
@@ -225,8 +215,7 @@ export default function CustomerStatement() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payment-history/customer", customerPhone] })
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/customer", customerPhone] })
+      queryClient.invalidateQueries({ queryKey: ["/api/customer", customerPhone, "statement"] })
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
       queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] })
@@ -252,8 +241,7 @@ export default function CustomerStatement() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payment-history/customer", customerPhone] })
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/customer", customerPhone] })
+      queryClient.invalidateQueries({ queryKey: ["/api/customer", customerPhone, "statement"] })
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
       queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] })
@@ -287,10 +275,9 @@ export default function CustomerStatement() {
       return response.json()
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sales/customer", customerPhone] })
+      queryClient.invalidateQueries({ queryKey: ["/api/customer", customerPhone, "statement"] })
       queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
-      queryClient.invalidateQueries({ queryKey: ["/api/payment-history/customer", customerPhone] })
       setCashLoanDialogOpen(false)
       setCashLoanAmount("")
       setCashLoanNotes("")
@@ -952,6 +939,42 @@ export default function CustomerStatement() {
     if (!pdfBlob) return
 
     const fileName = `Statement-${customerName.replace(/\s+/g, "_")}-${formatDateShort(new Date()).replace(/\//g, "-")}.pdf`
+
+    // Check if running in Electron desktop app
+    if (window.electron?.sharePdfToWhatsApp) {
+      try {
+        // Convert blob to base64 for Electron IPC
+        const reader = new FileReader()
+        reader.onloadend = async () => {
+          const base64Data = (reader.result as string).split(",")[1]
+          
+          const result = await window.electron!.sharePdfToWhatsApp({
+            pdfBase64: base64Data,
+            fileName: fileName,
+            phoneNumber: customerPhone
+          })
+
+          if (result.success) {
+            toast({
+              title: "PDF Saved & WhatsApp Opened",
+              description: "PDF saved to Documents folder. Please attach it to the WhatsApp chat.",
+            })
+          } else {
+            toast({
+              title: "Share Failed",
+              description: result.error || "Could not share PDF to WhatsApp.",
+              variant: "destructive",
+            })
+          }
+        }
+        reader.readAsDataURL(pdfBlob)
+        return
+      } catch (error) {
+        console.log("Electron share failed, falling back to web share:", error)
+      }
+    }
+
+    // Web Share API for mobile browsers
     const pdfFile = new File([pdfBlob], fileName, { type: "application/pdf" })
 
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
@@ -975,6 +998,7 @@ export default function CustomerStatement() {
       }
     }
 
+    // Fallback: Open WhatsApp with text message
     const closingBalance = transactions.length > 0 ? transactions[0].balance : 0
 
     const message = `*ACCOUNT STATEMENT*
@@ -1037,38 +1061,76 @@ Thank you for your business!`
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <style>{`
-        .glass-card {
-          background: rgba(255, 255, 255, 0.9);
-          backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.3);
+        .bank-card {
+          background: linear-gradient(135deg, #1e3a5f 0%, #0f2744 50%, #1a365d 100%);
+          position: relative;
+          overflow: hidden;
         }
-        .gradient-header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .bank-card::before {
+          content: '';
+          position: absolute;
+          top: -50%;
+          right: -50%;
+          width: 100%;
+          height: 100%;
+          background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
         }
-        .stat-card {
-          background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7));
-          backdrop-filter: blur(10px);
+        .bank-card::after {
+          content: '';
+          position: absolute;
+          bottom: -30%;
+          left: -30%;
+          width: 80%;
+          height: 80%;
+          background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 60%);
+        }
+        .stat-tile {
+          background: white;
+          border: 1px solid rgba(0,0,0,0.06);
+          transition: all 0.2s ease;
+        }
+        .stat-tile:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px -5px rgba(0,0,0,0.1);
+        }
+        .dark .stat-tile {
+          background: rgba(30, 41, 59, 0.5);
+          border: 1px solid rgba(255,255,255,0.08);
+        }
+        .action-btn {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          transition: all 0.2s ease;
+        }
+        .action-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+        }
+        .whatsapp-btn {
+          background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+        }
+        .whatsapp-btn:hover {
+          box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
         }
       `}</style>
 
-      <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="max-w-6xl mx-auto p-4 md:p-8">
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
           <Button
             variant="ghost"
             onClick={() => setLocation("/unpaid-bills")}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 text-slate-600 dark:text-slate-400"
             data-testid="button-back-to-unpaid"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back
+            Back to Accounts
           </Button>
           <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
               onClick={() => setCashLoanDialogOpen(true)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 border-slate-300 dark:border-slate-600"
               data-testid="button-add-cash-loan"
             >
               <Plus className="h-4 w-4" />
@@ -1076,122 +1138,167 @@ Thank you for your business!`
             </Button>
             <Button
               onClick={generateBankStatement}
-              className="gradient-header text-white"
+              className="action-btn text-white border-0"
               data-testid="button-download-statement"
             >
               <Download className="h-4 w-4 mr-2" />
-              Download PDF
+              Statement
+            </Button>
+            <Button
+              onClick={shareToWhatsApp}
+              className="whatsapp-btn text-white border-0"
+              data-testid="button-share-whatsapp"
+            >
+              <SiWhatsapp className="h-4 w-4 mr-2" />
+              Share
             </Button>
           </div>
         </div>
 
-        <Card className="glass-card overflow-hidden">
-          <div className="gradient-header p-6 text-white">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="bg-white/20 p-3 rounded-full">
-                  <User className="h-8 w-8" />
+        <div className="bank-card rounded-xl p-4 md:p-5 text-white mb-5 shadow-lg">
+          <div className="relative z-10">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                  <User className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold" data-testid="text-customer-name">
+                  <p className="text-blue-200/80 text-[10px] font-semibold tracking-wider uppercase">Account Holder</p>
+                  <h1 className="text-lg md:text-xl font-bold tracking-tight" data-testid="text-customer-name">
                     {customerName}
                   </h1>
-                  <div className="flex items-center gap-2 text-white/80 mt-1">
-                    <Phone className="h-4 w-4" />
-                    <span data-testid="text-customer-phone">{customerPhone}</span>
+                  <div className="flex items-center gap-1.5 text-blue-200/80 mt-0.5">
+                    <Phone className="h-3 w-3" />
+                    <span className="font-mono text-xs tracking-wider" data-testid="text-customer-phone">{customerPhone}</span>
                   </div>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-white/70 text-sm">Current Balance</p>
-                <p className="text-3xl font-bold" data-testid="text-current-balance">
-                  Rs. {stats.totalOutstanding.toLocaleString()}
+                <p className="text-blue-200/80 text-[10px] font-semibold tracking-wider uppercase">Outstanding Balance</p>
+                <p className="text-2xl md:text-3xl font-bold tracking-tight tabular-nums" data-testid="text-current-balance">
+                  <span className="text-base md:text-lg font-normal opacity-60">Rs.</span> {stats.totalOutstanding.toLocaleString()}
+                </p>
+                <p className="text-blue-300/70 text-[10px] mt-0.5">
+                  As of {formatDateShort(new Date().toISOString())}
                 </p>
               </div>
             </div>
           </div>
+        </div>
 
-          <CardContent className="p-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="stat-card p-4 rounded-xl text-center">
-                <ShoppingBag className="h-6 w-6 mx-auto mb-2 text-blue-600" />
-                <p className="text-2xl font-bold text-slate-800" data-testid="text-total-bills">
-                  {stats.totalBills}
-                </p>
-                <p className="text-xs text-slate-500">Total Bills</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="stat-tile p-5 rounded-xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+                <ShoppingBag className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               </div>
-              <div className="stat-card p-4 rounded-xl text-center">
-                <TrendingUp className="h-6 w-6 mx-auto mb-2 text-emerald-600" />
-                <p className="text-xl font-bold text-slate-800" data-testid="text-total-purchases">
-                  Rs. {stats.totalPurchases.toLocaleString()}
-                </p>
-                <p className="text-xs text-slate-500">Total Purchases</p>
-              </div>
-              <div className="stat-card p-4 rounded-xl text-center">
-                <CheckCircle className="h-6 w-6 mx-auto mb-2 text-emerald-600" />
-                <p className="text-xl font-bold text-emerald-600" data-testid="text-total-paid">
-                  Rs. {stats.totalPaid.toLocaleString()}
-                </p>
-                <p className="text-xs text-slate-500">Total Paid</p>
-              </div>
-              <div className="stat-card p-4 rounded-xl text-center">
-                <AlertCircle className="h-6 w-6 mx-auto mb-2 text-red-600" />
-                <p className="text-xl font-bold text-red-600" data-testid="text-outstanding">
-                  Rs. {stats.totalOutstanding.toLocaleString()}
-                </p>
-                <p className="text-xs text-slate-500">Outstanding</p>
-              </div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total Bills</p>
             </div>
-          </CardContent>
-        </Card>
+            <p className="text-3xl font-bold text-slate-800 dark:text-white" data-testid="text-total-bills">
+              {stats.totalBills}
+            </p>
+          </div>
+          <div className="stat-tile p-5 rounded-xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Purchases</p>
+            </div>
+            <p className="text-2xl font-bold text-slate-800 dark:text-white" data-testid="text-total-purchases">
+              Rs. {stats.totalPurchases.toLocaleString()}
+            </p>
+          </div>
+          <div className="stat-tile p-5 rounded-xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
+                <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total Paid</p>
+            </div>
+            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400" data-testid="text-total-paid">
+              Rs. {stats.totalPaid.toLocaleString()}
+            </p>
+          </div>
+          <div className="stat-tile p-5 rounded-xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center">
+                <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+              </div>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Due</p>
+            </div>
+            <p className="text-2xl font-bold text-rose-600 dark:text-rose-400" data-testid="text-outstanding">
+              Rs. {stats.totalOutstanding.toLocaleString()}
+            </p>
+          </div>
+        </div>
 
         <Tabs defaultValue="transactions" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-4">
-            <TabsTrigger value="transactions" className="flex items-center gap-2" data-testid="tab-transactions">
+          <TabsList className="grid w-full grid-cols-4 mb-6 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            <TabsTrigger 
+              value="transactions" 
+              className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm" 
+              data-testid="tab-transactions"
+            >
               <History className="h-4 w-4" />
-              All Transactions
+              <span className="hidden sm:inline">Transactions</span>
             </TabsTrigger>
-            <TabsTrigger value="paid-bills" className="flex items-center gap-2" data-testid="tab-paid-bills">
+            <TabsTrigger 
+              value="paid-bills" 
+              className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm" 
+              data-testid="tab-paid-bills"
+            >
               <CheckCircle className="h-4 w-4" />
-              Paid Bills ({paidSales.length})
+              <span className="hidden sm:inline">Paid</span> ({paidSales.length})
             </TabsTrigger>
-            <TabsTrigger value="unpaid-bills" className="flex items-center gap-2" data-testid="tab-unpaid-bills">
+            <TabsTrigger 
+              value="unpaid-bills" 
+              className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm" 
+              data-testid="tab-unpaid-bills"
+            >
               <Receipt className="h-4 w-4" />
-              Unpaid ({unpaidSales.length})
+              <span className="hidden sm:inline">Unpaid</span> ({unpaidSales.length})
             </TabsTrigger>
-            <TabsTrigger value="scheduled" className="flex items-center gap-2" data-testid="tab-scheduled">
+            <TabsTrigger 
+              value="scheduled" 
+              className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm" 
+              data-testid="tab-scheduled"
+            >
               <CalendarClock className="h-4 w-4" />
-              Scheduled ({scheduledPayments.length})
+              <span className="hidden sm:inline">Due</span> ({scheduledPayments.length})
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="transactions">
-            <Card className="glass-card">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <History className="h-5 w-5" />
-                  Complete Transaction Ledger
+            <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
+              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+                    <History className="h-4 w-4 text-slate-600 dark:text-slate-300" />
+                  </div>
+                  Transaction History
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-slate-50">
-                        <TableHead className="w-[90px]">Date</TableHead>
-                        <TableHead className="w-[80px]">Type</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Bill Amount</TableHead>
-                        <TableHead className="text-right text-emerald-600">Paid</TableHead>
-                        <TableHead className="text-right font-bold">Balance</TableHead>
+                      <TableRow className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+                        <TableHead className="w-[100px] text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Date</TableHead>
+                        <TableHead className="w-[90px] text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Type</TableHead>
+                        <TableHead className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Details</TableHead>
+                        <TableHead className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Debit</TableHead>
+                        <TableHead className="text-right text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Credit</TableHead>
+                        <TableHead className="text-right text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Balance</TableHead>
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {transactions.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-slate-500">
-                            No transactions found
+                          <TableCell colSpan={7} className="text-center py-16 text-slate-400">
+                            <History className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                            <p>No transactions found</p>
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -1201,19 +1308,19 @@ Thank you for your business!`
                           return (
                             <Fragment key={txn.id}>
                               <TableRow
-                                className={`${
+                                className={`border-b border-slate-50 dark:border-slate-700/50 transition-colors ${
                                   txn.type === "payment"
-                                    ? "bg-emerald-50/50"
+                                    ? "bg-emerald-50/30 dark:bg-emerald-900/10"
                                     : txn.type === "cash_loan"
-                                      ? "bg-amber-50/50"
-                                      : txn.status === "paid"
-                                        ? "bg-blue-50/30"
-                                        : ""
+                                      ? "bg-amber-50/30 dark:bg-amber-900/10"
+                                      : txn.type === "return"
+                                        ? "bg-orange-50/30 dark:bg-orange-900/10"
+                                        : "hover:bg-slate-50/50 dark:hover:bg-slate-700/30"
                                 } ${hasItems ? "cursor-pointer" : ""}`}
                                 onClick={() => hasItems && toggleRowExpand(txn.id)}
                                 data-testid={`row-transaction-${txn.id}`}
                               >
-                                <TableCell className="font-medium text-slate-600">
+                                <TableCell className="font-medium text-slate-600 dark:text-slate-400">
                                   <div className="flex items-center gap-1">
                                     {hasItems &&
                                       (isExpanded ? (
@@ -1221,50 +1328,55 @@ Thank you for your business!`
                                       ) : (
                                         <ChevronRight className="h-4 w-4 text-slate-400" />
                                       ))}
-                                    {formatDateShort(txn.date)}
+                                    <span className="font-mono text-sm">{formatDateShort(txn.date)}</span>
                                   </div>
                                 </TableCell>
                                 <TableCell>
-                                  <div className="flex items-center gap-1">
-                                    {getTransactionIcon(txn.type)}
+                                  <div className="flex items-center gap-2">
                                     {getTransactionBadge(txn.type)}
                                   </div>
                                 </TableCell>
                                 <TableCell>
                                   <div>
-                                    <p className="font-medium">{txn.description}</p>
+                                    <p className="font-medium text-slate-800 dark:text-slate-200">{txn.description}</p>
                                     {hasItems && (
-                                      <p className="text-xs text-blue-600 mt-0.5">
-                                        {txn.items!.length} item{txn.items!.length > 1 ? "s" : ""} - Click to view
+                                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                                        {txn.items!.length} item{txn.items!.length > 1 ? "s" : ""} - Click to expand
                                       </p>
                                     )}
-                                    {txn.status && txn.type !== "payment" && (
+                                    {txn.status && txn.type !== "payment" && txn.type !== "return" && (
                                       <Badge
-                                        variant={
+                                        variant="outline"
+                                        className={`mt-1 text-xs ${
                                           txn.status === "paid"
-                                            ? "default"
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                                             : txn.status === "partial"
-                                              ? "secondary"
-                                              : "destructive"
-                                        }
-                                        className="mt-1 text-xs"
+                                              ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                              : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                                        }`}
                                       >
                                         {txn.status.toUpperCase()}
                                       </Badge>
                                     )}
-                                    {txn.notes && <p className="text-xs text-slate-500 mt-1">{txn.notes}</p>}
+                                    {txn.notes && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic">{txn.notes}</p>}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right font-medium">
-                                  {txn.type === "payment" || txn.type === "return" ? "-" : `Rs. ${Math.round(txn.totalAmount).toLocaleString()}`}
+                                <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300">
+                                  {txn.type === "payment" || txn.type === "return" ? (
+                                    <span className="text-slate-400">-</span>
+                                  ) : (
+                                    <span className="font-mono">Rs. {Math.round(txn.totalAmount).toLocaleString()}</span>
+                                  )}
                                 </TableCell>
-                                <TableCell className="text-right font-medium text-emerald-600">
-                                  {txn.type === "payment" || txn.type === "return"
-                                    ? `Rs. ${Math.round(txn.credit).toLocaleString()}`
-                                    : "-"}
+                                <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">
+                                  {txn.type === "payment" || txn.type === "return" ? (
+                                    <span className="font-mono">Rs. {Math.round(txn.credit).toLocaleString()}</span>
+                                  ) : (
+                                    <span className="text-slate-400">-</span>
+                                  )}
                                 </TableCell>
-                                <TableCell className="text-right font-bold text-slate-800">
-                                  Rs. {Math.round(txn.balance).toLocaleString()}
+                                <TableCell className="text-right font-bold text-slate-800 dark:text-white">
+                                  <span className="font-mono">Rs. {Math.round(txn.balance).toLocaleString()}</span>
                                 </TableCell>
                                 <TableCell onClick={(e) => e.stopPropagation()}>
                                   {txn.type === "bill" || txn.type === "cash_loan" ? (
@@ -1299,40 +1411,40 @@ Thank you for your business!`
                               {hasItems && isExpanded && (
                                 <TableRow
                                   key={`${txn.id}-items`}
-                                  className="bg-gradient-to-r from-blue-50 to-indigo-50"
+                                  className="bg-slate-50/50 dark:bg-slate-800/30"
                                 >
                                   <TableCell colSpan={7} className="p-0">
-                                    <div className="mx-4 my-3 bg-white rounded-lg border border-blue-200 shadow-sm overflow-hidden">
-                                      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2">
+                                    <div className="mx-4 my-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                                      <div className="bg-slate-800 dark:bg-slate-700 px-4 py-3">
                                         <div className="flex items-center justify-between">
                                           <div className="flex items-center gap-2">
-                                            <Package className="h-4 w-4" />
+                                            <Package className="h-4 w-4 text-white" />
                                             <span className="text-sm font-semibold text-white">
-                                              Items for {txn.description}
+                                              Items Detail
                                             </span>
                                           </div>
-                                          <span className="text-xs text-blue-100">
+                                          <span className="text-xs text-slate-300">
                                             {txn.items!.length} item{txn.items!.length !== 1 ? "s" : ""}
                                           </span>
                                         </div>
                                       </div>
-                                      <div className="divide-y divide-slate-100">
+                                      <div className="divide-y divide-slate-100 dark:divide-slate-700">
                                         {txn.items!.map((item, idx) => (
                                           <div
                                             key={idx}
-                                            className="flex items-center justify-between p-3 hover:bg-slate-50/50"
+                                            className="flex items-center justify-between p-4 hover:bg-slate-50/50 dark:hover:bg-slate-700/30"
                                           >
                                             <div className="flex-1">
                                               <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="font-medium text-slate-800">{item.productName}</span>
-                                                <span className="text-slate-500">|</span>
-                                                <span className="text-slate-600">{item.variantName}</span>
-                                                <span className="text-slate-500">|</span>
-                                                <span className="text-slate-500">{item.colorName}</span>
+                                                <span className="font-medium text-slate-800 dark:text-white">{item.productName}</span>
+                                                <span className="text-slate-300 dark:text-slate-600">|</span>
+                                                <span className="text-slate-600 dark:text-slate-400">{item.variantName}</span>
+                                                <span className="text-slate-300 dark:text-slate-600">|</span>
+                                                <span className="text-slate-500 dark:text-slate-500">{item.colorName}</span>
                                                 {item.colorCode && (
                                                   <Badge
                                                     variant="outline"
-                                                    className="text-xs bg-blue-50 text-blue-700 border-blue-200"
+                                                    className="text-xs border-slate-300 dark:border-slate-600"
                                                   >
                                                     {item.colorCode}
                                                   </Badge>
@@ -1340,24 +1452,24 @@ Thank you for your business!`
                                               </div>
                                             </div>
                                             <div className="flex items-center gap-6 text-right">
-                                              <div className="text-sm">
-                                                <span className="text-slate-600 font-medium">{item.quantity}</span>
+                                              <div className="text-sm font-mono">
+                                                <span className="text-slate-600 dark:text-slate-400 font-medium">{item.quantity}</span>
                                                 <span className="text-slate-400 mx-1">x</span>
-                                                <span className="text-slate-600">
+                                                <span className="text-slate-600 dark:text-slate-400">
                                                   Rs. {Math.round(item.rate).toLocaleString()}
                                                 </span>
                                               </div>
-                                              <div className="font-bold text-slate-800 min-w-[100px] text-right">
+                                              <div className="font-bold text-slate-800 dark:text-white min-w-[100px] text-right font-mono">
                                                 Rs. {Math.round(item.subtotal).toLocaleString()}
                                               </div>
                                             </div>
                                           </div>
                                         ))}
                                       </div>
-                                      <div className="bg-slate-50 px-4 py-2 flex justify-end border-t">
+                                      <div className="bg-slate-100 dark:bg-slate-900/50 px-4 py-3 flex justify-end border-t border-slate-200 dark:border-slate-700">
                                         <div className="flex items-center gap-3">
-                                          <span className="text-sm text-slate-600">Total:</span>
-                                          <span className="font-bold text-lg text-slate-800">
+                                          <span className="text-sm text-slate-600 dark:text-slate-400">Total:</span>
+                                          <span className="font-bold text-lg text-slate-800 dark:text-white font-mono">
                                             Rs. {Math.round(txn.totalAmount).toLocaleString()}
                                           </span>
                                         </div>
@@ -1378,60 +1490,68 @@ Thank you for your business!`
           </TabsContent>
 
           <TabsContent value="paid-bills">
-            <Card className="glass-card">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <CheckCircle className="h-5 w-5 text-emerald-600" />
-                  Paid Bills (Completed)
+            <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
+              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  Completed Payments
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4">
                 {paidSales.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500">
+                  <div className="text-center py-16 text-slate-400">
                     <Receipt className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                    <p>No paid bills yet</p>
+                    <p>No completed payments yet</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {paidSales.map((sale) => (
                       <div
                         key={sale.id}
-                        className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+                        className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
                         data-testid={`card-paid-${sale.id}`}
                       >
                         <div className="flex items-center gap-4">
                           <div
-                            className={`p-3 rounded-full ${sale.isManualBalance ? "bg-amber-100" : "bg-emerald-100"}`}
+                            className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                              sale.isManualBalance 
+                                ? "bg-amber-50 dark:bg-amber-900/20" 
+                                : "bg-emerald-50 dark:bg-emerald-900/20"
+                            }`}
                           >
                             {sale.isManualBalance ? (
-                              <Landmark className="h-5 w-5 text-amber-600" />
+                              <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                             ) : (
-                              <CheckCircle className="h-5 w-5 text-emerald-600" />
+                              <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                             )}
                           </div>
                           <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold">
-                                {sale.isManualBalance ? "Manual Balance (Cleared)" : `Bill #${sale.id.slice(0, 8)}`}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-slate-800 dark:text-white">
+                                {sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`}
                               </p>
-                              <Badge className="bg-emerald-500 text-white">PAID</Badge>
+                              <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                PAID
+                              </Badge>
                             </div>
-                            <p className="text-sm text-slate-500">{formatDateShort(sale.createdAt)}</p>
-                            {sale.notes && <p className="text-xs text-slate-400 mt-1">{sale.notes}</p>}
+                            <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">{formatDateShort(sale.createdAt)}</p>
+                            {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <p className="text-sm text-slate-500">Bill Amount</p>
-                            <p className="text-lg font-bold text-slate-800">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Amount</p>
+                            <p className="text-xl font-bold text-slate-800 dark:text-white font-mono">
                               Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
                             </p>
-                            <p className="text-sm text-emerald-600 font-medium">
+                            <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium font-mono">
                               Paid: Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}
                             </p>
                           </div>
                           <Link href={`/bill/${sale.id}?from=customer`}>
-                            <Button size="icon" variant="outline" data-testid={`button-view-paid-${sale.id}`}>
+                            <Button size="icon" variant="outline" className="border-slate-200 dark:border-slate-600" data-testid={`button-view-paid-${sale.id}`}>
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
@@ -1445,16 +1565,18 @@ Thank you for your business!`
           </TabsContent>
 
           <TabsContent value="scheduled">
-            <Card className="glass-card">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <CalendarClock className="h-5 w-5" />
-                  Scheduled Payments
+            <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
+              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                    <CalendarClock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  Due Payments
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4">
                 {scheduledPayments.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500">
+                  <div className="text-center py-16 text-slate-400">
                     <CalendarClock className="h-12 w-12 mx-auto mb-4 opacity-30" />
                     <p>No scheduled payments</p>
                   </div>
@@ -1465,69 +1587,74 @@ Thank you for your business!`
                       return (
                         <div
                           key={payment.id}
-                          className={`p-4 rounded-xl border-2 flex items-center justify-between ${
+                          className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center md:justify-between gap-4 transition-all ${
                             status === "overdue"
-                              ? "border-red-200 bg-red-50"
+                              ? "border-rose-200 bg-rose-50/50 dark:border-rose-800 dark:bg-rose-900/20"
                               : status === "due_soon"
-                                ? "border-amber-200 bg-amber-50"
-                                : "border-slate-200 bg-white"
+                                ? "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-900/20"
+                                : "border-slate-100 bg-white dark:border-slate-700 dark:bg-slate-800/50"
                           }`}
                           data-testid={`card-scheduled-${payment.id}`}
                         >
                           <div className="flex items-center gap-4">
                             <div
-                              className={`p-3 rounded-full ${
+                              className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                                 status === "overdue"
-                                  ? "bg-red-100"
+                                  ? "bg-rose-100 dark:bg-rose-900/30"
                                   : status === "due_soon"
-                                    ? "bg-amber-100"
-                                    : "bg-slate-100"
+                                    ? "bg-amber-100 dark:bg-amber-900/30"
+                                    : "bg-slate-100 dark:bg-slate-700"
                               }`}
                             >
                               <Calendar
                                 className={`h-5 w-5 ${
                                   status === "overdue"
-                                    ? "text-red-600"
+                                    ? "text-rose-600 dark:text-rose-400"
                                     : status === "due_soon"
-                                      ? "text-amber-600"
-                                      : "text-slate-600"
+                                      ? "text-amber-600 dark:text-amber-400"
+                                      : "text-slate-600 dark:text-slate-400"
                                 }`}
                               />
                             </div>
                             <div>
-                              <p className="font-semibold">
-                                {payment.isManualBalance ? "Manual Balance" : `Bill #${payment.id.slice(0, 8)}`}
-                              </p>
-                              <p className="text-sm text-slate-500">Due: {formatDateShort(payment.dueDate)}</p>
-                              {payment.notes && <p className="text-xs text-slate-400 mt-1">{payment.notes}</p>}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-800 dark:text-white">
+                                  {payment.isManualBalance ? "Manual Balance" : `Bill #${payment.id.slice(0, 8)}`}
+                                </p>
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    status === "overdue"
+                                      ? "border-rose-300 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                                      : status === "due_soon"
+                                        ? "border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                        : "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                                  }
+                                >
+                                  {status === "overdue" ? "OVERDUE" : status === "due_soon" ? "DUE SOON" : "UPCOMING"}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">Due: {formatDateShort(payment.dueDate)}</p>
+                              {payment.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{payment.notes}</p>}
                             </div>
                           </div>
-                          <div className="text-right">
-                            <Badge
-                              className={
-                                status === "overdue"
-                                  ? "bg-red-500 text-white"
-                                  : status === "due_soon"
-                                    ? "bg-amber-500 text-white"
-                                    : "bg-slate-500 text-white"
-                              }
-                            >
-                              {status === "overdue" ? "OVERDUE" : status === "due_soon" ? "DUE SOON" : "UPCOMING"}
-                            </Badge>
-                            <p className="text-xl font-bold mt-2">
-                              Rs. {Math.round(payment.outstanding).toLocaleString()}
-                            </p>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Outstanding</p>
+                              <p className="text-2xl font-bold text-slate-800 dark:text-white font-mono">
+                                Rs. {Math.round(payment.outstanding).toLocaleString()}
+                              </p>
+                            </div>
                             <Button
-                              size="sm"
-                              className="mt-2"
                               onClick={() => {
                                 setSelectedSaleId(payment.id)
                                 setPaymentDialogOpen(true)
                               }}
+                              className="action-btn text-white border-0"
                               data-testid={`button-pay-${payment.id}`}
                             >
-                              <Wallet className="h-4 w-4 mr-1" />
-                              Pay Now
+                              <Wallet className="h-4 w-4 mr-2" />
+                              Pay
                             </Button>
                           </div>
                         </div>
@@ -1540,18 +1667,20 @@ Thank you for your business!`
           </TabsContent>
 
           <TabsContent value="unpaid-bills">
-            <Card className="glass-card">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Receipt className="h-5 w-5 text-red-600" />
-                  Unpaid Bills
+            <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
+              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
+                    <Receipt className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                  </div>
+                  Outstanding Bills
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4">
                 {unpaidSales.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500">
-                    <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-30 text-emerald-500" />
-                    <p>All bills are paid!</p>
+                  <div className="text-center py-16 text-slate-400">
+                    <CheckCircle className="h-12 w-12 mx-auto mb-4 text-emerald-400 opacity-50" />
+                    <p className="text-emerald-600 dark:text-emerald-400 font-medium">All bills are paid!</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1561,54 +1690,65 @@ Thank you for your business!`
                       return (
                         <div
                           key={sale.id}
-                          className="p-4 rounded-xl border bg-white flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+                          className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
                           data-testid={`card-unpaid-${sale.id}`}
                         >
                           <div className="flex items-center gap-4">
                             <div
-                              className={`p-3 rounded-full ${sale.isManualBalance ? "bg-amber-100" : "bg-blue-100"}`}
+                              className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                                sale.isManualBalance 
+                                  ? "bg-amber-50 dark:bg-amber-900/20" 
+                                  : "bg-blue-50 dark:bg-blue-900/20"
+                              }`}
                             >
                               {sale.isManualBalance ? (
-                                <Landmark className="h-5 w-5 text-amber-600" />
+                                <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                               ) : (
-                                <Receipt className="h-5 w-5 text-blue-600" />
+                                <Receipt className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                               )}
                             </div>
                             <div>
-                              <div className="flex items-center gap-2">
-                                <p className="font-semibold">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-800 dark:text-white">
                                   {sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`}
                                 </p>
-                                <Badge variant={sale.paymentStatus === "partial" ? "secondary" : "destructive"}>
+                                <Badge 
+                                  variant="outline" 
+                                  className={
+                                    sale.paymentStatus === "partial" 
+                                      ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                      : "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400"
+                                  }
+                                >
                                   {sale.paymentStatus.toUpperCase()}
                                 </Badge>
                               </div>
-                              <p className="text-sm text-slate-500">
+                              <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                                 {formatDateShort(sale.createdAt)}
-                                {sale.dueDate && ` | Due: ${formatDateShort(sale.dueDate)}`}
+                                {sale.dueDate && <span className="text-slate-400 dark:text-slate-500"> | Due: {formatDateShort(sale.dueDate)}</span>}
                               </p>
-                              {sale.notes && <p className="text-xs text-slate-400 mt-1">{sale.notes}</p>}
-                              <div className="w-48 h-2 bg-slate-200 rounded-full mt-2 overflow-hidden">
+                              {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
+                              <div className="w-40 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
                                 <div
-                                  className="h-full bg-emerald-500 transition-all"
+                                  className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all"
                                   style={{ width: `${paidPercent}%` }}
                                 />
                               </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">
+                                Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()} / Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="text-right">
-                              <p className="text-sm text-slate-500">
-                                Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()} / Rs.{" "}
-                                {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
-                              </p>
-                              <p className="text-xl font-bold text-red-600">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Outstanding</p>
+                              <p className="text-2xl font-bold text-rose-600 dark:text-rose-400 font-mono">
                                 Rs. {Math.round(outstanding).toLocaleString()}
                               </p>
                             </div>
                             <div className="flex gap-2">
                               <Link href={`/bill/${sale.id}?from=customer`}>
-                                <Button size="icon" variant="outline" data-testid={`button-view-bill-${sale.id}`}>
+                                <Button size="icon" variant="outline" className="border-slate-200 dark:border-slate-600" data-testid={`button-view-bill-${sale.id}`}>
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
@@ -1617,9 +1757,10 @@ Thank you for your business!`
                                   setSelectedSaleId(sale.id)
                                   setPaymentDialogOpen(true)
                                 }}
+                                className="action-btn text-white border-0"
                                 data-testid={`button-receive-payment-${sale.id}`}
                               >
-                                <Wallet className="h-4 w-4 mr-1" />
+                                <Wallet className="h-4 w-4 mr-2" />
                                 Pay
                               </Button>
                             </div>

@@ -11,6 +11,11 @@ contextBridge.exposeInMainWorld("electron", {
   // Activation operations
   getActivationStatus: () => ipcRenderer.invoke("get-activation-status"),
   setActivationStatus: (status: boolean) => ipcRenderer.invoke("set-activation-status", status),
+  // WhatsApp PDF sharing
+  sharePdfToWhatsApp: (data: { pdfBase64: string; fileName: string; phoneNumber: string }) => 
+    ipcRenderer.invoke("share-pdf-to-whatsapp", data),
+  savePdfToDocuments: (data: { pdfBase64: string; fileName: string }) => 
+    ipcRenderer.invoke("save-pdf-to-documents", data),
 });
 
 // Add type definitions for TypeScript
@@ -23,6 +28,10 @@ declare global {
       importDatabase: () => Promise<{ success: boolean; path?: string; error?: string }>;
       getActivationStatus: () => Promise<boolean>;
       setActivationStatus: (status: boolean) => Promise<boolean>;
+      sharePdfToWhatsApp: (data: { pdfBase64: string; fileName: string; phoneNumber: string }) => 
+        Promise<{ success: boolean; path?: string; message?: string; error?: string }>;
+      savePdfToDocuments: (data: { pdfBase64: string; fileName: string }) => 
+        Promise<{ success: boolean; path?: string; error?: string }>;
     };
   }
 }

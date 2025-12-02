@@ -118,6 +118,59 @@ interface ExtendedSale {
 // Audit token storage (in-memory for session management)
 const auditTokens = new Map<string, { createdAt: number }>()
 
+// In-memory cache for frequently accessed data
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+  ttl: number // Time to live in milliseconds
+}
+
+const cache = {
+  settings: null as CacheEntry<any> | null,
+  products: null as CacheEntry<any[]> | null,
+  variants: null as CacheEntry<any[]> | null,
+  colors: null as CacheEntry<any[]> | null,
+}
+
+const CACHE_TTL = {
+  settings: 60000, // 1 minute for settings
+  products: 30000, // 30 seconds for products
+  variants: 30000, // 30 seconds for variants
+  colors: 30000,   // 30 seconds for colors
+}
+
+function getCached<T>(key: keyof typeof cache): T | null {
+  const entry = cache[key] as CacheEntry<T> | null
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > entry.ttl) {
+    cache[key] = null
+    return null
+  }
+  return entry.data
+}
+
+function setCache<T>(key: keyof typeof cache, data: T, ttl: number): void {
+  (cache as any)[key] = { data, timestamp: Date.now(), ttl }
+}
+
+function invalidateCache(key?: keyof typeof cache): void {
+  if (key) {
+    cache[key] = null
+  } else {
+    cache.settings = null
+    cache.products = null
+    cache.variants = null
+    cache.colors = null
+  }
+}
+
+// Helper to invalidate inventory-related caches
+function invalidateInventoryCache(): void {
+  cache.products = null
+  cache.variants = null
+  cache.colors = null
+}
+
 // Auto-sync state
 let autoSyncEnabled = false
 let syncInterval: NodeJS.Timeout | null = null
@@ -864,10 +917,15 @@ async function importFromCloudData() {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Products
+  // Products - with caching
   app.get("/api/products", async (_req, res) => {
     try {
+      const cached = getCached<any[]>("products")
+      if (cached) {
+        return res.json(cached)
+      }
       const products = await storage.getProducts()
+      setCache("products", products, CACHE_TTL.products)
       res.json(products)
     } catch (error) {
       console.error("Error fetching products:", error)
@@ -880,8 +938,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertProductSchema.parse(req.body)
       const product = await storage.createProduct(validated)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("products")
+      invalidateInventoryCache()
 
       res.json(product)
     } catch (error) {
@@ -903,8 +962,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const product = await storage.updateProduct(req.params.id, { company, productName })
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("products")
+      invalidateInventoryCache()
 
       res.json(product)
     } catch (error) {
@@ -917,8 +977,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteProduct(req.params.id)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("products")
+      invalidateInventoryCache()
 
       res.json({ success: true })
     } catch (error) {
@@ -927,10 +988,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Variants
+  // Variants - with caching
   app.get("/api/variants", async (_req, res) => {
     try {
+      const cached = getCached<any[]>("variants")
+      if (cached) {
+        return res.json(cached)
+      }
       const variants = await storage.getVariants()
+      setCache("variants", variants, CACHE_TTL.variants)
       res.json(variants)
     } catch (error) {
       console.error("Error fetching variants:", error)
@@ -943,8 +1009,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertVariantSchema.parse(req.body)
       const variant = await storage.createVariant(validated)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("products")
+      invalidateInventoryCache()
 
       res.json(variant)
     } catch (error) {
@@ -970,8 +1037,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rate: Number.parseFloat(rate),
       })
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("products")
+      invalidateInventoryCache()
 
       res.json(variant)
     } catch (error) {
@@ -989,8 +1057,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const variant = await storage.updateVariantRate(req.params.id, rate)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("products")
+      invalidateInventoryCache()
 
       res.json(variant)
     } catch (error) {
@@ -1003,8 +1072,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteVariant(req.params.id)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("products")
+      invalidateInventoryCache()
 
       res.json({ success: true })
     } catch (error) {
@@ -1013,10 +1083,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Colors
+  // Colors - with caching
   app.get("/api/colors", async (_req, res) => {
     try {
+      const cached = getCached<any[]>("colors")
+      if (cached) {
+        return res.json(cached)
+      }
       const colors = await storage.getColors()
+      setCache("colors", colors, CACHE_TTL.colors)
       res.json(colors)
     } catch (error) {
       console.error("Error fetching colors:", error)
@@ -1030,8 +1105,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       validated.colorCode = validated.colorCode.trim().toUpperCase()
       const color = await storage.createColor(validated)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("colors")
+      invalidateCache("colors")
 
       res.json(color)
     } catch (error) {
@@ -1058,8 +1134,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stockQuantity: Number.parseInt(stockQuantity),
       })
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("colors")
+      invalidateCache("colors")
 
       res.json(color)
     } catch (error) {
@@ -1077,8 +1154,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const color = await storage.updateColorStock(req.params.id, stockQuantity)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("colors")
+      invalidateCache("colors")
 
       res.json(color)
     } catch (error) {
@@ -1096,8 +1174,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const color = await storage.updateColorRateOverride(req.params.id, rateOverride)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("colors")
+      invalidateCache("colors")
 
       res.json(color)
     } catch (error) {
@@ -1153,6 +1232,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
+      // Invalidate colors cache after stock update
+      invalidateCache("colors")
+
       console.log(`[API] Stock in successful: ${color.colorName} - New stock: ${color.stockQuantity}`)
 
       // Auto-sync trigger
@@ -1187,8 +1269,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteColor(req.params.id)
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("colors")
+      invalidateCache("colors")
 
       res.json({ success: true })
     } catch (error) {
@@ -1684,6 +1767,204 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // OPTIMIZED: Combined customer statement endpoint - fetches all data in one request
+  // AUTO-FIX: Sanitizes old/corrupted data to prevent statement loading failures
+  app.get("/api/customer/:phone/statement", async (req, res) => {
+    try {
+      const { phone } = req.params
+      
+      if (!phone || phone.trim() === "") {
+        return res.status(400).json({ error: "Phone number is required" })
+      }
+
+      console.log(`[API] Fetching combined customer statement for: ${phone}`)
+      
+      // Fetch all data in parallel for faster response
+      const [purchaseHistory, paymentHistory, returns] = await Promise.all([
+        storage.getCustomerPurchaseHistory(phone),
+        storage.getPaymentHistoryByCustomer(phone),
+        storage.getReturnsByCustomerPhone(phone)
+      ])
+
+      // AUTO-FIX: Sanitize sales data to handle old/corrupted database entries
+      const sanitizeSale = (sale: any) => {
+        if (!sale) return null
+        try {
+          return {
+            ...sale,
+            id: sale.id || `sale-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            customerName: sale.customerName || "Unknown Customer",
+            customerPhone: sale.customerPhone || phone,
+            totalAmount: sanitizeNumber(sale.totalAmount),
+            amountPaid: sanitizeNumber(sale.amountPaid),
+            discountAmount: sanitizeNumber(sale.discountAmount),
+            discountPercentage: sanitizeNumber(sale.discountPercentage),
+            paymentStatus: sale.paymentStatus || "unpaid",
+            isManualBalance: Boolean(sale.isManualBalance),
+            notes: sale.notes || null,
+            dueDate: sanitizeDate(sale.dueDate),
+            createdAt: sanitizeDate(sale.createdAt) || new Date().toISOString(),
+            saleItems: Array.isArray(sale.saleItems) 
+              ? sale.saleItems.map(sanitizeSaleItem).filter(Boolean)
+              : []
+          }
+        } catch (err) {
+          console.error(`[AUTO-FIX] Failed to sanitize sale ${sale?.id}:`, err)
+          return null
+        }
+      }
+
+      // AUTO-FIX: Sanitize sale items
+      const sanitizeSaleItem = (item: any) => {
+        if (!item) return null
+        try {
+          return {
+            ...item,
+            id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            quantity: sanitizeNumber(item.quantity) || 1,
+            rate: sanitizeNumber(item.rate),
+            subtotal: sanitizeNumber(item.subtotal),
+            quantityReturned: sanitizeNumber(item.quantityReturned),
+            color: item.color ? sanitizeColor(item.color) : null
+          }
+        } catch (err) {
+          console.error(`[AUTO-FIX] Failed to sanitize sale item:`, err)
+          return null
+        }
+      }
+
+      // AUTO-FIX: Sanitize color data
+      const sanitizeColor = (color: any) => {
+        if (!color) return null
+        return {
+          ...color,
+          id: color.id || "unknown",
+          colorName: color.colorName || "Unknown Color",
+          colorCode: color.colorCode || "N/A",
+          stockQuantity: sanitizeNumber(color.stockQuantity),
+          variant: color.variant ? {
+            ...color.variant,
+            packingSize: color.variant.packingSize || "N/A",
+            rate: sanitizeNumber(color.variant.rate),
+            product: color.variant.product ? {
+              ...color.variant.product,
+              productName: color.variant.product.productName || "Unknown Product",
+              companyName: color.variant.product.companyName || "Unknown Company"
+            } : { productName: "Unknown Product", companyName: "Unknown Company" }
+          } : null
+        }
+      }
+
+      // AUTO-FIX: Sanitize payment history
+      const sanitizePayment = (payment: any) => {
+        if (!payment) return null
+        try {
+          return {
+            ...payment,
+            id: payment.id || `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            amount: sanitizeNumber(payment.amount),
+            paymentMethod: payment.paymentMethod || "cash",
+            notes: payment.notes || null,
+            createdAt: sanitizeDate(payment.createdAt) || new Date().toISOString(),
+            saleId: payment.saleId || null
+          }
+        } catch (err) {
+          console.error(`[AUTO-FIX] Failed to sanitize payment:`, err)
+          return null
+        }
+      }
+
+      // AUTO-FIX: Sanitize returns
+      const sanitizeReturn = (ret: any) => {
+        if (!ret) return null
+        try {
+          return {
+            ...ret,
+            id: ret.id || `return-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            totalRefund: sanitizeNumber(ret.totalRefund),
+            reason: ret.reason || "No reason provided",
+            createdAt: sanitizeDate(ret.createdAt) || new Date().toISOString(),
+            returnItems: Array.isArray(ret.returnItems) 
+              ? ret.returnItems.map((item: any) => ({
+                  ...item,
+                  quantityReturned: sanitizeNumber(item.quantityReturned) || sanitizeNumber(item.quantity),
+                  refundAmount: sanitizeNumber(item.refundAmount),
+                  color: item.color ? sanitizeColor(item.color) : null
+                }))
+              : []
+          }
+        } catch (err) {
+          console.error(`[AUTO-FIX] Failed to sanitize return:`, err)
+          return null
+        }
+      }
+
+      // Helper: Sanitize number values
+      const sanitizeNumber = (value: any): number => {
+        if (value === null || value === undefined || value === "") return 0
+        const num = typeof value === "string" ? parseFloat(value) : Number(value)
+        return isNaN(num) || !isFinite(num) ? 0 : num
+      }
+
+      // Helper: Sanitize date values
+      const sanitizeDate = (value: any): string | null => {
+        if (!value) return null
+        try {
+          const date = new Date(value)
+          return isNaN(date.getTime()) ? null : date.toISOString()
+        } catch {
+          return null
+        }
+      }
+
+      // Apply sanitization to all data
+      const rawSales = purchaseHistory?.adjustedSales || []
+      const sanitizedSales = rawSales.map(sanitizeSale).filter(Boolean)
+      
+      const rawPayments = paymentHistory || []
+      const sanitizedPayments = rawPayments.map(sanitizePayment).filter(Boolean)
+      
+      const rawReturns = returns || []
+      const sanitizedReturns = rawReturns.map(sanitizeReturn).filter(Boolean)
+
+      // Log any data that was filtered out due to corruption
+      const salesFixed = rawSales.length - sanitizedSales.length
+      const paymentsFixed = rawPayments.length - sanitizedPayments.length
+      const returnsFixed = rawReturns.length - sanitizedReturns.length
+      
+      if (salesFixed > 0 || paymentsFixed > 0 || returnsFixed > 0) {
+        console.log(`[AUTO-FIX] Customer ${phone}: Fixed/filtered ${salesFixed} sales, ${paymentsFixed} payments, ${returnsFixed} returns`)
+      }
+
+      const response = {
+        sales: sanitizedSales,
+        payments: sanitizedPayments,
+        returns: sanitizedReturns,
+        summary: {
+          totalSales: sanitizedSales.length,
+          totalPayments: sanitizedPayments.length,
+          totalReturns: sanitizedReturns.length
+        }
+      }
+
+      res.json(response)
+    } catch (error) {
+      console.error("Error fetching customer statement:", error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      
+      // AUTO-FIX: Return empty data instead of error to prevent UI crash
+      console.log(`[AUTO-FIX] Returning empty statement due to error for customer: ${req.params.phone}`)
+      res.json({
+        sales: [],
+        payments: [],
+        returns: [],
+        summary: { totalSales: 0, totalPayments: 0, totalReturns: 0 },
+        _autoFixed: true,
+        _error: errorMessage
+      })
+    }
+  })
+
   // Customer Suggestions - FIXED: Show ALL customers, not just top 10
   app.get("/api/customers/suggestions", async (_req, res) => {
     try {
@@ -2048,10 +2329,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateCustomerQueries(returnData.customerPhone)
       invalidateGlobalQueries()
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("returns")
       detectChanges("sales")
       detectChanges("colors")
+      invalidateCache("colors") // Stock updated by return
 
       res.json(returnRecord)
     } catch (error) {
@@ -2070,9 +2352,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateCustomerQueries(req.body.customerPhone)
       invalidateGlobalQueries()
 
-      // Auto-sync trigger
+      // Auto-sync trigger & cache invalidation
       detectChanges("returns")
       detectChanges("colors")
+      invalidateCache("colors") // Stock updated by return
 
       res.json(returnRecord)
     } catch (error) {
@@ -2212,14 +2495,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Settings routes
+  // Settings routes - with in-memory caching
   app.get("/api/settings", async (req, res) => {
     try {
+      // Check cache first
+      const cached = getCached<any>("settings")
+      if (cached) {
+        return res.json(cached)
+      }
+      
       const settings = await storage.getSettings()
+      setCache("settings", settings, CACHE_TTL.settings)
       res.json(settings)
     } catch (error) {
       console.error("[API] Error getting settings:", error)
-      // Return proper error response instead of default settings
       res.status(500).json({
         error: "Failed to fetch settings",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -2230,6 +2519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/settings", async (req, res) => {
     try {
       const updated = await storage.updateSettings(req.body)
+      invalidateCache("settings") // Invalidate cache on update
       res.json(updated)
     } catch (error) {
       console.error("[API] Error updating settings:", error)

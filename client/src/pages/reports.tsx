@@ -1,6 +1,6 @@
 import { useState, useMemo, useDeferredValue } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useDebounce } from "@/hooks/use-debounce";
 
 const VISIBLE_LIMIT_INITIAL = 50;
@@ -33,19 +33,19 @@ import {
   Wallet,
   TrendingUp,
   TrendingDown,
-  Filter,
   X,
   FileText,
   Users,
   ArrowUpDown,
   ChevronUp,
   ChevronDown,
+  BarChart3,
+  RotateCcw,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Sale, PaymentHistory, Return } from "@shared/schema";
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { useDateFormat } from "@/hooks/use-date-format";
-import { RotateCcw } from "lucide-react";
 
 interface PaymentHistoryWithSale extends PaymentHistory {
   sale: Sale | null;
@@ -236,7 +236,6 @@ export default function Reports() {
     return filteredSales.filter((sale) => sale.paymentStatus === "paid");
   }, [filteredSales]);
 
-  // Filtered data calculations for each tab
   const filteredSalesTotal = useMemo(() => {
     return filteredSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
   }, [filteredSales]);
@@ -316,42 +315,41 @@ export default function Reports() {
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case "paid":
-        return <Badge className="bg-green-500/10 text-green-600 dark:text-green-400">Paid</Badge>;
+        return <Badge className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700">Paid</Badge>;
       case "partial":
-        return <Badge className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">Partial</Badge>;
+        return <Badge className="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700">Partial</Badge>;
       case "unpaid":
-        return <Badge className="bg-red-500/10 text-red-600 dark:text-red-400">Unpaid</Badge>;
+        return <Badge className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-700">Unpaid</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
-  // Table Summary Component
   const TableSummary = ({ tab }: { tab: string }) => {
     switch (tab) {
       case "all-sales":
         return (
-          <div className="flex flex-wrap justify-between items-center p-4 bg-muted/50 border-t">
-            <div className="text-sm font-medium">
-              Showing {filteredSales.length} bills
+          <div className="flex flex-wrap justify-between items-center p-4 bg-slate-50 dark:bg-zinc-900/50 border-t border-slate-100 dark:border-slate-700/50">
+            <div className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              Showing <span className="text-slate-900 dark:text-white">{filteredSales.length}</span> bills
             </div>
             <div className="flex gap-4 text-sm">
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground">Total Amount:</span>
-                <span className="font-semibold">
-                  {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">Total:</span>
+                <span className="font-semibold text-slate-900 dark:text-white tabular-nums">
+                  Rs. {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground">Total Paid:</span>
-                <span className="font-semibold text-green-600 dark:text-green-400">
-                  {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">Paid:</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  Rs. {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground">Total Outstanding:</span>
-                <span className="font-semibold text-red-600 dark:text-red-400">
-                  {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">Outstanding:</span>
+                <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                  Rs. {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
             </div>
@@ -360,27 +358,27 @@ export default function Reports() {
       
       case "unpaid-bills":
         return (
-          <div className="flex flex-wrap justify-between items-center p-4 bg-muted/50 border-t">
-            <div className="text-sm font-medium">
-              Showing {unpaidSales.length} unpaid bills
+          <div className="flex flex-wrap justify-between items-center p-4 bg-slate-50 dark:bg-zinc-900/50 border-t border-slate-100 dark:border-slate-700/50">
+            <div className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              Showing <span className="text-slate-900 dark:text-white">{unpaidSales.length}</span> unpaid bills
             </div>
             <div className="flex gap-4 text-sm">
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground">Total Bill Amount:</span>
-                <span className="font-semibold">
-                  {unpaidSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">Bill Total:</span>
+                <span className="font-semibold text-slate-900 dark:text-white tabular-nums">
+                  Rs. {unpaidSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground">Total Paid:</span>
-                <span className="font-semibold text-green-600 dark:text-green-400">
-                  {unpaidSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">Paid:</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  Rs. {unpaidSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground">Total Outstanding:</span>
-                <span className="font-semibold text-red-600 dark:text-red-400">
-                  {unpaidSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">Outstanding:</span>
+                <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                  Rs. {unpaidSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
             </div>
@@ -389,15 +387,15 @@ export default function Reports() {
       
       case "recovery-payments":
         return (
-          <div className="flex flex-wrap justify-between items-center p-4 bg-muted/50 border-t">
-            <div className="text-sm font-medium">
-              Showing {filteredPayments.length} payment records
+          <div className="flex flex-wrap justify-between items-center p-4 bg-slate-50 dark:bg-zinc-900/50 border-t border-slate-100 dark:border-slate-700/50">
+            <div className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              Showing <span className="text-slate-900 dark:text-white">{filteredPayments.length}</span> payment records
             </div>
             <div className="flex gap-4 text-sm">
-              <div className="flex items-center gap-1">
-                <span className="text-muted-foreground">Total Recovery Amount:</span>
-                <span className="font-semibold text-green-600 dark:text-green-400">
-                  {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">Total Recovery:</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  Rs. {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </span>
               </div>
             </div>
@@ -413,325 +411,374 @@ export default function Reports() {
 
   if (isLoading) {
     return (
-      <div className="glass-page p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-48" />
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800">
+        <div className="p-6 space-y-6">
+          <Skeleton className="h-32 w-full rounded-2xl" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-24 rounded-xl" />
+            ))}
+          </div>
+          <Skeleton className="h-96 w-full rounded-2xl" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
-        </div>
-        <Skeleton className="h-96" />
       </div>
     );
   }
 
   return (
-    <div className="glass-page p-6 space-y-6">
-      <div className="glass-surface p-4">
-        <h1 className="text-2xl font-bold" data-testid="text-reports-title">Financial Reports</h1>
-        <p className="text-muted-foreground">Complete overview of sales, payments, and unpaid bills</p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="glass-metric" data-testid="card-total-sales">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm font-medium text-muted-foreground">Total Sales</span>
-            <div className="metric-icon-blue">
-              <Receipt className="h-4 w-4" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-zinc-900 dark:via-zinc-900 dark:to-zinc-800">
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 p-6 text-white shadow-lg">
+          <div className="absolute inset-0 bg-black/10" />
+          <div className="relative flex items-center gap-4">
+            <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+              <BarChart3 className="h-8 w-8" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight" data-testid="text-reports-title">
+                Financial Reports
+              </h1>
+              <p className="text-white/80 text-sm">Complete overview of sales, payments, and unpaid bills</p>
             </div>
           </div>
-          <div className="text-2xl font-bold">
-            {Math.round(stats.totalSalesAmount).toLocaleString("en-IN")}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {stats.totalBillsCount} bills total
-          </p>
+          <div className="absolute -right-8 -bottom-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10 blur-xl" />
         </div>
 
-        <div className="glass-metric" data-testid="card-paid-amount">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm font-medium text-muted-foreground">Paid Amount</span>
-            <div className="metric-icon-green">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-            {Math.round(stats.totalPaidAmount).toLocaleString("en-IN")}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {stats.paidBillsCount} paid bills
-          </p>
-        </div>
-
-        <div className="glass-metric" data-testid="card-unpaid-amount">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm font-medium text-muted-foreground">Unpaid Amount</span>
-            <div className="metric-icon-red">
-              <TrendingDown className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-            {Math.round(stats.totalUnpaidAmount).toLocaleString("en-IN")}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {stats.unpaidBillsCount} unpaid bills
-          </p>
-        </div>
-
-        <div className="glass-metric" data-testid="card-recovery-payments">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm font-medium text-muted-foreground">Recovery Payments</span>
-            <div className="metric-icon-purple">
-              <Wallet className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-            {Math.round(stats.totalRecoveryPayments).toLocaleString("en-IN")}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {stats.totalPaymentRecords} payment records
-          </p>
-        </div>
-
-        <div className="glass-metric" data-testid="card-returns">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm font-medium text-muted-foreground">Total Returns</span>
-            <div className="metric-icon-orange">
-              <RotateCcw className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-            {Math.round(stats.totalReturnsAmount).toLocaleString("en-IN")}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {stats.returnsCount} returns total
-          </p>
-        </div>
-      </div>
-
-      <div className="glass-toolbar">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center flex-1">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search customer name or phone..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 glass-input"
-                data-testid="input-search"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-auto glass-input"
-                data-testid="input-date-from"
-              />
-              <span className="text-muted-foreground">to</span>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-auto glass-input"
-                data-testid="input-date-to"
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {activeTab !== "recovery-payments" && (
-              <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-payment-status">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
-                  <SelectItem value="unpaid">Unpaid</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
-                <X className="h-4 w-4 mr-1" />
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="overview" data-testid="tab-overview">
-            <FileText className="h-4 w-4 mr-2" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="all-sales" data-testid="tab-all-sales">
-            <Receipt className="h-4 w-4 mr-2" />
-            All Sales ({filteredSales.length})
-          </TabsTrigger>
-          <TabsTrigger value="unpaid-bills" data-testid="tab-unpaid-bills">
-            <CreditCard className="h-4 w-4 mr-2" />
-            Unpaid Bills ({unpaidSales.length})
-          </TabsTrigger>
-          <TabsTrigger value="recovery-payments" data-testid="tab-recovery-payments">
-            <Wallet className="h-4 w-4 mr-2" />
-            Recovery ({filteredPayments.length})
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Customer Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Customers</span>
-                  <span className="font-semibold">{stats.uniqueCustomers}</span>
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all" data-testid="card-total-sales">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Sales</span>
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                  <Receipt className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Customers with Unpaid</span>
-                  <span className="font-semibold text-red-600 dark:text-red-400">
-                    {new Set(allSales.filter(s => s.paymentStatus !== "paid").map(s => s.customerPhone)).size}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Receipt className="h-5 w-5" />
-                  Bill Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Bills</span>
-                  <span className="font-semibold">{stats.totalBillsCount}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Paid Bills</span>
-                  <span className="font-semibold text-green-600 dark:text-green-400">{stats.paidBillsCount}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Unpaid Bills</span>
-                  <span className="font-semibold text-red-600 dark:text-red-400">{stats.unpaidBillsCount}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Wallet className="h-5 w-5" />
-                  Payment Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Collection Rate</span>
-                  <span className="font-semibold">
-                    {stats.totalSalesAmount > 0
-                      ? ((stats.totalPaidAmount / stats.totalSalesAmount) * 100).toFixed(1)
-                      : 0}%
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Avg Bill Amount</span>
-                  <span className="font-semibold">
-                    {stats.totalBillsCount > 0 ? (stats.totalSalesAmount / stats.totalBillsCount).toFixed(0) : 0}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Recent Unpaid Bills</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Bill Amount</TableHead>
-                    <TableHead>Paid</TableHead>
-                    <TableHead>Outstanding</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {unpaidSales.slice(0, 5).map((sale) => (
-                    <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`}>
-                      <TableCell className="font-medium">
-                        <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
-                          {sale.customerName}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{sale.customerPhone}</TableCell>
-                      <TableCell>{parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
-                      <TableCell className="text-green-600 dark:text-green-400">
-                        {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell className="text-red-600 dark:text-red-400 font-semibold">
-                        {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
-                      </TableCell>
-                      <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
-                      <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {unpaidSales.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        No unpaid bills found
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+              </div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
+                Rs. {Math.round(stats.totalSalesAmount).toLocaleString("en-IN")}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{stats.totalBillsCount} bills total</p>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        <TabsContent value="all-sales">
-          <Card>
-            <CardContent className="p-0">
+          <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all" data-testid="card-paid-amount">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Paid Amount</span>
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                  <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                Rs. {Math.round(stats.totalPaidAmount).toLocaleString("en-IN")}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{stats.paidBillsCount} paid bills</p>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all" data-testid="card-unpaid-amount">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Unpaid Amount</span>
+                <div className="p-2 bg-rose-100 dark:bg-rose-900/30 rounded-lg">
+                  <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                Rs. {Math.round(stats.totalUnpaidAmount).toLocaleString("en-IN")}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{stats.unpaidBillsCount} unpaid bills</p>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all" data-testid="card-recovery-payments">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Recovery</span>
+                <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                  <Wallet className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 tabular-nums">
+                Rs. {Math.round(stats.totalRecoveryPayments).toLocaleString("en-IN")}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{stats.totalPaymentRecords} records</p>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all" data-testid="card-returns">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Returns</span>
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                  <RotateCcw className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                </div>
+              </div>
+              <div className="text-2xl font-bold text-orange-600 dark:text-orange-400 tabular-nums">
+                Rs. {Math.round(stats.totalReturnsAmount).toLocaleString("en-IN")}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{stats.returnsCount} returns total</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Filters Card */}
+        <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm shadow-sm">
+          <CardContent className="p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center flex-1">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search customer name or phone..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-xl"
+                    data-testid="input-search"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-slate-400" />
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-auto border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-xl"
+                    data-testid="input-date-from"
+                  />
+                  <span className="text-slate-400">to</span>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-auto border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-xl"
+                    data-testid="input-date-to"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeTab !== "recovery-payments" && (
+                  <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                    <SelectTrigger className="w-[140px] border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-xl" data-testid="select-payment-status">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="partial">Partial</SelectItem>
+                      <SelectItem value="unpaid">Unpaid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                {hasActiveFilters && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={clearFilters} 
+                    data-testid="button-clear-filters"
+                    className="text-slate-600 dark:text-slate-400"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="grid w-full grid-cols-4 bg-slate-100 dark:bg-zinc-800 rounded-xl p-1">
+            <TabsTrigger 
+              value="overview" 
+              data-testid="tab-overview"
+              className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger 
+              value="all-sales" 
+              data-testid="tab-all-sales"
+              className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+            >
+              <Receipt className="h-4 w-4 mr-2" />
+              All Sales ({filteredSales.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="unpaid-bills" 
+              data-testid="tab-unpaid-bills"
+              className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+            >
+              <CreditCard className="h-4 w-4 mr-2" />
+              Unpaid ({unpaidSales.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="recovery-payments" 
+              data-testid="tab-recovery-payments"
+              className="rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+            >
+              <Wallet className="h-4 w-4 mr-2" />
+              Recovery ({filteredPayments.length})
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm">
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                      <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <h3 className="font-semibold text-slate-900 dark:text-white">Customer Summary</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 dark:text-slate-400">Total Customers</span>
+                      <span className="font-semibold text-slate-900 dark:text-white tabular-nums">{stats.uniqueCustomers}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 dark:text-slate-400">Customers with Unpaid</span>
+                      <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                        {new Set(allSales.filter(s => s.paymentStatus !== "paid").map(s => s.customerPhone)).size}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm">
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
+                      <Receipt className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <h3 className="font-semibold text-slate-900 dark:text-white">Bill Summary</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 dark:text-slate-400">Total Bills</span>
+                      <span className="font-semibold text-slate-900 dark:text-white tabular-nums">{stats.totalBillsCount}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 dark:text-slate-400">Paid Bills</span>
+                      <span className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.paidBillsCount}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 dark:text-slate-400">Unpaid Bills</span>
+                      <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">{stats.unpaidBillsCount}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm">
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                      <Wallet className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <h3 className="font-semibold text-slate-900 dark:text-white">Payment Summary</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 dark:text-slate-400">Collection Rate</span>
+                      <span className="font-semibold text-slate-900 dark:text-white tabular-nums">
+                        {stats.totalSalesAmount > 0
+                          ? ((stats.totalPaidAmount / stats.totalSalesAmount) * 100).toFixed(1)
+                          : 0}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 dark:text-slate-400">Avg Bill Amount</span>
+                      <span className="font-semibold text-slate-900 dark:text-white tabular-nums">
+                        Rs. {stats.totalBillsCount > 0 ? Math.round(stats.totalSalesAmount / stats.totalBillsCount).toLocaleString('en-IN') : 0}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recent Unpaid Bills */}
+            <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-100 dark:border-slate-700/50">
+                <h3 className="font-semibold text-slate-900 dark:text-white">Recent Unpaid Bills</h3>
+              </div>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-slate-50 dark:bg-zinc-900/50">
+                      <TableHead className="text-slate-600 dark:text-slate-400">Customer</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Phone</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Bill Amount</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Paid</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Outstanding</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Status</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {unpaidSales.slice(0, 5).map((sale) => (
+                      <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
+                        <TableCell className="font-medium">
+                          <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:text-blue-700 hover:underline">
+                            {sale.customerName}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400">{sale.customerPhone}</TableCell>
+                        <TableCell className="tabular-nums text-slate-900 dark:text-white">Rs. {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          Rs. {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                          Rs. {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400">{formatDisplayDate(sale.createdAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {unpaidSales.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-slate-500 dark:text-slate-400 py-12">
+                          No unpaid bills found
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </Card>
+          </TabsContent>
+
+          {/* All Sales Tab */}
+          <TabsContent value="all-sales">
+            <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 dark:bg-zinc-900/50">
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Customer <SortIcon field="customer" />
                         </Button>
                       </TableHead>
-                      <TableHead>Phone</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Phone</TableHead>
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Amount <SortIcon field="amount" />
                         </Button>
                       </TableHead>
-                      <TableHead>Paid</TableHead>
-                      <TableHead>Outstanding</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Paid</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Outstanding</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Status</TableHead>
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Date <SortIcon field="date" />
                         </Button>
                       </TableHead>
@@ -739,27 +786,27 @@ export default function Reports() {
                   </TableHeader>
                   <TableBody>
                     {visibleSales.map((sale) => (
-                      <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`}>
+                      <TableRow key={sale.id} data-testid={`row-sale-${sale.id}`} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
                         <TableCell className="font-medium">
-                          <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
+                          <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:text-blue-700 hover:underline">
                             {sale.customerName}
                           </Link>
                         </TableCell>
-                        <TableCell>{sale.customerPhone}</TableCell>
-                        <TableCell>{parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-green-600 dark:text-green-400">
-                          {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                        <TableCell className="text-slate-600 dark:text-slate-400">{sale.customerPhone}</TableCell>
+                        <TableCell className="tabular-nums text-slate-900 dark:text-white">Rs. {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          Rs. {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
                         </TableCell>
-                        <TableCell className="text-red-600 dark:text-red-400">
-                          {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                        <TableCell className="text-rose-600 dark:text-rose-400 tabular-nums">
+                          Rs. {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
-                        <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400">{formatDisplayDate(sale.createdAt)}</TableCell>
                       </TableRow>
                     ))}
                     {filteredSales.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-slate-500 dark:text-slate-400 py-12">
                           No sales found matching your filters
                         </TableCell>
                       </TableRow>
@@ -767,7 +814,6 @@ export default function Reports() {
                   </TableBody>
                 </Table>
                 
-                {/* Load More Button */}
                 {filteredSales.length > visibleLimit && (
                   <div className="flex justify-center py-4">
                     <Button
@@ -775,6 +821,7 @@ export default function Reports() {
                       size="sm"
                       onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
                       data-testid="button-load-more-sales-reports"
+                      className="border-slate-200 dark:border-slate-700"
                     >
                       Load More ({filteredSales.length - visibleLimit} remaining)
                     </Button>
@@ -782,34 +829,33 @@ export default function Reports() {
                 )}
               </div>
               <TableSummary tab="all-sales" />
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </Card>
+          </TabsContent>
 
-        <TabsContent value="unpaid-bills">
-          <Card>
-            <CardContent className="p-0">
+          {/* Unpaid Bills Tab */}
+          <TabsContent value="unpaid-bills">
+            <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-slate-50 dark:bg-zinc-900/50">
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Customer <SortIcon field="customer" />
                         </Button>
                       </TableHead>
-                      <TableHead>Phone</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Phone</TableHead>
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Bill Amount <SortIcon field="amount" />
                         </Button>
                       </TableHead>
-                      <TableHead>Paid</TableHead>
-                      <TableHead>Outstanding</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Due Date</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Paid</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Outstanding</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Status</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Due Date</TableHead>
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Bill Date <SortIcon field="date" />
                         </Button>
                       </TableHead>
@@ -817,28 +863,28 @@ export default function Reports() {
                   </TableHeader>
                   <TableBody>
                     {unpaidSales.map((sale) => (
-                      <TableRow key={sale.id} data-testid={`row-unpaid-${sale.id}`}>
+                      <TableRow key={sale.id} data-testid={`row-unpaid-${sale.id}`} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
                         <TableCell className="font-medium">
-                          <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:underline">
+                          <Link href={`/customer/${encodeURIComponent(sale.customerPhone)}`} className="text-blue-600 hover:text-blue-700 hover:underline">
                             {sale.customerName}
                           </Link>
                         </TableCell>
-                        <TableCell>{sale.customerPhone}</TableCell>
-                        <TableCell>{parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-green-600 dark:text-green-400">
-                          {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
+                        <TableCell className="text-slate-600 dark:text-slate-400">{sale.customerPhone}</TableCell>
+                        <TableCell className="tabular-nums text-slate-900 dark:text-white">Rs. {parseFloat(sale.totalAmount).toLocaleString("en-IN")}</TableCell>
+                        <TableCell className="text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          Rs. {parseFloat(sale.amountPaid).toLocaleString("en-IN")}
                         </TableCell>
-                        <TableCell className="text-red-600 dark:text-red-400 font-semibold">
-                          {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
+                        <TableCell className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                          Rs. {(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid)).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell>{getPaymentStatusBadge(sale.paymentStatus)}</TableCell>
-                        <TableCell>{sale.dueDate ? formatDisplayDate(sale.dueDate) : "Not set"}</TableCell>
-                        <TableCell>{formatDisplayDate(sale.createdAt)}</TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400">{sale.dueDate ? formatDisplayDate(sale.dueDate) : "Not set"}</TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400">{formatDisplayDate(sale.createdAt)}</TableCell>
                       </TableRow>
                     ))}
                     {unpaidSales.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={8} className="text-center text-slate-500 dark:text-slate-400 py-12">
                           No unpaid bills found matching your filters
                         </TableCell>
                       </TableRow>
@@ -847,71 +893,70 @@ export default function Reports() {
                 </Table>
               </div>
               <TableSummary tab="unpaid-bills" />
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </Card>
+          </TabsContent>
 
-        <TabsContent value="recovery-payments">
-          <Card>
-            <CardContent className="p-0">
+          {/* Recovery Payments Tab */}
+          <TabsContent value="recovery-payments">
+            <Card className="rounded-2xl border border-slate-100 dark:border-slate-700/50 bg-white/80 dark:bg-zinc-800/80 backdrop-blur-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-slate-50 dark:bg-zinc-900/50">
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Customer <SortIcon field="customer" />
                         </Button>
                       </TableHead>
-                      <TableHead>Phone</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Phone</TableHead>
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center">
-                          Payment Amount <SortIcon field="amount" />
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("amount")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                          Payment <SortIcon field="amount" />
                         </Button>
                       </TableHead>
-                      <TableHead>Previous Balance</TableHead>
-                      <TableHead>New Balance</TableHead>
-                      <TableHead>Method</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Previous Balance</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">New Balance</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Method</TableHead>
                       <TableHead>
-                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                           Date <SortIcon field="date" />
                         </Button>
                       </TableHead>
-                      <TableHead>Notes</TableHead>
+                      <TableHead className="text-slate-600 dark:text-slate-400">Notes</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {visiblePayments.map((payment) => (
-                      <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`}>
+                      <TableRow key={payment.id} data-testid={`row-payment-${payment.id}`} className="hover:bg-slate-50 dark:hover:bg-zinc-900/50">
                         <TableCell className="font-medium">
-                          <Link href={`/customer/${encodeURIComponent(payment.customerPhone)}`} className="text-blue-600 hover:underline">
+                          <Link href={`/customer/${encodeURIComponent(payment.customerPhone)}`} className="text-blue-600 hover:text-blue-700 hover:underline">
                             {payment.sale?.customerName || "Unknown"}
                           </Link>
                         </TableCell>
-                        <TableCell>{payment.customerPhone}</TableCell>
-                        <TableCell className="text-green-600 dark:text-green-400 font-semibold">
-                          {parseFloat(payment.amount).toLocaleString("en-IN")}
+                        <TableCell className="text-slate-600 dark:text-slate-400">{payment.customerPhone}</TableCell>
+                        <TableCell className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                          Rs. {parseFloat(payment.amount).toLocaleString("en-IN")}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {parseFloat(payment.previousBalance).toLocaleString("en-IN")}
+                        <TableCell className="text-slate-500 dark:text-slate-400 tabular-nums">
+                          Rs. {parseFloat(payment.previousBalance).toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="tabular-nums text-slate-900 dark:text-white">
+                          Rs. {parseFloat(payment.newBalance).toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell>
-                          {parseFloat(payment.newBalance).toLocaleString("en-IN")}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="capitalize">
+                          <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-0 capitalize">
                             {payment.paymentMethod || "cash"}
                           </Badge>
                         </TableCell>
-                        <TableCell>{formatDisplayDate(payment.createdAt)}</TableCell>
-                        <TableCell className="max-w-[200px] truncate">
+                        <TableCell className="text-slate-600 dark:text-slate-400">{formatDisplayDate(payment.createdAt)}</TableCell>
+                        <TableCell className="max-w-[200px] truncate text-slate-500 dark:text-slate-400">
                           {payment.notes || "-"}
                         </TableCell>
                       </TableRow>
                     ))}
                     {filteredPayments.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={8} className="text-center text-slate-500 dark:text-slate-400 py-12">
                           No recovery payments found matching your filters
                         </TableCell>
                       </TableRow>
@@ -919,7 +964,6 @@ export default function Reports() {
                   </TableBody>
                 </Table>
                 
-                {/* Load More Button */}
                 {filteredPayments.length > visibleLimit && (
                   <div className="flex justify-center py-4">
                     <Button
@@ -927,6 +971,7 @@ export default function Reports() {
                       size="sm"
                       onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
                       data-testid="button-load-more-payments-reports"
+                      className="border-slate-200 dark:border-slate-700"
                     >
                       Load More ({filteredPayments.length - visibleLimit} remaining)
                     </Button>
@@ -934,10 +979,10 @@ export default function Reports() {
                 )}
               </div>
               <TableSummary tab="recovery-payments" />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }
