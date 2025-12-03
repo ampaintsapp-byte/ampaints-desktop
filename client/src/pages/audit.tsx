@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-// audit.tsx - COMPLETE VERSION WITH ALL TABS IMPLEMENTED
+// audit.tsx - COMPLETE VERSION WITH STOCK OUT DISABLED
 import { useState, useMemo, useEffect } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { useDebounce } from "@/hooks/use-debounce"
@@ -122,42 +122,6 @@ interface UnifiedTransaction {
   newBalance?: number
 }
 
-// Helper function to format phone number for WhatsApp
-function formatPhoneForWhatsApp(phone: string): string | null {
-  if (!phone) return null
-
-  // Remove all non-digit characters
-  const cleaned = phone.replace(/\D/g, "")
-
-  // Check if it's a valid Indian phone number (10 digits)
-  if (cleaned.length === 10) {
-    return `91${cleaned}`
-  }
-
-  // Check if it's already in international format
-  if (cleaned.length === 12 && cleaned.startsWith("91")) {
-    return cleaned
-  }
-
-  return null
-}
-
-// Helper function to generate statement PDF blob
-function generateStatementPDFBlob(customer: ConsolidatedCustomer): Blob {
-  const pdf = new jsPDF()
-
-  // Add basic statement content
-  pdf.text(`Statement for ${customer.customerName}`, 20, 20)
-  pdf.text(`Phone: ${customer.customerPhone}`, 20, 30)
-  pdf.text(`Total Amount: Rs. ${Math.round(customer.totalAmount).toLocaleString()}`, 20, 40)
-  pdf.text(`Total Paid: Rs. ${Math.round(customer.totalPaid).toLocaleString()}`, 20, 50)
-  pdf.text(`Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`, 20, 60)
-
-  // Convert to blob
-  const pdfBlob = pdf.output("blob")
-  return pdfBlob
-}
-
 // Utility function to safely parse numbers
 const safeParseFloat = (value: string | number | null | undefined): number => {
   if (value === null || value === undefined) return 0
@@ -256,7 +220,7 @@ export default function Audit() {
   const [lastExportCounts, setLastExportCounts] = useState<any>(null)
   const [lastImportCounts, setLastImportCounts] = useState<any>(null)
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false)
-  const [syncInterval, setSyncInterval] = useState(5) // seconds for real-time sync
+  const [syncInterval, setSyncInterval] = useState(5)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
   const [pendingChanges, setPendingChanges] = useState(0)
 
@@ -280,12 +244,10 @@ export default function Audit() {
     enabled: isVerified,
   })
 
-  // Fixed stock out query with proper authentication
-  const { data: stockOutHistory = [], isLoading: stockOutLoading } = useQuery<StockOutItem[]>({
-    queryKey: ["/api/audit/stock-out", auditToken],
-    enabled: isVerified && !!auditToken,
-    queryFn: () => authenticatedRequest("/api/audit/stock-out"),
-  })
+  // STOCK OUT HISTORY DISABLED - EMPTY ARRAY
+  // Database issues ki wajah se hum stock out data use nahi kar rahe
+  const stockOutHistory: StockOutItem[] = []
+  const stockOutLoading = false
 
   const { data: allSales = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -297,25 +259,35 @@ export default function Audit() {
     enabled: isVerified,
   })
 
-  // Fixed unpaid bills query with proper authentication
+  // Unpaid bills query - simplified version
   const { data: unpaidBills = [], isLoading: unpaidLoading } = useQuery<Sale[]>({
-    queryKey: ["/api/audit/unpaid-bills", auditToken],
-    enabled: isVerified && !!auditToken,
-    queryFn: () => authenticatedRequest("/api/audit/unpaid-bills"),
+    queryKey: ["/api/audit/unpaid-bills"],
+    enabled: isVerified,
+    queryFn: async () => {
+      try {
+        const response = await fetch("/api/audit/unpaid-bills")
+        if (!response.ok) {
+          console.error("Unpaid bills fetch failed:", response.status)
+          return []
+        }
+        return response.json()
+      } catch (error) {
+        console.error("Unpaid bills error:", error)
+        return []
+      }
+    },
   })
 
-  // Fixed payments query with proper authentication
+  // Payments query - simplified version
   const { data: auditPayments = [], isLoading: auditPaymentsLoading } = useQuery<PaymentHistoryWithSale[]>({
-    queryKey: ["/api/audit/payments", auditToken],
-    enabled: isVerified && !!auditToken,
-    queryFn: () => authenticatedRequest("/api/audit/payments"),
+    queryKey: ["/api/payment-history"],
+    enabled: isVerified,
   })
 
-  // Fixed returns query with proper authentication
+  // Returns query - simplified version
   const { data: auditReturns = [], isLoading: returnsLoading } = useQuery<Return[]>({
-    queryKey: ["/api/audit/returns", auditToken],
-    enabled: isVerified && !!auditToken,
-    queryFn: () => authenticatedRequest("/api/audit/returns"),
+    queryKey: ["/api/returns"],
+    enabled: isVerified,
   })
 
   const { data: appSettings } = useQuery<AppSettings>({
@@ -418,7 +390,7 @@ export default function Audit() {
     },
   })
 
-  // Cloud Sync Functions - Fixed with proper authentication and error handling
+  // Cloud Sync Functions
   const handleTestConnection = async () => {
     if (!cloudUrl.trim()) {
       toast({
@@ -443,10 +415,13 @@ export default function Audit() {
 
     setCloudConnectionStatus("testing")
     try {
-      const data = await authenticatedRequest("/api/cloud/test-connection", {
+      const response = await fetch("/api/cloud/test-connection", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectionUrl: cloudUrl }),
       })
+      
+      const data = await response.json()
 
       if (data.ok) {
         setCloudConnectionStatus("success")
@@ -461,56 +436,14 @@ export default function Audit() {
           description: data.error || "Could not connect to cloud database.",
           variant: "destructive",
         })
-        console.log("[v0] Connection error details:", data.details)
       }
     } catch (error: any) {
       setCloudConnectionStatus("error")
-      console.log("[v0] Connection error:", error)
       toast({
         title: "Connection Failed",
         description: error.message || "Could not connect to cloud database.",
         variant: "destructive",
       })
-    }
-  }
-
-  const handleSaveCloudSettings = async (silent = false) => {
-    if (!cloudUrl.trim()) {
-      if (!silent) {
-        toast({
-          title: "Connection URL Required",
-          description: "Please enter a PostgreSQL connection URL first.",
-          variant: "destructive",
-        })
-      }
-      return
-    }
-
-    try {
-      const data = await authenticatedRequest("/api/cloud/save-settings", {
-        method: "POST",
-        body: JSON.stringify({
-          connectionUrl: cloudUrl,
-          syncEnabled: true,
-          cloudSyncEnabled: autoSyncEnabled,
-        }),
-      })
-
-      if (data.ok && !silent) {
-        toast({
-          title: "Settings Saved",
-          description: "Cloud database settings saved successfully.",
-        })
-        queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
-      }
-    } catch (error: any) {
-      if (!silent) {
-        toast({
-          title: "Failed to Save",
-          description: error.message || "Could not save cloud settings.",
-          variant: "destructive",
-        })
-      }
     }
   }
 
@@ -526,14 +459,15 @@ export default function Audit() {
       return
     }
 
-    // First save settings if not already saved (silently for auto-sync)
-    await handleSaveCloudSettings(silent)
-
     if (!silent) setCloudSyncStatus("exporting")
     try {
-      const data = await authenticatedRequest("/api/cloud/export", {
+      const response = await fetch("/api/cloud/export", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionUrl: cloudUrl }),
       })
+      
+      const data = await response.json()
 
       if (data.ok) {
         setLastExportCounts(data.counts)
@@ -542,7 +476,6 @@ export default function Audit() {
             title: "Export Successful",
             description: `Exported ${data.counts.products} products, ${data.counts.colors} colors, ${data.counts.sales} sales to cloud.`,
           })
-          queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
         }
       } else if (!silent) {
         toast({
@@ -552,12 +485,10 @@ export default function Audit() {
         })
       }
     } catch (error: any) {
-      console.error("Export error:", error)
       if (!silent) {
         toast({
           title: "Export Failed",
-          description:
-            error.message || "Could not export to cloud database. Please check your connection URL and try again.",
+          description: error.message || "Could not export to cloud database.",
           variant: "destructive",
         })
       }
@@ -576,14 +507,15 @@ export default function Audit() {
       return
     }
 
-    // First save settings if not already saved
-    await handleSaveCloudSettings()
-
     setCloudSyncStatus("importing")
     try {
-      const data = await authenticatedRequest("/api/cloud/import", {
+      const response = await fetch("/api/cloud/import", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionUrl: cloudUrl }),
       })
+      
+      const data = await response.json()
 
       if (data.ok) {
         setLastImportCounts(data.counts)
@@ -604,11 +536,9 @@ export default function Audit() {
         })
       }
     } catch (error: any) {
-      console.error("Import error:", error)
       toast({
         title: "Import Failed",
-        description:
-          error.message || "Could not import from cloud database. Please check your connection URL and try again.",
+        description: error.message || "Could not import from cloud database.",
         variant: "destructive",
       })
     } finally {
@@ -619,7 +549,6 @@ export default function Audit() {
   // Auto-sync functions
   const toggleAutoSync = async (enabled: boolean) => {
     setAutoSyncEnabled(enabled)
-    await handleSaveCloudSettings(true) // Silent save - no toast
 
     if (enabled) {
       toast({
@@ -633,33 +562,6 @@ export default function Audit() {
       })
     }
   }
-
-  const startAutoSync = () => {
-    if (!autoSyncEnabled || cloudConnectionStatus !== "success" || !cloudUrl.trim() || !isVerified || !auditToken) {
-      return
-    }
-
-    // Real-time sync with short interval (silent mode - no alerts)
-    const intervalId = setInterval(
-      async () => {
-        try {
-          await handleExportToCloud(true) // Silent mode - no toast notifications
-          setLastSyncTime(new Date())
-          setPendingChanges(0)
-        } catch (error) {
-          console.error("[Real-Time Sync] Error:", error)
-        }
-      },
-      syncInterval * 1000, // Convert seconds to milliseconds
-    )
-
-    return () => clearInterval(intervalId)
-  }
-
-  useEffect(() => {
-    const cleanup = startAutoSync()
-    return cleanup
-  }, [autoSyncEnabled, syncInterval, cloudConnectionStatus, cloudUrl, isVerified, auditToken])
 
   useEffect(() => {
     const storedToken = sessionStorage.getItem("auditToken")
@@ -746,6 +648,7 @@ export default function Audit() {
     return products.filter((p) => p.company === companyFilter)
   }, [products, companyFilter])
 
+  // STOCK MOVEMENTS - ONLY STOCK IN (Stock out disabled)
   const stockMovements = useMemo(() => {
     const movements: {
       id: string
@@ -764,6 +667,7 @@ export default function Audit() {
       notes?: string
     }[] = []
 
+    // Only stock in history (stock out disabled)
     stockInHistory.forEach((record) => {
       movements.push({
         id: record.id,
@@ -782,24 +686,11 @@ export default function Audit() {
       })
     })
 
-    stockOutHistory.forEach((record) => {
-      movements.push({
-        id: record.id,
-        date: new Date(record.soldAt),
-        type: "OUT",
-        company: record.color?.variant?.product?.company || "-",
-        product: record.color?.variant?.product?.productName || "-",
-        variant: record.color?.variant?.packingSize || "-",
-        colorCode: record.color?.colorCode || "-",
-        colorName: record.color?.colorName || "-",
-        quantity: record.quantity,
-        reference: `Bill #${record.saleId.slice(0, 8).toUpperCase()}`,
-        customer: record.customerName,
-      })
-    })
+    // Stock out DISABLED - no data added
+    // stockOutHistory.forEach((record) => { ... })
 
     return movements.sort((a, b) => b.date.getTime() - a.date.getTime())
-  }, [stockInHistory, stockOutHistory])
+  }, [stockInHistory]) // Only stockInHistory dependency
 
   const filteredStockMovements = useMemo(() => {
     let filtered = [...stockMovements]
@@ -881,12 +772,13 @@ export default function Audit() {
     return filteredSales.slice(0, visibleLimit)
   }, [filteredSales, visibleLimit])
 
+  // STOCK SUMMARY - WITHOUT STOCK OUT
   const stockSummary = useMemo(() => {
     const totalIn = stockInHistory.reduce((acc, r) => acc + r.quantity, 0)
-    const totalOut = stockOutHistory.reduce((acc, r) => acc + r.quantity, 0)
+    const totalOut = 0 // Stock out disabled
     const currentStock = colors.reduce((acc, c) => acc + c.stockQuantity, 0)
     return { totalIn, totalOut, currentStock }
-  }, [stockInHistory, stockOutHistory, colors])
+  }, [stockInHistory, colors]) // Stock out removed
 
   const salesSummary = useMemo(() => {
     const totalSales = allSales.reduce((acc, s) => acc + safeParseFloat(s.totalAmount), 0)
@@ -1023,7 +915,7 @@ export default function Audit() {
     pdf.setFont("helvetica", "bold")
     pdf.text(receiptSettings.businessName, pageWidth / 2, 10, { align: "center" })
     pdf.setFontSize(12)
-    pdf.text("STOCK AUDIT REPORT", pageWidth / 2, 18, { align: "center" })
+    pdf.text("STOCK AUDIT REPORT (Stock In Only)", pageWidth / 2, 18, { align: "center" })
 
     pdf.setTextColor(0, 0, 0)
     yPos = 35
@@ -1050,7 +942,7 @@ export default function Audit() {
     pdf.rect(margin, yPos, pageWidth - 2 * margin, 8, "F")
     pdf.setTextColor(255, 255, 255)
     pdf.setFontSize(8)
-    const headers = ["Date", "Type", "Company", "Product", "Size", "Color", "Qty", "Reference", "Customer"]
+    const headers = ["Date", "Type", "Company", "Product", "Size", "Color", "Qty", "Reference", "Notes"]
     const colWidths = [25, 15, 35, 35, 25, 40, 15, 45, 40]
     let xPos = margin + 2
     headers.forEach((header, i) => {
@@ -1075,11 +967,7 @@ export default function Audit() {
       pdf.text(formatDateShort(m.date), xPos, yPos + 4)
       xPos += colWidths[0]
 
-      if (m.type === "IN") {
-        pdf.setTextColor(34, 197, 94)
-      } else {
-        pdf.setTextColor(239, 68, 68)
-      }
+      pdf.setTextColor(34, 197, 94)
       pdf.text(m.type, xPos, yPos + 4)
       xPos += colWidths[1]
       pdf.setTextColor(0, 0, 0)
@@ -1092,11 +980,11 @@ export default function Audit() {
       xPos += colWidths[4]
       pdf.text(`${m.colorCode} - ${m.colorName}`.substring(0, 20), xPos, yPos + 4)
       xPos += colWidths[5]
-      pdf.text(m.type === "IN" ? `+${m.quantity}` : `-${m.quantity}`, xPos, yPos + 4)
+      pdf.text(`+${m.quantity}`, xPos, yPos + 4)
       xPos += colWidths[6]
       pdf.text(m.reference.substring(0, 22), xPos, yPos + 4)
       xPos += colWidths[7]
-      pdf.text((m.customer || "-").substring(0, 18), xPos, yPos + 4)
+      pdf.text((m.notes || "-").substring(0, 18), xPos, yPos + 4)
       yPos += 6
     }
 
@@ -1527,12 +1415,12 @@ export default function Audit() {
   const isLoading =
     colorsLoading ||
     stockInLoading ||
-    stockOutLoading ||
     salesLoading ||
     paymentsLoading ||
     unpaidLoading ||
     auditPaymentsLoading ||
     returnsLoading
+  // stockOutLoading removed
 
   return (
     <div className="glass-page flex flex-col h-full overflow-hidden">
@@ -1541,6 +1429,11 @@ export default function Audit() {
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-primary" />
             <h1 className="text-2xl font-bold">Audit Reports</h1>
+            {stockOutHistory.length === 0 && (
+              <Badge variant="outline" className="ml-2 text-xs bg-yellow-50 text-yellow-700">
+                Stock Out Disabled
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -1596,7 +1489,7 @@ export default function Audit() {
               data-testid="menu-stock-audit"
             >
               <Package className="h-4 w-4" />
-              Stock
+              Stock In
             </button>
             <button
               onClick={() => setActiveTab("sales")}
@@ -1665,7 +1558,7 @@ export default function Audit() {
       <div className="flex-1 overflow-hidden mt-4">
         {/* Main Content Area */}
         <div className="h-full overflow-hidden">
-          {/* STOCK AUDIT CONTENT */}
+          {/* STOCK AUDIT CONTENT (STOCK IN ONLY) */}
           {activeTab === "stock" && (
             <div className="h-full overflow-auto p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1690,7 +1583,7 @@ export default function Audit() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{stockSummary.totalOut}</div>
-                <p className="text-xs text-muted-foreground">Units sold</p>
+                <p className="text-xs text-muted-foreground">Units sold (disabled)</p>
               </CardContent>
             </Card>
             <Card>
@@ -1724,7 +1617,10 @@ export default function Audit() {
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Package className="h-5 w-5" />
-                  Stock Movement History
+                  Stock In History Only
+                  <Badge variant="outline" className="ml-2 text-xs bg-yellow-50 text-yellow-700">
+                    Stock Out Disabled
+                  </Badge>
                 </div>
                 <div className="flex items-center gap-2">
                   <Select value={companyFilter} onValueChange={setCompanyFilter}>
@@ -1760,7 +1656,7 @@ export default function Audit() {
                     <SelectContent>
                       <SelectItem value="all">All Types</SelectItem>
                       <SelectItem value="IN">Stock In</SelectItem>
-                      <SelectItem value="OUT">Stock Out</SelectItem>
+                      {/* Stock Out option removed */}
                     </SelectContent>
                   </Select>
                   <Button onClick={downloadStockAuditPDF} className="flex items-center gap-2">
@@ -1790,14 +1686,14 @@ export default function Audit() {
                         <TableHead>Color</TableHead>
                         <TableHead>Quantity</TableHead>
                         <TableHead>Reference</TableHead>
-                        <TableHead>Customer</TableHead>
+                        <TableHead>Notes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredStockMovements.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                            No stock movements found for the selected filters.
+                            No stock in records found for the selected filters.
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -1806,14 +1702,10 @@ export default function Audit() {
                             <TableCell className="font-medium">{formatDateShort(movement.date)}</TableCell>
                             <TableCell>
                               <Badge
-                                variant={movement.type === "IN" ? "default" : "destructive"}
-                                className="flex items-center gap-1 w-16 justify-center"
+                                variant="default"
+                                className="flex items-center gap-1 w-16 justify-center bg-green-100 text-green-700 border-green-200"
                               >
-                                {movement.type === "IN" ? (
-                                  <ArrowUp className="h-3 w-3" />
-                                ) : (
-                                  <ArrowDown className="h-3 w-3" />
-                                )}
+                                <ArrowUp className="h-3 w-3" />
                                 {movement.type}
                               </Badge>
                             </TableCell>
@@ -1837,15 +1729,12 @@ export default function Audit() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div
-                                className={`flex items-center gap-1 ${movement.type === "IN" ? "text-green-600" : "text-red-600"}`}
-                              >
-                                {movement.type === "IN" ? "+" : "-"}
-                                {movement.quantity}
+                              <div className="flex items-center gap-1 text-green-600">
+                                +{movement.quantity}
                               </div>
                             </TableCell>
                             <TableCell className="text-sm">{movement.reference}</TableCell>
-                            <TableCell>{movement.customer || "-"}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{movement.notes || "-"}</TableCell>
                           </TableRow>
                         ))
                       )}
@@ -2717,20 +2606,6 @@ export default function Audit() {
                               data-testid="switch-perm-stock-delete"
                             />
                           </div>
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                                Delete Stock History
-                              </Label>
-                              <p className="text-xs text-muted-foreground">Allow deleting stock in/out history</p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permStockHistoryDelete ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permStockHistoryDelete", checked)}
-                              data-testid="switch-perm-stock-history-delete"
-                            />
-                          </div>
                         </div>
                       </div>
 
@@ -2803,31 +2678,6 @@ export default function Audit() {
                               checked={appSettings?.permPaymentDelete ?? true}
                               onCheckedChange={(checked) => handlePermissionChange("permPaymentDelete", checked)}
                               data-testid="switch-perm-payment-delete"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 className="font-medium flex items-center gap-2 mb-3">
-                          <Database className="h-4 w-4" />
-                          System Access
-                        </h4>
-                        <div className="space-y-3 pl-6">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                <Database className="h-4 w-4 text-purple-500" />
-                                Database Access
-                              </Label>
-                              <p className="text-xs text-muted-foreground">
-                                Access database tab in settings (requires PIN)
-                              </p>
-                            </div>
-                            <Switch
-                              checked={appSettings?.permDatabaseAccess ?? true}
-                              onCheckedChange={(checked) => handlePermissionChange("permDatabaseAccess", checked)}
-                              data-testid="switch-perm-database-access"
                             />
                           </div>
                         </div>
@@ -2952,51 +2802,6 @@ export default function Audit() {
                             disabled={cloudConnectionStatus !== "success"}
                           />
                         </div>
-
-                        {autoSyncEnabled && (
-                          <div className="mt-3 space-y-3">
-                            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                              <div className="flex items-center justify-between mb-2">
-                                <Label className="flex items-center gap-2 text-green-700 dark:text-green-400">
-                                  <Check className="h-4 w-4" />
-                                  Sync Active
-                                </Label>
-                                {lastSyncTime && (
-                                  <span className="text-xs text-muted-foreground">
-                                    Last: {lastSyncTime.toLocaleTimeString()}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-green-600 dark:text-green-400">
-                                Changes sync to cloud automatically every {syncInterval} seconds
-                              </p>
-                            </div>
-
-                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                              <Label htmlFor="syncInterval" className="flex items-center gap-2 mb-2">
-                                <RefreshCw className="h-4 w-4" />
-                                Sync Speed (Seconds)
-                              </Label>
-                              <div className="flex items-center gap-3">
-                                <Input
-                                  id="syncInterval"
-                                  type="number"
-                                  min="3"
-                                  max="30"
-                                  value={syncInterval}
-                                  onChange={(e) => setSyncInterval(Math.max(3, Math.min(30, Number(e.target.value))))}
-                                  className="w-20"
-                                />
-                                <span className="text-sm text-muted-foreground">
-                                  seconds
-                                </span>
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Lower = faster sync, Higher = less network usage (3-30 sec)
-                              </p>
-                            </div>
-                          </div>
-                        )}
                       </div>
 
                       <div className="border-t pt-4">
@@ -3047,103 +2852,7 @@ export default function Audit() {
                             <strong>Import:</strong> Downloads cloud data to local (overwrites local data)
                           </p>
                         </div>
-
-                        {/* Add provider detection in the UI to show which provider is connected */}
-                        {appSettings?.lastSyncTime && (
-                          <div className="mt-3 p-2 bg-gray-50 dark:bg-gray-900/50 rounded text-xs text-muted-foreground">
-                            <p>Last Sync: {format(new Date(appSettings.lastSyncTime), "dd/MM/yyyy HH:mm:ss")}</p>
-                            {cloudConnectionStatus === "success" && cloudUrl && (
-                              <p className="mt-1 text-green-600 dark:text-green-400">
-                                Connected to: {cloudUrl.includes("supabase") ? "Supabase" : "Neon"}
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        {cloudSyncStatus !== "idle" && (
-                          <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-800">
-                            <div className="flex items-center gap-2">
-                              <Loader2 className="h-4 w-4 animate-spin text-yellow-600" />
-                              <span className="text-sm text-yellow-700 dark:text-yellow-300">
-                                {cloudSyncStatus === "exporting" ? "Exporting data..." : "Importing data..."}
-                              </span>
-                            </div>
-                          </div>
-                        )}
                       </div>
-
-                      {/* Enhanced sync results display */}
-                      {(lastExportCounts || lastImportCounts) && (
-                        <div className="border-t pt-4 space-y-3">
-                          <h4 className="font-medium text-sm">Sync Results</h4>
-
-                          {lastExportCounts && (
-                            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
-                              <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2">
-                                Last Export
-                              </p>
-                              <div className="grid grid-cols-2 gap-2 text-xs">
-                                <span>
-                                  Products: <strong>{lastExportCounts.products}</strong>
-                                </span>
-                                <span>
-                                  Variants: <strong>{lastExportCounts.variants}</strong>
-                                </span>
-                                <span>
-                                  Colors: <strong>{lastExportCounts.colors}</strong>
-                                </span>
-                                <span>
-                                  Sales: <strong>{lastExportCounts.sales}</strong>
-                                </span>
-                                <span>
-                                  Items: <strong>{lastExportCounts.saleItems}</strong>
-                                </span>
-                                <span>
-                                  Payments: <strong>{lastExportCounts.paymentHistory}</strong>
-                                </span>
-                                <span>
-                                  Returns: <strong>{lastExportCounts.returns}</strong>
-                                </span>
-                                <span>
-                                  Stock Moves: <strong>{lastExportCounts.stockInHistory}</strong>
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {lastImportCounts && (
-                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
-                              <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-2">Last Import</p>
-                              <div className="grid grid-cols-2 gap-2 text-xs">
-                                <span>
-                                  Products: <strong>{lastImportCounts.products}</strong>
-                                </span>
-                                <span>
-                                  Variants: <strong>{lastImportCounts.variants}</strong>
-                                </span>
-                                <span>
-                                  Colors: <strong>{lastImportCounts.colors}</strong>
-                                </span>
-                                <span>
-                                  Sales: <strong>{lastImportCounts.sales}</strong>
-                                </span>
-                                <span>
-                                  Items: <strong>{lastImportCounts.saleItems}</strong>
-                                </span>
-                                <span>
-                                  Payments: <strong>{lastImportCounts.paymentHistory}</strong>
-                                </span>
-                                <span>
-                                  Returns: <strong>{lastImportCounts.returns}</strong>
-                                </span>
-                                <span>
-                                  Stock Moves: <strong>{lastImportCounts.stockInHistory}</strong>
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -3207,24 +2916,6 @@ export default function Audit() {
                           <Database className="h-4 w-4" />
                           Backup Database
                         </Button>
-                      </div>
-                    </div>
-
-                    <div className="border-t pt-4">
-                      <h4 className="font-medium mb-3">Audit Session</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Session Started:</span>
-                          <span>{formatDateShort(new Date())}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Token Expires:</span>
-                          <span>24 hours</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Access Level:</span>
-                          <Badge variant="default">Full Audit Access</Badge>
-                        </div>
                       </div>
                     </div>
                   </CardContent>
