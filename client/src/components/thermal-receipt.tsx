@@ -12,8 +12,6 @@ interface ThermalReceiptProps {
     itemFontSize?: string;
     padding?: string;
   };
-  customerNameOverride?: string;
-  customerPhoneOverride?: string;
 }
 
 function formatDate(dateStr: string | Date) {
@@ -21,17 +19,13 @@ function formatDate(dateStr: string | Date) {
   return d.toLocaleDateString("en-GB");
 }
 
-export default function ThermalReceipt({ sale, receiptSettings, customerNameOverride, customerPhoneOverride }: ThermalReceiptProps) {
+export default function ThermalReceipt({ sale, receiptSettings }: ThermalReceiptProps) {
   const outstanding = Math.round(parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid));
   
   // Default values
   const fontSize = receiptSettings.fontSize || '11px';
   const itemFontSize = receiptSettings.itemFontSize || '12px';
   const padding = receiptSettings.padding || '0 12px 12px 12px';
-
-  // Use overrides if provided
-  const displayCustomerName = customerNameOverride || sale.customerName;
-  const displayCustomerPhone = customerPhoneOverride || sale.customerPhone;
 
   return (
     <div className="hidden print:block font-mono leading-tight" style={{fontSize}}>
@@ -46,8 +40,8 @@ export default function ThermalReceipt({ sale, receiptSettings, customerNameOver
         <div className="my-3 border-t border-dotted border-black pt-2" style={{color: 'black'}}>
           <p className="mt-2" style={{fontWeight: 'bold'}}>Invoice: {sale.id.slice(0, 8).toUpperCase()}</p>
           <p style={{fontWeight: 'bold'}}>{formatDate(sale.createdAt)} {new Date(sale.createdAt).toLocaleTimeString()}</p>
-          <p style={{fontWeight: 'bold'}}>Customer: {displayCustomerName}</p>
-          <p style={{fontWeight: 'bold'}}>Phone: {displayCustomerPhone}</p>
+          <p style={{fontWeight: 'bold'}}>Customer: {sale.customerName}</p>
+          <p style={{fontWeight: 'bold'}}>Phone: {sale.customerPhone}</p>
         </div>
 
         <table className="w-full border-collapse" style={{color: 'black', fontWeight: 'bold', fontSize: itemFontSize}}>
