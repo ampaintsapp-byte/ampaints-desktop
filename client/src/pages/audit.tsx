@@ -390,7 +390,7 @@ export default function Audit() {
   const changePinMutation = useMutation({
     mutationFn: async ({ currentPin, newPin }: { currentPin: string; newPin: string }) => {
       const response = await fetch("/api/audit/pin", {
-        method: "PATCH",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPin, newPin }),
       })
@@ -949,11 +949,13 @@ export default function Audit() {
     const transactions: UnifiedTransaction[] = []
 
     auditPayments.forEach((p) => {
+      // FIXED: Handle undefined sale object
+      const sale = p.sale || null
       transactions.push({
         id: `payment-${p.id}`,
         type: "payment",
         date: new Date(p.createdAt),
-        customerName: p.sale?.customerName || "N/A",
+        customerName: sale?.customerName || "N/A",
         customerPhone: p.customerPhone || "",
         amount: safeParseFloat(p.amount),
         method: p.paymentMethod,
