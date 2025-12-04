@@ -213,7 +213,7 @@ export default function Audit() {
   const [showConfirmPin, setShowConfirmPin] = useState(false)
 
   // Cloud Sync State
-  const [cloudUrl, setCloudUrl] = useState("")
+  const [cloudUrl, setCloudUrl] = useState("postgresql://neondb_owner:npg_KZQi1C8sPHUD@ep-mute-cherry-a1bsht87-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require")
   const [showCloudUrl, setShowCloudUrl] = useState(false)
   const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
   const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle")
@@ -265,12 +265,8 @@ export default function Audit() {
     enabled: isVerified,
     queryFn: async () => {
       try {
-        const response = await fetch("/api/audit/unpaid-bills")
-        if (!response.ok) {
-          console.error("Unpaid bills fetch failed:", response.status)
-          return []
-        }
-        return response.json()
+        const response = await authenticatedRequest("/api/audit/unpaid-bills")
+        return response
       } catch (error) {
         console.error("Unpaid bills error:", error)
         return []
@@ -297,7 +293,10 @@ export default function Audit() {
 
   const updatePermissionsMutation = useMutation({
     mutationFn: async (permissions: Partial<AppSettings>) => {
-      const response = await apiRequest("PATCH", "/api/settings", permissions)
+      const response = await authenticatedRequest("/api/settings", {
+        method: "PATCH",
+        body: JSON.stringify(permissions),
+      })
       return response
     },
     onSuccess: () => {
@@ -359,16 +358,11 @@ export default function Audit() {
 
   const changePinMutation = useMutation({
     mutationFn: async ({ currentPin, newPin }: { currentPin: string; newPin: string }) => {
-      const response = await fetch("/api/audit/pin", {
+      const response = await authenticatedRequest("/api/audit/pin", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPin, newPin }),
       })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to change PIN")
-      }
-      return response.json()
+      return response
     },
     onSuccess: () => {
       toast({
@@ -415,13 +409,12 @@ export default function Audit() {
 
     setCloudConnectionStatus("testing")
     try {
-      const response = await fetch("/api/cloud/test-connection", {
+      const response = await authenticatedRequest("/api/cloud/test-connection", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectionUrl: cloudUrl }),
       })
       
-      const data = await response.json()
+      const data = await response
 
       if (data.ok) {
         setCloudConnectionStatus("success")
@@ -461,13 +454,12 @@ export default function Audit() {
 
     if (!silent) setCloudSyncStatus("exporting")
     try {
-      const response = await fetch("/api/cloud/export", {
+      const response = await authenticatedRequest("/api/cloud/export", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectionUrl: cloudUrl }),
       })
       
-      const data = await response.json()
+      const data = await response
 
       if (data.ok) {
         setLastExportCounts(data.counts)
@@ -509,13 +501,12 @@ export default function Audit() {
 
     setCloudSyncStatus("importing")
     try {
-      const response = await fetch("/api/cloud/import", {
+      const response = await authenticatedRequest("/api/cloud/import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectionUrl: cloudUrl }),
       })
       
-      const data = await response.json()
+      const data = await response
 
       if (data.ok) {
         setLastImportCounts(data.counts)
@@ -1476,7 +1467,7 @@ export default function Audit() {
           </div>
         </div>
 
-        {/* Horizontal Tab Navigation */}
+        {/* Horizontal Tab Navigation - REMOVED SALES, UNPAID, PAYMENTS, RETURNS TABS */}
         <div className="mt-4 border-t pt-4">
           <nav className="flex items-center gap-1 flex-wrap">
             <button
@@ -1490,54 +1481,6 @@ export default function Audit() {
             >
               <Package className="h-4 w-4" />
               Stock In
-            </button>
-            <button
-              onClick={() => setActiveTab("sales")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "sales"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              data-testid="menu-sales-audit"
-            >
-              <BarChart3 className="h-4 w-4" />
-              Sales
-            </button>
-            <button
-              onClick={() => setActiveTab("unpaid")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "unpaid"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              data-testid="menu-unpaid-audit"
-            >
-              <CreditCard className="h-4 w-4" />
-              Unpaid Bills
-            </button>
-            <button
-              onClick={() => setActiveTab("payments")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "payments"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              data-testid="menu-payments-audit"
-            >
-              <Wallet className="h-4 w-4" />
-              Payments
-            </button>
-            <button
-              onClick={() => setActiveTab("returns")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "returns"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-              data-testid="menu-returns-audit"
-            >
-              <RotateCcw className="h-4 w-4" />
-              Returns
             </button>
             <button
               onClick={() => setActiveTab("settings")}
@@ -1754,650 +1697,6 @@ export default function Audit() {
                       </Button>
                     </div>
                   )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-            </div>
-          )}
-
-          {/* SALES AUDIT CONTENT */}
-          {activeTab === "sales" && (
-            <div className="h-full overflow-auto p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <IndianRupee className="h-4 w-4 text-green-500" />
-                  Total Sales
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">Rs. {salesSummary.totalSales.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">All time revenue</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Wallet className="h-4 w-4 text-blue-500" />
-                  Total Paid
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">Rs. {salesSummary.totalPaid.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Amount received</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <CreditCard className="h-4 w-4 text-orange-500" />
-                  Outstanding
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">Rs. {salesSummary.totalOutstanding.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Pending payments</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-purple-500" />
-                  Total Bills
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{salesSummary.totalBills}</div>
-                <p className="text-xs text-muted-foreground">
-                  {salesSummary.paidBills} paid, {salesSummary.totalBills - salesSummary.paidBills} unpaid
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5" />
-                  Sales History
-                </div>
-                <Button onClick={downloadSalesAuditPDF} className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Export PDF
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Bill No</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Paid</TableHead>
-                        <TableHead>Balance</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredSales.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                            No sales found for the selected filters.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        visibleSales.map((sale) => {
-                          const balance = safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)
-                          return (
-                            <TableRow key={sale.id}>
-                              <TableCell className="font-medium">{formatDateShort(new Date(sale.createdAt))}</TableCell>
-                              <TableCell className="font-mono text-sm">{sale.id.slice(0, 8).toUpperCase()}</TableCell>
-                              <TableCell>{sale.customerName}</TableCell>
-                              <TableCell>{sale.customerPhone}</TableCell>
-                              <TableCell>Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}</TableCell>
-                              <TableCell>Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}</TableCell>
-                              <TableCell>
-                                <span className={balance > 0 ? "text-red-600 font-medium" : "text-green-600"}>
-                                  Rs. {Math.round(balance).toLocaleString()}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={
-                                    sale.paymentStatus === "paid"
-                                      ? "default"
-                                      : sale.paymentStatus === "partial"
-                                        ? "secondary"
-                                        : "destructive"
-                                  }
-                                >
-                                  {sale.paymentStatus === "paid"
-                                    ? "Paid"
-                                    : sale.paymentStatus === "partial"
-                                      ? "Partial"
-                                      : "Unpaid"}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          )
-                        })
-                      )}
-                    </TableBody>
-                  </Table>
-                  
-                  {/* Load More Button */}
-                  {filteredSales.length > visibleLimit && (
-                    <div className="flex justify-center py-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
-                        data-testid="button-load-more-sales-audit"
-                      >
-                        Load More ({filteredSales.length - visibleLimit} remaining)
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-            </div>
-          )}
-
-          {/* UNPAID BILLS CONTENT */}
-          {activeTab === "unpaid" && (
-            <div className="h-full overflow-auto p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <CreditCard className="h-4 w-4 text-red-500" />
-                  Total Unpaid Bills
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{unpaidBills.length}</div>
-                <p className="text-xs text-muted-foreground">Pending bills</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <IndianRupee className="h-4 w-4 text-orange-500" />
-                  Total Outstanding
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  Rs.{" "}
-                  {Math.round(
-                    unpaidBills.reduce(
-                      (acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)),
-                      0,
-                    ),
-                  ).toLocaleString()}
-                </div>
-                <p className="text-xs text-muted-foreground">Amount pending</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <TrendingDown className="h-4 w-4 text-purple-500" />
-                  Average Per Bill
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  Rs.{" "}
-                  {unpaidBills.length > 0
-                    ? Math.round(
-                        unpaidBills.reduce(
-                          (acc, bill) => acc + (safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)),
-                          0,
-                        ) / unpaidBills.length,
-                      ).toLocaleString()
-                    : 0}
-                </div>
-                <p className="text-xs text-muted-foreground">Average outstanding</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
-                  Unpaid Bills
-                </div>
-                <Button onClick={downloadUnpaidPDF} className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Export PDF
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {unpaidLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Bill Amount</TableHead>
-                        <TableHead>Paid</TableHead>
-                        <TableHead>Outstanding</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Last Updated</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {unpaidBills.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                            No unpaid bills found. Great job!
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        unpaidBills.map((bill) => {
-                          const outstanding = safeParseFloat(bill.totalAmount) - safeParseFloat(bill.amountPaid)
-                          return (
-                            <TableRow key={bill.id}>
-                              <TableCell className="font-medium">{bill.customerName}</TableCell>
-                              <TableCell>{bill.customerPhone}</TableCell>
-                              <TableCell>Rs. {Math.round(safeParseFloat(bill.totalAmount)).toLocaleString()}</TableCell>
-                              <TableCell>Rs. {Math.round(safeParseFloat(bill.amountPaid)).toLocaleString()}</TableCell>
-                              <TableCell>
-                                <span className="text-red-600 font-medium">
-                                  Rs. {Math.round(outstanding).toLocaleString()}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={bill.paymentStatus === "partial" ? "secondary" : "destructive"}>
-                                  {bill.paymentStatus === "partial" ? "Partial" : "Unpaid"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {formatDateShort(new Date(bill.createdAt))}
-                              </TableCell>
-                            </TableRow>
-                          )
-                        })
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-            </div>
-          )}
-
-          {/* PAYMENTS AUDIT CONTENT */}
-          {activeTab === "payments" && (
-            <div className="h-full overflow-auto p-4 space-y-4">
-          {/* Summary cards for all transaction types */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <IndianRupee className="h-4 w-4 text-green-500" />
-                  Total Payments
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {auditPaymentsLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold">Rs. {paymentsSummary.totalPayments.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground">{auditPayments.length} transactions</p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Wallet className="h-4 w-4 text-blue-500" />
-                  Cash Payments
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {auditPaymentsLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold">Rs. {paymentsSummary.cashPayments.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {auditPayments.filter((p) => p.paymentMethod === "cash").length} transactions
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <CreditCard className="h-4 w-4 text-purple-500" />
-                  Online Payments
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {auditPaymentsLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold">Rs. {paymentsSummary.onlinePayments.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground">
-                      {auditPayments.filter((p) => p.paymentMethod === "online").length} transactions
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <RotateCcw className="h-4 w-4 text-orange-500" />
-                  Total Returns
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {returnsLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold text-orange-600">Rs. {returnsSummary.totalReturns.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground">{auditReturns.length} returns</p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-amber-500" />
-                  Manual Balances
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {salesLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold text-amber-600">Rs. {manualBalanceSummary.totalAmount.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground">{manualBalanceSummary.count} entries</p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-slate-500" />
-                  All Records
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {auditPaymentsLoading || returnsLoading || salesLoading ? (
-                  <Skeleton className="h-8 w-24" />
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold">{unifiedTransactions.length}</div>
-                    <p className="text-xs text-muted-foreground">Total entries</p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Wallet className="h-5 w-5" />
-                  All Transactions (Payments, Returns, Manual Balances)
-                </div>
-                <Button
-                  onClick={downloadPaymentsPDF}
-                  disabled={auditPaymentsLoading}
-                  className="flex items-center gap-2"
-                >
-                  <Download className="h-4 w-4" />
-                  Export PDF
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {auditPaymentsLoading || returnsLoading || salesLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Method</TableHead>
-                        <TableHead>Notes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {unifiedTransactions.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                            No transaction records found.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        unifiedTransactions.map((tx) => (
-                          <TableRow key={tx.id}>
-                            <TableCell className="font-medium whitespace-nowrap">
-                              {formatDateShort(tx.date)}
-                            </TableCell>
-                            <TableCell>
-                              {tx.type === "payment" && (
-                                <Badge variant="default" className="bg-green-100 text-green-700 border-green-200">
-                                  <IndianRupee className="h-3 w-3 mr-1" />
-                                  Payment
-                                </Badge>
-                              )}
-                              {tx.type === "return" && (
-                                <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                                  <RotateCcw className="h-3 w-3 mr-1" />
-                                  Return
-                                </Badge>
-                              )}
-                              {tx.type === "manual_balance" && (
-                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                                  <FileText className="h-3 w-3 mr-1" />
-                                  Manual Balance
-                                </Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="font-medium">{tx.customerName}</TableCell>
-                            <TableCell className="text-sm">{tx.customerPhone || "-"}</TableCell>
-                            <TableCell className={`font-semibold ${
-                              tx.type === "payment" ? "text-green-600" : 
-                              tx.type === "return" ? "text-orange-600" : 
-                              "text-amber-600"
-                            }`}>
-                              Rs. {Math.round(tx.amount).toLocaleString()}
-                            </TableCell>
-                            <TableCell>
-                              {tx.method ? (
-                                <Badge
-                                  variant={tx.method === "cash" ? "default" : "secondary"}
-                                  className="capitalize"
-                                >
-                                  {tx.method === "cash" ? "Cash" : "Online"}
-                                </Badge>
-                              ) : (
-                                "-"
-                              )}
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                              {tx.notes || "-"}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              {unifiedTransactions.length > 0 && (
-                <div className="mt-4 text-sm text-muted-foreground text-center">
-                  Showing {unifiedTransactions.length} transaction records
-                </div>
-              )}
-            </CardContent>
-          </Card>
-            </div>
-          )}
-
-          {/* RETURNS AUDIT CONTENT */}
-          {activeTab === "returns" && (
-            <div className="h-full overflow-auto p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <RotateCcw className="h-4 w-4" />
-                  Total Returns
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{auditReturns.length}</div>
-                <p className="text-xs text-muted-foreground">Return transactions</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <IndianRupee className="h-4 w-4 text-red-500" />
-                  Total Refund Amount
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">Rs. {returnsSummary.totalReturns.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Amount refunded</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Package className="h-4 w-4 text-purple-500" />
-                  Items Returned
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{returnsSummary.totalItemsReturned}</div>
-                <p className="text-xs text-muted-foreground">Total items returned</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <RotateCcw className="h-5 w-5" />
-                  Returns History
-                </div>
-                <Button onClick={downloadReturnsPDF} className="flex items-center gap-2">
-                  <Download className="h-4 w-4" />
-                  Export PDF
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {returnsLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Refund Amount</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Reason</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {auditReturns.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                            No return records found.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        auditReturns.map((returnItem) => (
-                          <TableRow key={returnItem.id}>
-                            <TableCell className="font-medium">
-                              {formatDateShort(new Date(returnItem.createdAt))}
-                            </TableCell>
-                            <TableCell>{returnItem.customerName}</TableCell>
-                            <TableCell>{returnItem.customerPhone}</TableCell>
-                            <TableCell className="text-red-600 font-medium">
-                              Rs. {Math.round(safeParseFloat(returnItem.totalRefund || "0")).toLocaleString()}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">
-                                {returnItem.returnType === "item" ? "Item Return" : "Full Return"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="max-w-48 truncate">
-                              {returnItem.reason || "No reason provided"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={returnItem.status === "completed" ? "default" : "secondary"}>
-                                {returnItem.status === "completed" ? "Completed" : "Pending"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
                 </div>
               )}
             </CardContent>

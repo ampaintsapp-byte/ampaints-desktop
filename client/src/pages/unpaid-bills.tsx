@@ -1,6 +1,6 @@
 "use client"
 
-// unpaid-bills.tsx - COMPLETE FIXED VERSION
+// unpaid-bills.tsx - FIXED VERSION WITH CORRECT TOTALS
 import { useState, useMemo, useEffect, useDeferredValue } from "react"
 import { useLocation } from "wouter"
 import { useQuery, useMutation } from "@tanstack/react-query"
@@ -120,6 +120,13 @@ type FilterType = {
   sortBy: "oldest" | "newest" | "highest" | "lowest" | "name"
   paymentStatus: "all" | "overdue" | "due_soon" | "no_due_date"
   billStatus: "all" | "unpaid" | "fully_paid"
+}
+
+// Utility function to safely parse numbers
+const safeParseFloat = (value: string | number | null | undefined): number => {
+  if (value === null || value === undefined) return 0
+  const num = typeof value === "string" ? Number.parseFloat(value) : value
+  return isNaN(num) ? 0 : num
 }
 
 export default function UnpaidBills() {
@@ -413,8 +420,8 @@ export default function UnpaidBills() {
       for (const bill of sortedBills) {
         if (remainingPayment <= 0) break
 
-        const billTotal = Number.parseFloat(bill.totalAmount || "0")
-        const billPaid = Number.parseFloat(bill.amountPaid || "0")
+        const billTotal = safeParseFloat(bill.totalAmount)
+        const billPaid = safeParseFloat(bill.amountPaid)
         const billOutstanding = Math.max(0, billTotal - billPaid)
 
         console.log("[v0] Processing bill", {
@@ -516,22 +523,22 @@ export default function UnpaidBills() {
     }
   }
 
-  // Consolidate all customers from all sales
-  const consolidatedCustomers = useMemo(() => {
+  // FIXED: Correct calculation of totals like in customer-statement.tsx
+  const consolidateCustomers = (sales: ExtendedSale[]): ConsolidatedCustomer[] => {
     const customerMap = new Map<string, ConsolidatedCustomer>()
 
-    allSales.forEach((sale) => {
+    sales.forEach((sale) => {
       const phone = sale.customerPhone
       const existing = customerMap.get(phone)
 
-      const totalAmount = Number.parseFloat(sale.totalAmount || "0")
-      const totalPaid = Number.parseFloat(sale.amountPaid || "0")
-      const outstanding = totalAmount - totalPaid
+      const totalAmount = safeParseFloat(sale.totalAmount)
+      const totalPaid = safeParseFloat(sale.amountPaid)
+      const outstanding = Math.max(0, totalAmount - totalPaid)
       const billDate = new Date(sale.createdAt)
       const daysOverdue = Math.max(0, Math.ceil((new Date().getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24)))
 
       if (existing) {
-        existing.bills.push(sale as ExtendedSale)
+        existing.bills.push(sale)
         existing.totalAmount += totalAmount
         existing.totalPaid += totalPaid
         existing.totalOutstanding += outstanding
@@ -543,7 +550,7 @@ export default function UnpaidBills() {
         customerMap.set(phone, {
           customerPhone: phone,
           customerName: sale.customerName,
-          bills: [sale as ExtendedSale],
+          bills: [sale],
           totalAmount,
           totalPaid,
           totalOutstanding: outstanding,
@@ -556,7 +563,28 @@ export default function UnpaidBills() {
     })
 
     return Array.from(customerMap.values())
+  }
+
+  // FIXED: Calculate stats correctly
+  const calculateStats = (customers: ConsolidatedCustomer[]) => {
+    const totalOutstanding = customers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)
+    const totalCustomers = customers.length
+    const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0
+
+    return {
+      totalOutstanding,
+      totalCustomers,
+      averageOutstanding,
+      totalAmount: customers.reduce((sum, customer) => sum + customer.totalAmount, 0),
+      totalPaid: customers.reduce((sum, customer) => sum + customer.totalPaid, 0),
+    }
+  }
+
+  const consolidatedCustomers = useMemo(() => {
+    return consolidateCustomers(allSales)
   }, [allSales])
+
+  const stats = useMemo(() => calculateStats(consolidatedCustomers), [consolidatedCustomers])
 
   const filteredAndSortedCustomers = useMemo(() => {
     let filtered = [...consolidatedCustomers]
@@ -786,9 +814,9 @@ export default function UnpaidBills() {
         yPos = margin
       }
 
-      const billTotal = Number.parseFloat(bill.totalAmount || "0")
-      const billPaid = Number.parseFloat(bill.amountPaid || "0")
-      const billDue = billTotal - billPaid
+      const billTotal = safeParseFloat(bill.totalAmount)
+      const billPaid = safeParseFloat(bill.amountPaid)
+      const billDue = Math.max(0, billTotal - billPaid)
       const dueDateStatus = getDueDateStatus(bill.dueDate)
 
       const bgColor = index % 2 === 0 ? [250, 250, 250] : [255, 255, 255]
@@ -858,10 +886,6 @@ export default function UnpaidBills() {
     }
   }
 
-  const totalOutstanding = consolidatedCustomers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)
-  const totalCustomers = consolidatedCustomers.length
-  const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/50 to-emerald-50/30 dark:from-zinc-900 dark:via-zinc-900 dark:to-emerald-950/20 p-6 space-y-6">
 
@@ -877,30 +901,39 @@ export default function UnpaidBills() {
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
                   Account Statements
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  Track pending balances, payment history, and generate premium statements
-                </p>
               </div>
             </div>
 
-            {/* Stats Overview */}
+            {/* Stats Overview - FIXED: Show correct totals */}
             <div className="flex items-center gap-6 flex-wrap">
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
                 <span className="text-slate-600 dark:text-slate-400">
-                  <strong className="text-slate-900 dark:text-white">{totalCustomers}</strong> Customers
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
-                <span className="text-slate-600 dark:text-slate-400">
-                  Total: <strong className="text-amber-600 dark:text-amber-400 font-mono">Rs. {Math.round(totalOutstanding).toLocaleString()}</strong>
+                  <strong className="text-slate-900 dark:text-white">{stats.totalCustomers}</strong> Customers
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 <span className="text-slate-600 dark:text-slate-400">
-                  Avg: <strong className="text-blue-600 dark:text-blue-400 font-mono">Rs. {Math.round(averageOutstanding).toLocaleString()}</strong>
+                  Total Amount: <strong className="text-blue-600 dark:text-blue-400 font-mono">Rs. {Math.round(stats.totalAmount).toLocaleString()}</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Total Paid: <strong className="text-emerald-600 dark:text-emerald-400 font-mono">Rs. {Math.round(stats.totalPaid).toLocaleString()}</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Outstanding: <strong className="text-amber-600 dark:text-amber-400 font-mono">Rs. {Math.round(stats.totalOutstanding).toLocaleString()}</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                <span className="text-slate-600 dark:text-slate-400">
+                  Avg: <strong className="text-indigo-600 dark:text-indigo-400 font-mono">Rs. {Math.round(stats.averageOutstanding).toLocaleString()}</strong>
                 </span>
               </div>
             </div>
@@ -1352,7 +1385,7 @@ export default function UnpaidBills() {
                   )}
                 </div>
 
-                {/* Amount Summary */}
+                {/* Amount Summary - FIXED: Show correct totals like in customer-statement */}
                 <div className="bg-slate-50 dark:bg-zinc-900/50 rounded-xl p-3 space-y-2">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-slate-500 dark:text-slate-400">Total Amount</span>
@@ -1511,7 +1544,7 @@ export default function UnpaidBills() {
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-emerald-500" />
-                            <span className="font-medium text-slate-900 dark:text-white font-mono tabular-nums">Rs. {Number.parseFloat(payment.amount).toFixed(2)}</span>
+                            <span className="font-medium text-slate-900 dark:text-white font-mono tabular-nums">Rs. {safeParseFloat(payment.amount).toLocaleString()}</span>
                             <Badge variant="outline" className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                               {payment.paymentMethod}
                             </Badge>
