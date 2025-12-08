@@ -1,5 +1,5 @@
-import { startTransition, useState } from "react";
-import { LayoutDashboard, Package, ShoppingCart, Receipt, CreditCard, TrendingUp, Settings, BarChart3, RotateCcw, ShieldCheck, ChevronDown, ArrowUpCircle, History, PackagePlus } from "lucide-react";
+import { startTransition, useState, useEffect } from "react";
+import { LayoutDashboard, Package, ShoppingCart, Receipt, CreditCard, TrendingUp, Settings, BarChart3, RotateCcw, ShieldCheck, ChevronDown, ArrowUpCircle, History } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigationRefresh } from "@/hooks/use-navigation-refresh";
@@ -13,6 +13,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
@@ -95,7 +98,7 @@ const settingsItems: MenuItem[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { triggerRefresh } = useNavigationRefresh();
-  const [openSubMenus, setOpenSubMenus] = useState<Record<string, boolean>>({
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({
     Stock: true,
     Returns: true,
   });
@@ -120,103 +123,122 @@ export function AppSidebar() {
     prefetchPageData(url);
   };
 
-  const toggleSubMenu = (title: string) => {
-    setOpenSubMenus(prev => ({ ...prev, [title]: !prev[title] }));
-  };
-
-  const isItemActive = (item: MenuItem): boolean => {
-    if (location === item.url) return true;
+  const isChildActive = (item: MenuItem): boolean => {
     if (item.subItems) {
       return item.subItems.some(sub => location === sub.url);
     }
     return false;
   };
 
+  useEffect(() => {
+    mainMenuItems.forEach(item => {
+      if (item.subItems) {
+        const shouldExpand = location === item.url || isChildActive(item);
+        if (shouldExpand && !openMenus[item.title]) {
+          setOpenMenus(prev => ({ ...prev, [item.title]: true }));
+        }
+      }
+    });
+  }, [location]);
+
+  const toggleMenu = (title: string) => {
+    setOpenMenus(prev => ({ ...prev, [title]: !prev[title] }));
+  };
+
   const renderMenuItem = (item: MenuItem) => {
     const isActive = location === item.url;
     const hasSubItems = item.subItems && item.subItems.length > 0;
-    const isParentActive = isItemActive(item);
+    const isParentActive = isActive || isChildActive(item);
+    const isOpen = openMenus[item.title] ?? false;
 
     if (hasSubItems) {
       return (
         <Collapsible
           key={item.title}
-          open={openSubMenus[item.title]}
-          onOpenChange={() => toggleSubMenu(item.title)}
+          open={isOpen}
+          onOpenChange={() => toggleMenu(item.title)}
+          className="group/collapsible"
         >
           <SidebarMenuItem>
-            <div className="flex items-center w-full">
-              <SidebarMenuButton 
-                asChild 
+            <CollapsibleTrigger asChild>
+              <SidebarMenuButton
                 data-active={isActive}
                 className={`
-                  flex-1 relative group transition-all duration-200
+                  w-full relative group transition-all duration-200
                   ${isActive 
                     ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium' 
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
                   }
                 `}
+                data-testid={`button-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
               >
-                <Link 
-                  href={item.url} 
-                  data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                  onClick={(e) => handleNavClick(item.url, e)}
-                  onMouseEnter={() => handleMouseEnter(item.url)}
-                >
-                  <div className={`
-                    w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200
-                    ${isActive || isParentActive 
-                      ? 'bg-blue-600 text-white shadow-sm' 
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'
-                    }
-                  `}>
-                    <item.icon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm">{item.title}</span>
-                </Link>
+                <div className={`
+                  w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200
+                  ${isParentActive 
+                    ? 'bg-blue-600 text-white shadow-sm' 
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'
+                  }
+                `}>
+                  <item.icon className="h-4 w-4" />
+                </div>
+                <span className="text-sm flex-1">{item.title}</span>
+                <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </SidebarMenuButton>
-              <CollapsibleTrigger asChild>
-                <button 
-                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
-                  data-testid={`button-expand-${item.title.toLowerCase()}`}
-                >
-                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${openSubMenus[item.title] ? 'rotate-180' : ''}`} />
-                </button>
-              </CollapsibleTrigger>
-            </div>
-          </SidebarMenuItem>
-          <CollapsibleContent>
-            <div className="ml-6 pl-4 border-l border-slate-200 dark:border-slate-700 space-y-1 mt-1">
-              {item.subItems?.map(subItem => {
-                const isSubActive = location === subItem.url;
-                return (
-                  <SidebarMenuItem key={subItem.title}>
-                    <SidebarMenuButton 
-                      asChild 
-                      data-active={isSubActive}
-                      className={`
-                        relative group transition-all duration-200
-                        ${isSubActive 
-                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium' 
-                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                        }
-                      `}
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarMenuSub>
+                <SidebarMenuSubItem>
+                  <SidebarMenuSubButton
+                    asChild
+                    data-active={isActive}
+                    className={`
+                      ${isActive 
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium' 
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                      }
+                    `}
+                  >
+                    <Link 
+                      href={item.url} 
+                      data-testid={`link-${item.title.toLowerCase().replace(/\s+/g, '-')}-main`}
+                      onClick={(e) => handleNavClick(item.url, e)}
+                      onMouseEnter={() => handleMouseEnter(item.url)}
                     >
-                      <Link 
-                        href={subItem.url} 
-                        data-testid={`link-${subItem.title.toLowerCase().replace(/\s+/g, '-')}`}
-                        onClick={(e) => handleNavClick(subItem.url, e)}
-                        onMouseEnter={() => handleMouseEnter(subItem.url)}
+                      <Package className={`h-4 w-4 ${isActive ? 'text-blue-600' : ''}`} />
+                      <span>Manage {item.title}</span>
+                    </Link>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+                {item.subItems?.map(subItem => {
+                  const isSubActive = location === subItem.url;
+                  return (
+                    <SidebarMenuSubItem key={subItem.title}>
+                      <SidebarMenuSubButton
+                        asChild
+                        data-active={isSubActive}
+                        className={`
+                          ${isSubActive 
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-medium' 
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                          }
+                        `}
                       >
-                        <subItem.icon className={`h-4 w-4 ${isSubActive ? 'text-blue-600' : ''}`} />
-                        <span className="text-sm">{subItem.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </div>
-          </CollapsibleContent>
+                        <Link 
+                          href={subItem.url} 
+                          data-testid={`link-${subItem.title.toLowerCase().replace(/\s+/g, '-')}`}
+                          onClick={(e) => handleNavClick(subItem.url, e)}
+                          onMouseEnter={() => handleMouseEnter(subItem.url)}
+                        >
+                          <subItem.icon className={`h-4 w-4 ${isSubActive ? 'text-blue-600' : ''}`} />
+                          <span>{subItem.title}</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  );
+                })}
+              </SidebarMenuSub>
+            </CollapsibleContent>
+          </SidebarMenuItem>
         </Collapsible>
       );
     }
