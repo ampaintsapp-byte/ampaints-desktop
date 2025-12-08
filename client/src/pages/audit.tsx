@@ -60,6 +60,8 @@ import {
   CheckCircle,
   Smartphone,
   History,
+  Activity,
+  Clock,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { apiRequest, queryClient } from "@/lib/queryClient"
@@ -1963,6 +1965,106 @@ export default function Audit() {
                                 <Download className="h-3 w-3" />
                                 <strong>Import:</strong> Download data from cloud database
                               </p>
+                            </div>
+                          </div>
+
+                          {/* Sync Status Section */}
+                          <div className="border-t pt-4">
+                            <h4 className="font-medium mb-3 flex items-center gap-2">
+                              <Activity className="h-4 w-4" />
+                              Sync Status
+                            </h4>
+
+                            <div className="space-y-3">
+                              {/* Last Sync Time */}
+                              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                  <Clock className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-sm">Last Sync</span>
+                                </div>
+                                <span className="text-sm font-medium">
+                                  {lastSyncTime 
+                                    ? lastSyncTime.toLocaleString('en-PK', { 
+                                        day: '2-digit', 
+                                        month: 'short', 
+                                        hour: '2-digit', 
+                                        minute: '2-digit',
+                                        hour12: true 
+                                      })
+                                    : "Never"
+                                  }
+                                </span>
+                              </div>
+
+                              {/* Auto-Sync Active Indicator */}
+                              {autoSyncEnabled && cloudConnectionStatus === "success" && (
+                                <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                                  <span className="text-sm text-green-700 dark:text-green-300">
+                                    Sync Active - Auto-syncing every {syncInterval}s
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Last Export Counts */}
+                              {lastExportCounts && (
+                                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Upload className="h-4 w-4 text-blue-500" />
+                                    <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Last Export</span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2 text-xs">
+                                    {lastExportCounts.products !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-bold text-blue-600">{lastExportCounts.products}</div>
+                                        <div className="text-muted-foreground">Products</div>
+                                      </div>
+                                    )}
+                                    {lastExportCounts.colors !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-bold text-blue-600">{lastExportCounts.colors}</div>
+                                        <div className="text-muted-foreground">Colors</div>
+                                      </div>
+                                    )}
+                                    {lastExportCounts.sales !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-bold text-blue-600">{lastExportCounts.sales}</div>
+                                        <div className="text-muted-foreground">Sales</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Last Import Counts */}
+                              {lastImportCounts && (
+                                <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Download className="h-4 w-4 text-purple-500" />
+                                    <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Last Import</span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2 text-xs">
+                                    {lastImportCounts.products !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-bold text-purple-600">{lastImportCounts.products}</div>
+                                        <div className="text-muted-foreground">Products</div>
+                                      </div>
+                                    )}
+                                    {lastImportCounts.colors !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-bold text-purple-600">{lastImportCounts.colors}</div>
+                                        <div className="text-muted-foreground">Colors</div>
+                                      </div>
+                                    )}
+                                    {lastImportCounts.sales !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-bold text-purple-600">{lastImportCounts.sales}</div>
+                                        <div className="text-muted-foreground">Sales</div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
