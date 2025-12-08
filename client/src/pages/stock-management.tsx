@@ -60,7 +60,8 @@ import {
   PaintBucket,
   ArrowUpCircle,
   Database,
-  Zap
+  Zap,
+  AlertTriangle
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -2470,8 +2471,16 @@ export default function StockManagement() {
                             <div className="flex-1 space-y-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-semibold font-mono text-sm">{color.colorCode}</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-xs">
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-xs ${
+                                    color.stockQuantity < 0 
+                                      ? "bg-red-100 text-red-700 border-red-300" 
+                                      : "bg-slate-100 text-slate-600 border-slate-200"
+                                  }`}
+                                >
                                   Stock: {color.stockQuantity}
+                                  {color.stockQuantity < 0 && " (Deficit)"}
                                 </Badge>
                               </div>
                               <p className="text-xs text-slate-500">{color.colorName}</p>
@@ -2499,8 +2508,16 @@ export default function StockManagement() {
                                 style={{ backgroundColor: selectedColorForStockIn.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : selectedColorForStockIn.colorCode }}
                               />
                               <span className="font-semibold font-mono text-sm">{selectedColorForStockIn.colorCode}</span>
-                              <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-xs">
+                              <Badge 
+                                variant="outline" 
+                                className={`text-xs ${
+                                  selectedColorForStockIn.stockQuantity < 0 
+                                    ? "bg-red-100 text-red-700 border-red-300" 
+                                    : "bg-slate-100 text-slate-600 border-slate-200"
+                                }`}
+                              >
                                 Current: {selectedColorForStockIn.stockQuantity}
+                                {selectedColorForStockIn.stockQuantity < 0 && " (Deficit)"}
                               </Badge>
                             </div>
                             <p className="text-sm text-slate-500">{selectedColorForStockIn.colorName}</p>
@@ -2521,22 +2538,66 @@ export default function StockManagement() {
                       </div>
                     </div>
 
-                    <FormField control={stockInForm.control} name="quantity" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Quantity to Add</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            min="1" 
-                            step="1" 
-                            placeholder="0" 
-                            {...field} 
-                            className="border-slate-200"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
+                    <FormField control={stockInForm.control} name="quantity" render={({ field }) => {
+                      const quantityValue = parseInt(field.value) || 0;
+                      const currentStock = selectedColorForStockIn.stockQuantity;
+                      const newStock = currentStock + quantityValue;
+                      const hasDeficit = currentStock < 0;
+                      const deficitAmount = hasDeficit ? Math.abs(currentStock) : 0;
+
+                      return (
+                        <FormItem>
+                          <FormLabel>Quantity to Add</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="number" 
+                              min="1" 
+                              step="1" 
+                              placeholder="0" 
+                              {...field} 
+                              className="border-slate-200"
+                              data-testid="input-stock-quantity"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                          
+                          {quantityValue > 0 && (
+                            <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+                              <div className="text-sm font-medium text-slate-700">Stock Calculation Preview</div>
+                              <div className="grid grid-cols-3 gap-2 text-sm">
+                                <div className="text-center p-2 rounded bg-white border border-slate-100">
+                                  <div className={`font-bold tabular-nums ${hasDeficit ? "text-red-600" : "text-slate-700"}`}>
+                                    {currentStock}
+                                  </div>
+                                  <div className="text-xs text-slate-500">Previous</div>
+                                </div>
+                                <div className="text-center p-2 rounded bg-emerald-50 border border-emerald-100">
+                                  <div className="font-bold text-emerald-600 tabular-nums">+{quantityValue}</div>
+                                  <div className="text-xs text-slate-500">Adding</div>
+                                </div>
+                                <div className="text-center p-2 rounded bg-blue-50 border border-blue-100">
+                                  <div className="font-bold text-blue-600 tabular-nums">{newStock}</div>
+                                  <div className="text-xs text-slate-500">New Stock</div>
+                                </div>
+                              </div>
+                              
+                              {hasDeficit && (
+                                <div className="flex items-start gap-2 p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-semibold">Deficit Alert:</span> This item has a stock deficit of {deficitAmount} units (from previous sales). 
+                                    {quantityValue >= deficitAmount 
+                                      ? ` Adding ${quantityValue} will first cover the deficit, then add ${quantityValue - deficitAmount} to available stock.`
+                                      : ` Adding ${quantityValue} will reduce the deficit to ${deficitAmount - quantityValue} units.`
+                                    }
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </FormItem>
+                      );
+                    }} />
 
                     <FormField control={stockInForm.control} name="stockInDate" render={({ field }) => (
                       <FormItem>

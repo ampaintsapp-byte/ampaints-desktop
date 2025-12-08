@@ -24,6 +24,7 @@ None specified yet.
 
 ### Key Features
 - **Inventory Management**: Tracks products, variants, colors, and stock levels with advanced filtering, multi-select, and bulk operations. Includes a unique ID system for duplicate handling.
+  - **Stock Deficit Alert**: When adding stock, if a color has negative stock (deficit from prior sales), the system clearly shows: red "(Deficit)" badge on color selection, stock calculation preview (Previous + Adding = New Stock), and an amber warning explaining how the addition will cover or reduce the deficit.
 - **POS Sales**: Streamlined transaction processing with real-time inventory updates, optimized color code matching, and enhanced product card displays.
 - **Rate Management**: Manages product pricing and packing sizes, supporting per-color rate overrides.
 - **Unpaid Bills & Customer Statements**: Tracks partial payments, due dates, manual balance additions (Manual Balance), and generates detailed PDF statements. Features a premium bank-style customer statement with transaction ledger, running balance, and various transaction type displays.
