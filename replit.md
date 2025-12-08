@@ -63,10 +63,11 @@ None specified yet.
   - **Blocked Screen**: Shows clear message when device is blocked with reason and contact info
   - **API Endpoints**: 
     - `POST /api/license/check` - Check/register device license status
-    - `POST /api/license/devices` - Get all registered devices (requires master PIN)
-    - `POST /api/license/block` - Block a device (requires master PIN)
-    - `POST /api/license/unblock` - Unblock a device (requires master PIN)
-    - `GET /api/license/audit` - Get license audit log (requires master PIN)
+    - `POST /api/license/devices` - Get all registered devices (requires master PIN in body)
+    - `POST /api/license/block` - Block a device (requires master PIN in body)
+    - `POST /api/license/unblock` - Unblock a device (requires master PIN in body)
+    - `POST /api/license/audit` - Get license audit log (requires master PIN in body)
+  - **Admin UI**: Accessible via Audit page > Settings tab > Licenses sub-tab. Features master PIN verification, device list with status badges, block/unblock controls with reason input, and action history log.
   - **Audit Trail**: All block/unblock actions logged with timestamps and reasons
   - **Use Case**: Block devices with overdue billing until payment is received
 - **Desktop Application**: Features include a maximized (not fullscreen) windowed desktop mode with saved size and position, and solutions for Windows SmartScreen warnings.
