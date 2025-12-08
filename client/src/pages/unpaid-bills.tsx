@@ -363,22 +363,10 @@ export default function UnpaidBills() {
     },
   })
 
-  // FIXED: Proper payment validation and processing
+  // Payment validation
   const validatePayment = (amount: number, customer: ConsolidatedCustomer | null): string | null => {
     if (!customer) return "Customer not selected"
     if (amount <= 0) return "Payment amount must be positive"
-
-    console.log("[v0] Payment validation", {
-      amount,
-      customerOutstanding: customer.totalOutstanding,
-      bills: customer.bills.map((b) => ({
-        id: b.id,
-        totalAmount: b.totalAmount,
-        amountPaid: b.amountPaid,
-        isManualBalance: b.isManualBalance,
-      })),
-    })
-
     if (amount > customer.totalOutstanding) {
       return `Payment amount exceeds outstanding balance. Payment: Rs. ${Math.round(amount).toLocaleString()} | Outstanding: Rs. ${Math.round(customer.totalOutstanding).toLocaleString()}`
     }
@@ -423,14 +411,6 @@ export default function UnpaidBills() {
         const billTotal = safeParseFloat(bill.totalAmount)
         const billPaid = safeParseFloat(bill.amountPaid)
         const billOutstanding = Math.max(0, billTotal - billPaid)
-
-        console.log("[v0] Processing bill", {
-          billId: bill.id,
-          billTotal,
-          billPaid,
-          billOutstanding,
-          isManual: bill.isManualBalance,
-        })
 
         if (billOutstanding > 0) {
           const paymentForThisBill = Math.min(remainingPayment, billOutstanding)

@@ -988,8 +988,8 @@ export default function CustomerStatement() {
         }
         reader.readAsDataURL(pdfBlob)
         return
-      } catch (error) {
-        console.log("Electron share failed, falling back to web share:", error)
+      } catch {
+        // Electron share failed, fall back to web share
       }
     }
 
@@ -1009,11 +1009,10 @@ export default function CustomerStatement() {
         })
         return
       } catch (error) {
-        if ((error as Error).name !== "AbortError") {
-          console.log("Share failed, falling back to text share")
-        } else {
+        if ((error as Error).name === "AbortError") {
           return
         }
+        // Share failed, fall back to text share
       }
     }
 
