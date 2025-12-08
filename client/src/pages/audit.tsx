@@ -395,7 +395,7 @@ export default function Audit() {
         body: JSON.stringify({ connectionUrl: cloudUrl }),
       })
       
-      if (response.success) {
+      if (response.ok) {
         setCloudConnectionStatus("success")
         toast({
           title: "Connection Successful",
@@ -405,7 +405,7 @@ export default function Audit() {
         setCloudConnectionStatus("error")
         toast({
           title: "Connection Failed",
-          description: response.error || "Could not connect to cloud database.",
+          description: response.error || response.details || "Could not connect to cloud database.",
           variant: "destructive",
         })
       }
