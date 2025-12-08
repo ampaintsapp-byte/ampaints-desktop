@@ -1784,7 +1784,7 @@ export default function StockManagement() {
                     </div>
                   )}
 
-                  {/* Variants Grid */}
+                  {/* Variants Table */}
                   {filteredVariants.length === 0 ? (
                     <div className="text-center py-12">
                       <div className="p-4 bg-slate-100 rounded-2xl inline-block mb-4">
@@ -1807,94 +1807,97 @@ export default function StockManagement() {
                     </div>
                   ) : (
                   <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {visibleVariants.map(variant => {
-                      const variantColors = colorsData.filter(c => c.variantId === variant.id);
-                      return (
-                        <Card 
-                          key={variant.id} 
-                          className="rounded-2xl p-4 border border-slate-100 bg-slate-50 hover:shadow-lg hover:border-indigo-200 transition-all cursor-pointer group"
-                          onClick={() => setViewingVariant(variant)}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 bg-indigo-100 rounded-xl">
-                                  <Layers className="h-4 w-4 text-indigo-600" />
-                                </div>
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                                    {variant.packingSize}
-                                  </h3>
-                                  <p className="text-sm text-slate-500">{variant.product.company} - {variant.product.productName}</p>
-                                </div>
-                              </div>
-                              <input
-                                type="checkbox"
-                                checked={selectedVariants.has(variant.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  const newSet = new Set(selectedVariants);
-                                  if (e.target.checked) {
-                                    newSet.add(variant.id);
-                                  } else {
-                                    newSet.delete(variant.id);
-                                  }
-                                  setSelectedVariants(newSet);
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Rate</span>
-                                <span className="font-mono font-semibold text-indigo-600">Rs. {Math.round(parseFloat(variant.rate))}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Colors</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
-                                  {variantColors.length} colors
-                                </Badge>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Product</span>
-                                <span className="text-slate-400 truncate">{variant.product.productName}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 mt-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 border-slate-200 text-slate-700"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingVariant(variant);
-                                }}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                              {canEditStock && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="flex-1 border-slate-200 text-slate-700"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingVariant(variant);
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50">
+                          <TableHead className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedVariants.size === visibleVariants.length && visibleVariants.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedVariants(new Set(visibleVariants.map(v => v.id)));
+                                } else {
+                                  setSelectedVariants(new Set());
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                            />
+                          </TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Product</TableHead>
+                          <TableHead>Size</TableHead>
+                          <TableHead className="text-right">Rate</TableHead>
+                          <TableHead className="text-center">Colors</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleVariants.map(variant => {
+                          const variantColors = colorsData.filter(c => c.variantId === variant.id);
+                          return (
+                            <TableRow 
+                              key={variant.id} 
+                              className="hover:bg-slate-50 cursor-pointer"
+                              onClick={() => setViewingVariant(variant)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedVariants.has(variant.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedVariants);
+                                    if (e.target.checked) {
+                                      newSet.add(variant.id);
+                                    } else {
+                                      newSet.delete(variant.id);
+                                    }
+                                    setSelectedVariants(newSet);
                                   }}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
-                                </Button>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">{variant.product.company}</TableCell>
+                              <TableCell>{variant.product.productName}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                                  {variant.packingSize}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold text-indigo-600">
+                                Rs. {Math.round(parseFloat(variant.rate))}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
+                                  {variantColors.length}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setViewingVariant(variant)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {canEditStock && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setEditingVariant(variant)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
                   {/* Load More Button for Variants */}
                   {filteredVariants.length > variantsVisibleLimit && (
@@ -2153,96 +2156,104 @@ export default function StockManagement() {
                     </div>
                   ) : (
                     <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {visibleColors.map(color => (
-                        <Card 
-                          key={color.id} 
-                          className="rounded-2xl p-4 border border-slate-200 hover:shadow-lg transition-all cursor-pointer group"
-                          onClick={() => setViewingColor(color)}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div 
-                                  className="w-8 h-8 rounded-lg border-2 border-white shadow-sm"
-                                  style={{ backgroundColor: color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : color.colorCode }}
-                                />
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-purple-600 transition-colors">
-                                    {color.colorName}
-                                  </h3>
-                                  <p className="text-sm font-mono text-slate-500">{color.colorCode}</p>
-                                </div>
-                              </div>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-slate-50">
+                            <TableHead className="w-10">
                               <input
                                 type="checkbox"
-                                checked={selectedColors.has(color.id)}
+                                checked={selectedColors.size === visibleColors.length && visibleColors.length > 0}
                                 onChange={(e) => {
-                                  e.stopPropagation();
-                                  const newSet = new Set(selectedColors);
                                   if (e.target.checked) {
-                                    newSet.add(color.id);
+                                    setSelectedColors(new Set(visibleColors.map(c => c.id)));
                                   } else {
-                                    newSet.delete(color.id);
+                                    setSelectedColors(new Set());
                                   }
-                                  setSelectedColors(newSet);
                                 }}
-                                className="h-4 w-4 rounded border-slate-200 text-blue-600 focus:ring-blue-500"
+                                className="h-4 w-4 rounded border-slate-300 text-purple-600"
                               />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Product</span>
-                                <span className="text-slate-400 truncate">{color.variant.product.productName}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Size</span>
+                            </TableHead>
+                            <TableHead>Color</TableHead>
+                            <TableHead>Code</TableHead>
+                            <TableHead>Company</TableHead>
+                            <TableHead>Product</TableHead>
+                            <TableHead>Size</TableHead>
+                            <TableHead className="text-right">Stock</TableHead>
+                            <TableHead className="text-center">Status</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {visibleColors.map(color => (
+                            <TableRow 
+                              key={color.id} 
+                              className="hover:bg-slate-50 cursor-pointer"
+                              onClick={() => setViewingColor(color)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedColors.has(color.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedColors);
+                                    if (e.target.checked) {
+                                      newSet.add(color.id);
+                                    } else {
+                                      newSet.delete(color.id);
+                                    }
+                                    setSelectedColors(newSet);
+                                  }}
+                                  className="h-4 w-4 rounded border-slate-300 text-purple-600"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-6 h-6 rounded border border-slate-200 flex-shrink-0"
+                                    style={{ backgroundColor: color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : color.colorCode }}
+                                  />
+                                  <span className="font-medium">{color.colorName}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-slate-600">{color.colorCode}</TableCell>
+                              <TableCell>{color.variant.product.company}</TableCell>
+                              <TableCell>{color.variant.product.productName}</TableCell>
+                              <TableCell>
                                 <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200">
                                   {color.variant.packingSize}
                                 </Badge>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Stock</span>
-                                <span className="font-mono font-semibold">{color.stockQuantity}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Status</span>
-                                <div className="text-sm">{getStockBadge(color.stockQuantity)}</div>
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 mt-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 border-slate-200 text-slate-600 hover:border-purple-300"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingColor(color);
-                                }}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                              {canEditStock && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="flex-1 border-slate-200 text-slate-600 hover:border-blue-300"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingColor(color);
-                                  }}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
-                                </Button>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {color.stockQuantity}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {getStockBadge(color.stockQuantity)}
+                              </TableCell>
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setViewingColor(color)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {canEditStock && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setEditingColor(color)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
                     {/* Load More Button for Colors */}
                     {filteredColors.length > colorsVisibleLimit && (
