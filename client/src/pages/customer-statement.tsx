@@ -1388,7 +1388,7 @@ Thank you for your business!`
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">
-                                  {txn.type === "payment" || txn.type === "return" ? (
+                                  {txn.credit > 0 ? (
                                     <span className="font-mono">Rs. {Math.round(txn.credit).toLocaleString()}</span>
                                   ) : (
                                     <span className="text-slate-400">-</span>
