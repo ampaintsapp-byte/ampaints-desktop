@@ -43,6 +43,7 @@ import {
   ChevronDown,
   ChevronRight,
   Package,
+  RefreshCw,
 } from "lucide-react"
 import { useState, useMemo, Fragment } from "react"
 import { SiWhatsapp } from "react-icons/si"
@@ -136,6 +137,12 @@ export default function CustomerStatement() {
   const [deletePaymentDialogOpen, setDeletePaymentDialogOpen] = useState(false)
   const [paymentToDelete, setPaymentToDelete] = useState<PaymentHistoryWithSale | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+
+  // Clear Full Account state
+  const [clearAccountDialogOpen, setClearAccountDialogOpen] = useState(false)
+  const [clearAccountMethod, setClearAccountMethod] = useState("cash")
+  const [clearAccountNotes, setClearAccountNotes] = useState("")
+  const [clearAccountProcessing, setClearAccountProcessing] = useState(false)
 
   const toggleRowExpand = (rowId: string) => {
     setExpandedRows((prev) => {
@@ -295,6 +302,71 @@ export default function CustomerStatement() {
       })
     },
   })
+
+  // Function to clear full account - pay all unpaid bills at once
+  const handleClearFullAccount = async () => {
+    if (unpaidSales.length === 0) {
+      toast({
+        title: "No Unpaid Bills",
+        description: "All bills are already paid.",
+      })
+      return
+    }
+
+    setClearAccountProcessing(true)
+    let successCount = 0
+    const failedBills: string[] = []
+
+    try {
+      // Process each unpaid bill sequentially
+      for (const sale of unpaidSales) {
+        const outstanding = roundNumber(safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid))
+        if (outstanding <= 0) continue
+
+        try {
+          await apiRequest("POST", `/api/sales/${sale.id}/payment`, {
+            amount: outstanding,
+            paymentMethod: clearAccountMethod,
+            notes: clearAccountNotes || `Full account clearance payment`,
+          })
+          successCount++
+        } catch (error) {
+          const billRef = sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`
+          failedBills.push(billRef)
+        }
+      }
+
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ["/api/customer", customerPhone, "statement"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+
+      setClearAccountDialogOpen(false)
+      setClearAccountMethod("cash")
+      setClearAccountNotes("")
+
+      if (failedBills.length === 0) {
+        toast({
+          title: "Account Cleared",
+          description: `Successfully paid ${successCount} bill(s). Account balance is now zero.`,
+        })
+      } else {
+        toast({
+          title: "Partial Success",
+          description: `Paid ${successCount} bill(s). Failed: ${failedBills.join(", ")}. Please check remaining bills.`,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to clear account. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setClearAccountProcessing(false)
+    }
+  }
 
   const paidSales = useMemo(() => allSales.filter((s) => s.paymentStatus === "paid"), [allSales])
   const unpaidSales = useMemo(() => allSales.filter((s) => s.paymentStatus !== "paid"), [allSales])
@@ -1705,12 +1777,29 @@ Thank you for your business!`
           <TabsContent value="unpaid-bills">
             <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
               <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
-                <CardTitle className="flex items-center gap-3 text-lg">
-                  <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
-                    <Receipt className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                  </div>
-                  Outstanding Bills
-                </CardTitle>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <CardTitle className="flex items-center gap-3 text-lg">
+                    <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
+                      <Receipt className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                    </div>
+                    Outstanding Bills
+                    {unpaidSales.length > 0 && (
+                      <Badge variant="outline" className="ml-2 border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                        {unpaidSales.length} bill{unpaidSales.length > 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  {unpaidSales.length > 0 && (
+                    <Button
+                      onClick={() => setClearAccountDialogOpen(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                      data-testid="button-clear-full-account"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Clear Full Account (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-4">
                 {unpaidSales.length === 0 ? (
@@ -2037,6 +2126,92 @@ Thank you for your business!`
             </Button>
             <Button onClick={handleAddCashLoan} disabled={addCashLoanMutation.isPending} data-testid="button-add-loan">
               {addCashLoanMutation.isPending ? "Adding..." : "Add Balance"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear Full Account Dialog */}
+      <Dialog open={clearAccountDialogOpen} onOpenChange={setClearAccountDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-600">
+              <CheckCircle className="h-5 w-5" />
+              Clear Full Account
+            </DialogTitle>
+            <DialogDescription>
+              Pay all outstanding bills at once to clear the customer's account balance. 
+              The selected payment method and notes will be applied to each bill.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Summary Card */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-slate-500 dark:text-slate-400">Customer</span>
+                <span className="font-semibold text-slate-800 dark:text-white">{customerName}</span>
+              </div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-slate-500 dark:text-slate-400">Unpaid Bills</span>
+                <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                  {unpaidSales.length} bill{unpaidSales.length > 1 ? "s" : ""}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-600">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Total Outstanding</span>
+                <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                  Rs. {Math.round(stats.totalOutstanding).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Payment Method</Label>
+              <Select value={clearAccountMethod} onValueChange={setClearAccountMethod}>
+                <SelectTrigger data-testid="select-clear-method">
+                  <SelectValue placeholder="Select payment method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="upi">UPI</SelectItem>
+                  <SelectItem value="easypaisa">EasyPaisa</SelectItem>
+                  <SelectItem value="jazzcash">JazzCash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                placeholder="Add notes for this full account clearance..."
+                value={clearAccountNotes}
+                onChange={(e) => setClearAccountNotes(e.target.value)}
+                data-testid="input-clear-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setClearAccountDialogOpen(false)} disabled={clearAccountProcessing}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleClearFullAccount}
+              disabled={clearAccountProcessing || unpaidSales.length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              data-testid="button-confirm-clear-account"
+            >
+              {clearAccountProcessing ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Clear Account (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
