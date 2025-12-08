@@ -48,6 +48,7 @@ export default function BillPrint() {
   const [customRate, setCustomRate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingItems, setEditingItems] = useState<{ [key: string]: { quantity: string; rate: string } }>({});
+  const [editingPaidAmount, setEditingPaidAmount] = useState("");
   
   const referrer = new URLSearchParams(searchParams).get('from');
 
@@ -622,12 +623,14 @@ export default function BillPrint() {
     });
 
     setEditingItems(initialEditingState);
+    setEditingPaidAmount(sale.amountPaid);
     setEditMode(true);
   };
 
   // Cancel Edit Mode
   const cancelEditMode = () => {
     setEditingItems({});
+    setEditingPaidAmount("");
     setEditMode(false);
   };
 
@@ -678,8 +681,23 @@ export default function BillPrint() {
         }
       }
 
+      // Update paid amount if changed
+      const newPaidAmount = parseFloat(editingPaidAmount);
+      const oldPaidAmount = parseFloat(sale.amountPaid);
+      if (!isNaN(newPaidAmount) && newPaidAmount >= 0 && newPaidAmount !== oldPaidAmount) {
+        hasChanges = true;
+        await apiRequest("PATCH", `/api/sales/${saleId}/paid-amount`, {
+          amountPaid: newPaidAmount,
+        });
+      }
+
       if (hasChanges) {
+        // Invalidate all relevant queries
         await queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/customer", sale.customerPhone, "statement"] });
         toast({ title: "All changes saved" });
       } else {
         toast({ title: "No changes to save" });
@@ -687,6 +705,7 @@ export default function BillPrint() {
 
       setEditMode(false);
       setEditingItems({});
+      setEditingPaidAmount("");
     } catch (error) {
       console.error("Error saving changes:", error);
       toast({ title: "Failed to save changes", variant: "destructive" });
@@ -931,9 +950,21 @@ export default function BillPrint() {
                 <span>Total : </span>
                 <span>{Math.round(parseFloat(sale.totalAmount))}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span>Paid : </span>
-                <span>{Math.round(parseFloat(sale.amountPaid))}</span>
+                {editMode ? (
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={editingPaidAmount}
+                    onChange={(e) => setEditingPaidAmount(e.target.value)}
+                    className="w-32 text-right"
+                    data-testid="input-edit-paid-amount"
+                  />
+                ) : (
+                  <span>{Math.round(parseFloat(sale.amountPaid))}</span>
+                )}
               </div>
               {!isPaid && (
                 <div className="flex justify-between text-red-600 font-bold">

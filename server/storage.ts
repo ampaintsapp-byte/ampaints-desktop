@@ -137,6 +137,7 @@ export interface IStorage {
     notes?: string
   }): Promise<ExtendedSale>
   updateSalePayment(saleId: string, amount: number, paymentMethod?: string, notes?: string): Promise<ExtendedSale>
+  updateSalePaidAmount(saleId: string, amountPaid: number, paymentStatus: string): Promise<ExtendedSale>
   updateSaleDueDate(saleId: string, data: { dueDate: Date | null; notes?: string }): Promise<ExtendedSale>
   addSaleItem(saleId: string, item: InsertSaleItem): Promise<SaleItem>
   updateSaleItem(id: string, data: { quantity: number; rate: number; subtotal: number }): Promise<SaleItem>
@@ -2215,6 +2216,27 @@ export class DatabaseStorage implements IStorage {
 
     // AUTO-SYNC TRIGGER
     this.detectChanges("sales")
+
+    return {
+      ...updatedSale,
+      dueDate: updatedSale.dueDate,
+      isManualBalance: updatedSale.isManualBalance,
+      notes: updatedSale.notes,
+    } as ExtendedSale
+  }
+
+  // Update paid amount directly (for bill editing)
+  async updateSalePaidAmount(saleId: string, amountPaid: number, paymentStatus: string): Promise<ExtendedSale> {
+    await db.update(sales).set({
+      amountPaid: amountPaid.toString(),
+      paymentStatus,
+    }).where(eq(sales.id, saleId))
+
+    const [updatedSale] = await db.select().from(sales).where(eq(sales.id, saleId))
+
+    // AUTO-SYNC TRIGGER
+    this.detectChanges("sales")
+    this.detectChanges("payments")
 
     return {
       ...updatedSale,

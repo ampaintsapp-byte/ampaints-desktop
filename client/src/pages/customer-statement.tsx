@@ -373,7 +373,7 @@ export default function CustomerStatement() {
 
   const customerName = allSales[0]?.customerName || "Customer"
 
-  // Corrected and improved stats calculations - INCLUDING return credits
+  // Corrected and improved stats calculations - INCLUDING return credits and credit balances
   const stats = useMemo(() => {
     const totalPurchases = allSales.reduce((sum, s) => sum + safeParseFloat(s.totalAmount), 0)
     const totalPaid = allSales.reduce((sum, s) => sum + safeParseFloat(s.amountPaid), 0)
@@ -382,8 +382,12 @@ export default function CustomerStatement() {
     // Calculate total return credits (refunds reduce outstanding balance)
     const totalReturnCredits = customerReturns.reduce((sum, r) => sum + safeParseFloat(r.totalRefund), 0)
     
-    // Outstanding = Bills - Payments - Returns (returns are credits that reduce balance)
-    const totalOutstanding = Math.max(0, totalPurchases - totalPaid - totalReturnCredits)
+    // Outstanding = Bills - Payments - Returns (can be negative for credit/advance)
+    // Negative value means customer has credit/advance balance
+    const totalOutstanding = roundNumber(totalPurchases - totalPaid - totalReturnCredits)
+    const hasCredit = totalOutstanding < 0
+    // displayOutstanding is always positive for display purposes
+    const displayOutstanding = roundNumber(Math.abs(totalOutstanding))
 
     return {
       totalBills: allSales.length,
@@ -391,7 +395,9 @@ export default function CustomerStatement() {
       unpaidBills: unpaidSales.length,
       totalPurchases: roundNumber(totalPurchases),
       totalPaid: roundNumber(totalPaid),
-      totalOutstanding: roundNumber(totalOutstanding),
+      totalOutstanding: totalOutstanding, // Keep signed value for consistency with ledger
+      displayOutstanding, // Positive value for display
+      hasCredit,
       totalPaymentsReceived: roundNumber(totalPaymentsReceived),
       totalReturnCredits: roundNumber(totalReturnCredits),
       totalReturns: customerReturns.length,
@@ -712,10 +718,12 @@ export default function CustomerStatement() {
 
     addSectionHeader("ACCOUNT SUMMARY")
 
+    const balanceLabel = stats.hasCredit ? "Credit:" : "Outstanding:"
+    const balanceValue = `Rs. ${stats.displayOutstanding.toLocaleString()}`
     const summaryData = [
       ["Total Bills:", stats.totalBills.toString(), "Total Purchases:", `Rs. ${stats.totalPurchases.toLocaleString()}`],
       ["Paid Bills:", stats.paidBills.toString(), "Total Paid:", `Rs. ${stats.totalPaid.toLocaleString()}`],
-      ["Unpaid Bills:", stats.unpaidBills.toString(), "Outstanding:", `Rs. ${stats.totalOutstanding.toLocaleString()}`],
+      ["Unpaid Bills:", stats.unpaidBills.toString(), balanceLabel, balanceValue],
     ]
 
     pdf.setFontSize(9)
@@ -841,7 +849,9 @@ export default function CustomerStatement() {
     pdf.setFontSize(12)
     pdf.setFont("helvetica", "bold")
     const closingBalance = transactions.length > 0 ? transactions[0].balance : 0
-    pdf.text(`CLOSING BALANCE: Rs. ${Math.round(closingBalance).toLocaleString()}`, pageWidth - margin, yPos, {
+    const closingLabel = closingBalance < 0 ? "CREDIT BALANCE" : "CLOSING BALANCE"
+    const closingDisplay = Math.abs(closingBalance)
+    pdf.text(`${closingLabel}: Rs. ${Math.round(closingDisplay).toLocaleString()}`, pageWidth - margin, yPos, {
       align: "right",
     })
     yPos += 15
@@ -943,13 +953,14 @@ export default function CustomerStatement() {
     const colWidth = (pageWidth - 2 * margin) / 3
     pdf.text("Total Purchases", margin + colWidth / 2, yPos, { align: "center" })
     pdf.text("Total Paid", margin + colWidth + colWidth / 2, yPos, { align: "center" })
-    pdf.text("Balance Due", margin + 2 * colWidth + colWidth / 2, yPos, { align: "center" })
+    pdf.text(stats.hasCredit ? "Credit Balance" : "Balance Due", margin + 2 * colWidth + colWidth / 2, yPos, { align: "center" })
     yPos += 6
 
     pdf.setFontSize(11)
     pdf.text(`Rs. ${stats.totalPurchases.toLocaleString()}`, margin + colWidth / 2, yPos, { align: "center" })
     pdf.text(`Rs. ${stats.totalPaid.toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: "center" })
-    pdf.text(`Rs. ${stats.totalOutstanding.toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, {
+    const balanceDisplay = stats.displayOutstanding
+    pdf.text(`Rs. ${balanceDisplay.toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, {
       align: "center",
     })
     yPos += 15
@@ -1005,13 +1016,19 @@ export default function CustomerStatement() {
     pdf.line(margin, yPos, pageWidth - margin, yPos)
     yPos += 10
 
-    pdf.setFillColor(102, 126, 234)
+    const premiumClosingLabel = stats.hasCredit ? "CREDIT BALANCE:" : "CLOSING BALANCE:"
+    const premiumClosingValue = stats.displayOutstanding
+    if (stats.hasCredit) {
+      pdf.setFillColor(16, 185, 129)
+    } else {
+      pdf.setFillColor(102, 126, 234)
+    }
     pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, "F")
     pdf.setTextColor(255, 255, 255)
     pdf.setFontSize(10)
     pdf.setFont("helvetica", "bold")
-    pdf.text("CLOSING BALANCE:", pageWidth - margin - 65, yPos + 3)
-    pdf.text(`Rs. ${stats.totalOutstanding.toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: "right" })
+    pdf.text(premiumClosingLabel, pageWidth - margin - 65, yPos + 3)
+    pdf.text(`Rs. ${premiumClosingValue.toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: "right" })
 
     return pdf.output("blob")
   }
@@ -1072,10 +1089,13 @@ export default function CustomerStatement() {
 
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
+        const balanceText = stats.hasCredit 
+          ? `Credit: Rs. ${stats.displayOutstanding.toLocaleString()}`
+          : `Balance: Rs. ${stats.displayOutstanding.toLocaleString()}`
         await navigator.share({
           files: [pdfFile],
           title: `Account Statement - ${customerName}`,
-          text: `Account Statement from ${receiptSettings.businessName} - Balance: Rs. ${stats.totalOutstanding.toLocaleString()}`,
+          text: `Account Statement from ${receiptSettings.businessName} - ${balanceText}`,
         })
         toast({
           title: "Shared Successfully",
@@ -1092,6 +1112,8 @@ export default function CustomerStatement() {
 
     // Fallback: Open WhatsApp with text message
     const closingBalance = transactions.length > 0 ? transactions[0].balance : 0
+    const balanceLabel = closingBalance < 0 ? "CREDIT BALANCE" : "CURRENT BALANCE"
+    const displayBalance = Math.abs(closingBalance)
 
     const message = `*ACCOUNT STATEMENT*
 ${receiptSettings.businessName}
@@ -1105,7 +1127,7 @@ Total Bills: ${stats.totalBills}
 Total Purchases: Rs. ${stats.totalPurchases.toLocaleString()}
 Total Paid: Rs. ${stats.totalPaid.toLocaleString()}
 
-*CURRENT BALANCE: Rs. ${Math.round(closingBalance).toLocaleString()}*
+*${balanceLabel}: Rs. ${Math.round(displayBalance).toLocaleString()}*
 
 Thank you for your business!`
 
@@ -1266,9 +1288,11 @@ Thank you for your business!`
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-blue-200/80 text-[10px] font-semibold tracking-wider uppercase">Outstanding Balance</p>
-                <p className="text-2xl md:text-3xl font-bold tracking-tight tabular-nums" data-testid="text-current-balance">
-                  <span className="text-base md:text-lg font-normal opacity-60">Rs.</span> {stats.totalOutstanding.toLocaleString()}
+                <p className="text-blue-200/80 text-[10px] font-semibold tracking-wider uppercase">
+                  {stats.hasCredit ? "Credit Balance" : "Outstanding Balance"}
+                </p>
+                <p className={`text-2xl md:text-3xl font-bold tracking-tight tabular-nums ${stats.hasCredit ? "text-emerald-300" : ""}`} data-testid="text-current-balance">
+                  <span className="text-base md:text-lg font-normal opacity-60">Rs.</span> {stats.displayOutstanding.toLocaleString()}
                 </p>
                 <p className="text-blue-300/70 text-[10px] mt-0.5">
                   As of {formatDateShort(new Date().toISOString())}
@@ -1314,13 +1338,15 @@ Thank you for your business!`
           </div>
           <div className="stat-tile p-5 rounded-xl">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center">
-                <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${stats.hasCredit ? "bg-emerald-50 dark:bg-emerald-900/30" : "bg-rose-50 dark:bg-rose-900/30"}`}>
+                <AlertCircle className={`h-5 w-5 ${stats.hasCredit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`} />
               </div>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Due</p>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                {stats.hasCredit ? "Credit" : "Due"}
+              </p>
             </div>
-            <p className="text-2xl font-bold text-rose-600 dark:text-rose-400" data-testid="text-outstanding">
-              Rs. {stats.totalOutstanding.toLocaleString()}
+            <p className={`text-2xl font-bold ${stats.hasCredit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`} data-testid="text-outstanding">
+              Rs. {stats.displayOutstanding.toLocaleString()}
             </p>
           </div>
         </div>

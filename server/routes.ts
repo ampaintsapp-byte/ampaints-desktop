@@ -2101,6 +2101,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // Update paid amount directly (for bill editing)
+  app.patch("/api/sales/:id/paid-amount", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { amountPaid } = req.body
+
+      if (typeof amountPaid !== "number" || isNaN(amountPaid) || amountPaid < 0) {
+        res.status(400).json({ error: "Invalid amount: must be a non-negative number" })
+        return
+      }
+
+      const sale = await storage.getSale(req.params.id)
+      if (!sale) {
+        res.status(404).json({ error: "Sale not found" })
+        return
+      }
+
+      // Round to 2 decimal places
+      const roundedAmount = Math.round(amountPaid * 100) / 100
+      const totalAmount = Math.round(Number.parseFloat(sale.totalAmount || "0") * 100) / 100
+
+      // Calculate new payment status
+      let paymentStatus = "unpaid"
+      if (roundedAmount >= totalAmount) {
+        paymentStatus = "paid"
+      } else if (roundedAmount > 0) {
+        paymentStatus = "partial"
+      }
+
+      // Update the sale's paid amount and status directly
+      const updatedSale = await storage.updateSalePaidAmount(req.params.id, roundedAmount, paymentStatus)
+
+      // Invalidate real-time queries
+      invalidateCustomerQueries(sale.customerPhone)
+      invalidateGlobalQueries()
+
+      // Auto-sync trigger
+      detectChanges("payments")
+
+      res.json(updatedSale)
+    } catch (error) {
+      console.error("Error updating paid amount:", error)
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to update paid amount" 
+      })
+    }
+  })
+
   app.post("/api/sales/:id/items", requirePerm("sales:edit"), async (req, res) => {
     try {
       const validated = insertSaleItemSchema.parse(req.body)
