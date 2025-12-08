@@ -672,8 +672,12 @@ export default function Audit() {
       setMasterPinVerified(true)
       setMasterPinError("")
       
-      // Also fetch audit log
-      const auditResponse = await fetch(`/api/license/audit?masterPin=${encodeURIComponent(masterPinInput)}`)
+      // Also fetch audit log via POST (not GET to keep master PIN secure)
+      const auditResponse = await fetch("/api/license/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ masterPin: masterPinInput }),
+      })
       if (auditResponse.ok) {
         const auditData = await auditResponse.json()
         setLicenseAuditLog(auditData.auditLog || [])
@@ -702,7 +706,11 @@ export default function Audit() {
         setLicenseDevices(data.devices || [])
       }
       
-      const auditResponse = await fetch(`/api/license/audit?masterPin=${encodeURIComponent(masterPinInput)}`)
+      const auditResponse = await fetch("/api/license/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ masterPin: masterPinInput }),
+      })
       if (auditResponse.ok) {
         const auditData = await auditResponse.json()
         setLicenseAuditLog(auditData.auditLog || [])

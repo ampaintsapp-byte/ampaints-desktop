@@ -3213,24 +3213,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Get license audit log (requires master PIN) - GET version
-  app.get("/api/license/audit", async (req, res) => {
-    try {
-      const { masterPin, deviceId } = req.query as { masterPin?: string; deviceId?: string }
-      
-      if (!masterPin || !verifyMasterPin(masterPin)) {
-        res.status(403).json({ error: "Invalid master PIN" })
-        return
-      }
-
-      const auditLog = await storage.getLicenseAuditLog(deviceId)
-      res.json({ auditLog })
-    } catch (error) {
-      console.error("Error getting audit log:", error)
-      res.status(500).json({ error: "Failed to get audit log" })
-    }
-  })
-
   // Verify master PIN (for admin panel access)
   app.post("/api/license/verify-pin", async (req, res) => {
     try {
