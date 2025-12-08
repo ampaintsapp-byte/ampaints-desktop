@@ -231,7 +231,7 @@ export default function StockManagement() {
   /* Stock In History filters */
   const [historyCompanyFilter, setHistoryCompanyFilter] = useState("all");
   const [historyProductFilter, setHistoryProductFilter] = useState("all");
-  const [historyDateFilter, setHistoryDateFilter] = useState("all");
+  const [historyDateFilter, setHistoryDateFilter] = useState("today");
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [historyStartDate, setHistoryStartDate] = useState<string>("");
   const [historyEndDate, setHistoryEndDate] = useState<string>("");
