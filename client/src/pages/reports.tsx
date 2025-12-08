@@ -324,9 +324,18 @@ export default function Reports() {
     return filteredSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
   }, [filteredSales]);
 
+  const filteredPaymentsTotal = useMemo(() => {
+    return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+  }, [filteredPayments]);
+
+  const filteredReturnsTotal = useMemo(() => {
+    return filteredReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
+  }, [filteredReturns]);
+
   const filteredSalesOutstanding = useMemo(() => {
-    return filteredSalesTotal - filteredSalesPaid;
-  }, [filteredSalesTotal, filteredSalesPaid]);
+    // Outstanding = Sales Total - Paid - Return Credits (returns reduce outstanding)
+    return Math.max(0, filteredSalesTotal - filteredSalesPaid - filteredReturnsTotal);
+  }, [filteredSalesTotal, filteredSalesPaid, filteredReturnsTotal]);
 
   const unpaidSalesTotal = useMemo(() => {
     return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
@@ -336,17 +345,18 @@ export default function Reports() {
     return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
   }, [unpaidSales]);
 
+  // Calculate returns specifically tied to unpaid sales
+  const unpaidSalesReturnCredits = useMemo(() => {
+    const unpaidSaleIds = new Set(unpaidSales.map(s => s.id));
+    return filteredReturns
+      .filter(ret => ret.saleId && unpaidSaleIds.has(ret.saleId))
+      .reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
+  }, [unpaidSales, filteredReturns]);
+
   const unpaidSalesOutstanding = useMemo(() => {
-    return unpaidSalesTotal - unpaidSalesPaid;
-  }, [unpaidSalesTotal, unpaidSalesPaid]);
-
-  const filteredPaymentsTotal = useMemo(() => {
-    return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
-  }, [filteredPayments]);
-
-  const filteredReturnsTotal = useMemo(() => {
-    return filteredReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
-  }, [filteredReturns]);
+    // Subtract only return credits that belong to unpaid sales
+    return Math.max(0, unpaidSalesTotal - unpaidSalesPaid - unpaidSalesReturnCredits);
+  }, [unpaidSalesTotal, unpaidSalesPaid, unpaidSalesReturnCredits]);
 
   const returnStats: ReturnStats = useMemo(() => {
     return {
@@ -360,11 +370,13 @@ export default function Reports() {
   const stats = useMemo(() => {
     const totalSalesAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
     const totalPaidAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
-    const totalUnpaidAmount = totalSalesAmount - totalPaidAmount;
     const totalRecoveryPayments = paymentHistory.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
     
     const totalReturnsAmount = returns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
     const returnsCount = returns.length;
+    
+    // totalOutstanding properly accounts for return credits (sales - payments - returns)
+    const totalOutstanding = Math.max(0, totalSalesAmount - totalPaidAmount - totalReturnsAmount);
     
     const unpaidBillsCount = allSales.filter((sale) => sale.paymentStatus !== "paid").length;
     const paidBillsCount = allSales.filter((sale) => sale.paymentStatus === "paid").length;
@@ -375,7 +387,7 @@ export default function Reports() {
     return {
       totalSalesAmount,
       totalPaidAmount,
-      totalUnpaidAmount,
+      totalOutstanding,
       totalRecoveryPayments,
       totalReturnsAmount,
       returnsCount,
@@ -398,6 +410,106 @@ export default function Reports() {
   const refundRate = useMemo(() => {
     return filteredSalesTotal > 0 ? (filteredReturnsTotal / filteredSalesTotal) * 100 : 0;
   }, [filteredSalesTotal, filteredReturnsTotal]);
+
+  // UNIFIED TRANSACTIONS - Combines bills, payments, and returns for a single timeline view
+  type UnifiedTransaction = {
+    id: string;
+    date: Date;
+    type: "bill" | "payment" | "return";
+    description: string;
+    customerName: string;
+    customerPhone: string;
+    debit: number; // Amount owed (bills)
+    credit: number; // Amount paid/refunded (payments & returns)
+    reference: string;
+    billReference?: string; // For payments/returns - shows which bill
+    status?: string;
+    notes?: string;
+  };
+
+  const unifiedTransactions = useMemo((): UnifiedTransaction[] => {
+    const transactions: UnifiedTransaction[] = [];
+
+    // Add all bills
+    filteredSales.forEach((sale) => {
+      transactions.push({
+        id: `bill-${sale.id}`,
+        date: parseDate(sale.createdAt) || new Date(),
+        type: "bill",
+        description: sale.isManualBalance ? "Manual Balance" : "Sale Bill",
+        customerName: sale.customerName,
+        customerPhone: sale.customerPhone,
+        debit: parseFloat(sale.totalAmount),
+        credit: 0,
+        reference: sale.id.slice(0, 8).toUpperCase(),
+        status: sale.paymentStatus,
+        notes: sale.notes || undefined,
+      });
+    });
+
+    // Add all payments (as credits) - resolve customer name from sale or lookup from allSales
+    filteredPayments.forEach((payment) => {
+      // Try to get customer name from payment.sale, or look up from allSales by saleId
+      let customerName = payment.sale?.customerName;
+      if (!customerName && payment.saleId) {
+        const matchingSale = allSales.find(s => s.id === payment.saleId);
+        customerName = matchingSale?.customerName;
+      }
+      
+      transactions.push({
+        id: `payment-${payment.id}`,
+        date: parseDate(payment.createdAt) || new Date(),
+        type: "payment",
+        description: `Payment (${payment.paymentMethod?.toUpperCase() || "CASH"})`,
+        customerName: customerName || "Customer",
+        customerPhone: payment.customerPhone,
+        debit: 0,
+        credit: parseFloat(payment.amount),
+        reference: payment.id.slice(0, 8).toUpperCase(),
+        billReference: payment.saleId ? payment.saleId.slice(0, 8).toUpperCase() : undefined,
+        notes: payment.notes || undefined,
+      });
+    });
+
+    // Add all returns (as credits)
+    filteredReturns.forEach((ret) => {
+      transactions.push({
+        id: `return-${ret.id}`,
+        date: parseDate(ret.createdAt) || new Date(),
+        type: "return",
+        description: ret.returnType === "full_bill" ? "Full Bill Return" : "Item Return",
+        customerName: ret.customerName,
+        customerPhone: ret.customerPhone,
+        debit: 0,
+        credit: parseFloat(ret.totalRefund || "0"),
+        reference: `RET-${ret.id.slice(0, 6).toUpperCase()}`,
+        billReference: ret.saleId ? ret.saleId.slice(0, 8).toUpperCase() : undefined,
+        status: ret.status,
+        notes: ret.reason || undefined,
+      });
+    });
+
+    // Sort by date (newest first)
+    transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    return transactions;
+  }, [filteredSales, filteredPayments, filteredReturns, parseDate, allSales]);
+
+  const visibleTransactions = useMemo(() => {
+    return unifiedTransactions.slice(0, visibleLimit);
+  }, [unifiedTransactions, visibleLimit]);
+
+  // Transaction type badge helper
+  const getTransactionTypeBadge = (type: "bill" | "payment" | "return") => {
+    switch (type) {
+      case "bill":
+        return <Badge className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs px-2 py-0 h-5 border border-blue-200 dark:border-blue-700">Bill</Badge>;
+      case "payment":
+        return <Badge className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-xs px-2 py-0 h-5 border border-emerald-200 dark:border-emerald-700">Payment</Badge>;
+      case "return":
+        return <Badge className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 text-xs px-2 py-0 h-5 border border-rose-200 dark:border-rose-700">Return</Badge>;
+    }
+  };
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -659,12 +771,12 @@ export default function Reports() {
                 </div>
               </div>
               <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                {Math.round(stats.totalUnpaidAmount).toLocaleString("en-IN")}
+                {Math.round(stats.totalOutstanding).toLocaleString("en-IN")}
               </div>
               <div className="flex items-center justify-between mt-1.5">
                 <p className="text-xs text-slate-500 dark:text-slate-400">{stats.unpaidBillsCount} unpaid bills</p>
                 <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-                  {stats.totalPaymentRecords} payments
+                  {stats.returnsCount > 0 ? `-${stats.totalReturnsAmount.toLocaleString("en-IN")} returns` : `${stats.totalPaymentRecords} payments`}
                 </div>
               </div>
             </CardContent>
@@ -762,7 +874,7 @@ export default function Reports() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-800/50">
+          <TabsList className="grid w-full grid-cols-6 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-800/50">
             <TabsTrigger 
               value="overview" 
               data-testid="tab-overview"
@@ -772,20 +884,20 @@ export default function Reports() {
               Overview
             </TabsTrigger>
             <TabsTrigger 
+              value="transactions" 
+              data-testid="tab-transactions"
+              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+            >
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              All ({unifiedTransactions.length})
+            </TabsTrigger>
+            <TabsTrigger 
               value="all-sales" 
               data-testid="tab-all-sales"
               className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
             >
               <Receipt className="h-3.5 w-3.5 mr-1.5" />
-              Sales ({filteredSales.length})
-            </TabsTrigger>
-            <TabsTrigger 
-              value="unpaid-bills" 
-              data-testid="tab-unpaid-bills"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
-            >
-              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
-              Unpaid ({unpaidSales.length})
+              Bills ({filteredSales.length})
             </TabsTrigger>
             <TabsTrigger 
               value="recovery-payments" 
@@ -793,7 +905,7 @@ export default function Reports() {
               className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
             >
               <Wallet className="h-3.5 w-3.5 mr-1.5" />
-              Recovery ({filteredPayments.length})
+              Payments ({filteredPayments.length})
             </TabsTrigger>
             <TabsTrigger 
               value="returns" 
@@ -802,6 +914,14 @@ export default function Reports() {
             >
               <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
               Returns ({filteredReturns.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="unpaid-bills" 
+              data-testid="tab-unpaid-bills"
+              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+            >
+              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
+              Unpaid ({unpaidSales.length})
             </TabsTrigger>
           </TabsList>
 
@@ -1114,6 +1234,160 @@ export default function Reports() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Unified Transactions Tab */}
+          <TabsContent value="transactions">
+            <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-100/50 dark:border-slate-800/30 bg-white/50 dark:bg-zinc-900/50">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">All Transactions</h3>
+                    <Badge variant="outline" className="text-xs h-5 px-2 bg-white/50 dark:bg-zinc-800/50">
+                      {unifiedTransactions.length} total
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                      <span className="text-slate-600 dark:text-slate-400">Bills (Debit)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                      <span className="text-slate-600 dark:text-slate-400">Payments (Credit)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                      <span className="text-slate-600 dark:text-slate-400">Returns (Credit)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-white/50 dark:bg-zinc-900/50">
+                      <TableHead className="py-3">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300">
+                          Date <SortIcon field="date" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Type</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Description</TableHead>
+                      <TableHead className="py-3">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300">
+                          Customer <SortIcon field="customer" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Reference</TableHead>
+                      <TableHead className="py-3 text-right text-xs text-slate-600 dark:text-slate-400">Debit</TableHead>
+                      <TableHead className="py-3 text-right text-xs text-slate-600 dark:text-slate-400">Credit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleTransactions.map((txn) => (
+                      <TableRow 
+                        key={txn.id} 
+                        data-testid={`row-transaction-${txn.id}`} 
+                        className="hover:bg-white/30 dark:hover:bg-zinc-900/30 border-b border-slate-100/50 dark:border-slate-800/30"
+                      >
+                        <TableCell className="py-2.5 text-xs text-slate-600 dark:text-slate-400">
+                          {formatDisplayDate(txn.date)}
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          {getTransactionTypeBadge(txn.type)}
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <div className="flex flex-col">
+                            <span className="text-sm text-slate-800 dark:text-slate-200">{txn.description}</span>
+                            {txn.billReference && (
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                Bill: #{txn.billReference}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Link href={`/customer/${encodeURIComponent(txn.customerPhone)}`} className="text-sm text-blue-600 hover:text-blue-700 hover:underline">
+                            {txn.customerName}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="py-2.5 font-mono text-xs text-slate-500 dark:text-slate-400">
+                          #{txn.reference}
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right">
+                          {txn.debit > 0 ? (
+                            <span className="text-sm font-medium text-blue-600 dark:text-blue-400 tabular-nums">
+                              {txn.debit.toLocaleString("en-IN")}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right">
+                          {txn.credit > 0 ? (
+                            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                              {txn.credit.toLocaleString("en-IN")}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {unifiedTransactions.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-slate-500 dark:text-slate-400 py-8">
+                          <div className="flex flex-col items-center gap-2">
+                            <Activity className="h-8 w-8 opacity-50" />
+                            <p className="text-sm">No transactions found matching your filters</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+                
+                {unifiedTransactions.length > visibleLimit && (
+                  <div className="flex justify-center py-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                      data-testid="button-load-more-transactions"
+                      className="text-xs h-8 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50"
+                    >
+                      Load More ({unifiedTransactions.length - visibleLimit} remaining)
+                    </Button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Transaction Summary Footer */}
+              <div className="p-4 bg-slate-50/50 dark:bg-zinc-900/50 border-t border-slate-100/50 dark:border-slate-800/30">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Bills (Debit)</div>
+                    <div className="text-sm font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                      Rs. {filteredSalesTotal.toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Payments (Credit)</div>
+                    <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      Rs. {filteredPaymentsTotal.toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Returns (Credit)</div>
+                    <div className="text-sm font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                      Rs. {filteredReturnsTotal.toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
           </TabsContent>
 
           {/* All Sales Tab */}

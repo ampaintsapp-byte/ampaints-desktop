@@ -301,12 +301,17 @@ export default function CustomerStatement() {
 
   const customerName = allSales[0]?.customerName || "Customer"
 
-  // Corrected and improved stats calculations
+  // Corrected and improved stats calculations - INCLUDING return credits
   const stats = useMemo(() => {
     const totalPurchases = allSales.reduce((sum, s) => sum + safeParseFloat(s.totalAmount), 0)
     const totalPaid = allSales.reduce((sum, s) => sum + safeParseFloat(s.amountPaid), 0)
-    const totalOutstanding = Math.max(0, totalPurchases - totalPaid)
     const totalPaymentsReceived = paymentHistory.reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
+    
+    // Calculate total return credits (refunds reduce outstanding balance)
+    const totalReturnCredits = customerReturns.reduce((sum, r) => sum + safeParseFloat(r.totalRefund), 0)
+    
+    // Outstanding = Bills - Payments - Returns (returns are credits that reduce balance)
+    const totalOutstanding = Math.max(0, totalPurchases - totalPaid - totalReturnCredits)
 
     return {
       totalBills: allSales.length,
@@ -316,8 +321,10 @@ export default function CustomerStatement() {
       totalPaid: roundNumber(totalPaid),
       totalOutstanding: roundNumber(totalOutstanding),
       totalPaymentsReceived: roundNumber(totalPaymentsReceived),
+      totalReturnCredits: roundNumber(totalReturnCredits),
+      totalReturns: customerReturns.length,
     }
-  }, [allSales, paidSales, unpaidSales, paymentHistory])
+  }, [allSales, paidSales, unpaidSales, paymentHistory, customerReturns])
 
   // FIXED: Corrected transactions calculation with proper balance tracking
   const transactions = useMemo((): Transaction[] => {
