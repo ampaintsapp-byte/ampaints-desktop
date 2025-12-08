@@ -2400,6 +2400,42 @@ export default function Audit() {
                             </Button>
                           </div>
                         </div>
+
+                        <div className="border-t pt-4">
+                          <h4 className="font-medium mb-3 flex items-center gap-2">
+                            <Shield className="h-4 w-4" />
+                            About
+                          </h4>
+                          <div className="bg-gradient-to-r from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 rounded-lg p-4 border border-primary/20">
+                            <div className="text-center space-y-3">
+                              <div>
+                                <h3 className="text-lg font-bold text-foreground">
+                                  RAYOUX INNOVATIONS PRIVATE LIMITED
+                                </h3>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  Software Development & Technology Solutions
+                                </p>
+                              </div>
+                              <div className="border-t border-primary/20 pt-3">
+                                <p className="text-sm font-medium text-foreground">
+                                  CEO: AHSAN KAMRAN
+                                </p>
+                                <p className="text-sm text-muted-foreground flex items-center justify-center gap-2 mt-1">
+                                  <Smartphone className="h-4 w-4" />
+                                  0300-1204190
+                                </p>
+                              </div>
+                              <div className="border-t border-primary/20 pt-3">
+                                <p className="text-xs text-muted-foreground">
+                                  PaintPulse - Point of Sale & Inventory Management System
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Version 1.0.0
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
                   </TabsContent>
