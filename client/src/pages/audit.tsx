@@ -220,6 +220,8 @@ export default function Audit() {
   const [blockReason, setBlockReason] = useState("")
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [showBlockDialog, setShowBlockDialog] = useState(false)
+  const [showAutoBlockDialog, setShowAutoBlockDialog] = useState(false)
+  const [autoBlockDate, setAutoBlockDate] = useState("")
 
   // Cloud Sync State
   const [cloudUrl, setCloudUrl] = useState("")
@@ -808,6 +810,53 @@ export default function Audit() {
       toast({
         title: "Error",
         description: "Failed to unblock device",
+        variant: "destructive",
+      })
+    } finally {
+      setLicenseLoading(false)
+    }
+  }
+
+  const handleSetAutoBlockDate = async () => {
+    if (!selectedDeviceId) return
+    setLicenseLoading(true)
+    try {
+      const response = await fetch("/api/license/set-auto-block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          masterPin: masterPinInput,
+          deviceId: selectedDeviceId,
+          autoBlockDate: autoBlockDate || null,
+        }),
+      })
+      
+      if (!response.ok) {
+        const data = await response.json()
+        toast({
+          title: "Failed to Set Auto-Block",
+          description: data.error || "Could not set auto-block date",
+          variant: "destructive",
+        })
+        return
+      }
+      
+      toast({
+        title: autoBlockDate ? "Auto-Block Date Set" : "Auto-Block Cleared",
+        description: autoBlockDate 
+          ? `Device will be blocked on ${autoBlockDate}` 
+          : "Auto-block date has been cleared",
+      })
+      
+      setShowAutoBlockDialog(false)
+      setAutoBlockDate("")
+      setSelectedDeviceId(null)
+      refreshDevices()
+    } catch (error) {
+      console.error("Error setting auto-block date:", error)
+      toast({
+        title: "Error",
+        description: "Failed to set auto-block date",
         variant: "destructive",
       })
     } finally {
@@ -2045,9 +2094,15 @@ export default function Audit() {
                                           {device.status === "blocked" && device.blockedReason && (
                                             <p className="text-red-600 dark:text-red-400">Reason: {device.blockedReason}</p>
                                           )}
+                                          {device.autoBlockDate && device.status !== "blocked" && (
+                                            <p className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                              <Calendar className="h-3 w-3" />
+                                              Auto-block on: {device.autoBlockDate}
+                                            </p>
+                                          )}
                                         </div>
                                       </div>
-                                      <div className="shrink-0">
+                                      <div className="shrink-0 flex items-center gap-2">
                                         {device.status === "blocked" ? (
                                           <Button
                                             size="sm"
@@ -2060,19 +2115,35 @@ export default function Audit() {
                                             Unblock
                                           </Button>
                                         ) : (
-                                          <Button
-                                            size="sm"
-                                            variant="destructive"
-                                            onClick={() => {
-                                              setSelectedDeviceId(device.deviceId)
-                                              setShowBlockDialog(true)
-                                            }}
-                                            disabled={licenseLoading}
-                                            data-testid={`button-block-${device.deviceId}`}
-                                          >
-                                            <Ban className="h-4 w-4 mr-1" />
-                                            Block
-                                          </Button>
+                                          <>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setSelectedDeviceId(device.deviceId)
+                                                setAutoBlockDate(device.autoBlockDate || "")
+                                                setShowAutoBlockDialog(true)
+                                              }}
+                                              disabled={licenseLoading}
+                                              data-testid={`button-schedule-${device.deviceId}`}
+                                            >
+                                              <Calendar className="h-4 w-4 mr-1" />
+                                              {device.autoBlockDate ? "Edit" : "Schedule"}
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="destructive"
+                                              onClick={() => {
+                                                setSelectedDeviceId(device.deviceId)
+                                                setShowBlockDialog(true)
+                                              }}
+                                              disabled={licenseLoading}
+                                              data-testid={`button-block-${device.deviceId}`}
+                                            >
+                                              <Ban className="h-4 w-4 mr-1" />
+                                              Block
+                                            </Button>
+                                          </>
                                         )}
                                       </div>
                                     </div>
@@ -2163,6 +2234,71 @@ export default function Audit() {
                               <Ban className="h-4 w-4 mr-2" />
                             )}
                             Block Device
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  {/* Auto-Block Date Dialog */}
+                  <Dialog open={showAutoBlockDialog} onOpenChange={setShowAutoBlockDialog}>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <Calendar className="h-5 w-5 text-amber-500" />
+                          Schedule Auto-Block
+                        </DialogTitle>
+                        <DialogDescription>
+                          Set a date when this device will be automatically blocked.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="autoBlockDate">Auto-Block Date</Label>
+                          <Input
+                            id="autoBlockDate"
+                            type="date"
+                            value={autoBlockDate}
+                            onChange={(e) => setAutoBlockDate(e.target.value)}
+                            min={new Date().toISOString().split('T')[0]}
+                            data-testid="input-auto-block-date"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            The device will be blocked automatically on this date when it connects.
+                          </p>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowAutoBlockDialog(false)
+                              setAutoBlockDate("")
+                              setSelectedDeviceId(null)
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          {autoBlockDate && (
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setAutoBlockDate("")
+                              }}
+                            >
+                              Clear Date
+                            </Button>
+                          )}
+                          <Button
+                            onClick={handleSetAutoBlockDate}
+                            disabled={licenseLoading}
+                            data-testid="button-confirm-auto-block"
+                          >
+                            {licenseLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <Calendar className="h-4 w-4 mr-2" />
+                            )}
+                            {autoBlockDate ? "Set Date" : "Clear Date"}
                           </Button>
                         </div>
                       </div>
