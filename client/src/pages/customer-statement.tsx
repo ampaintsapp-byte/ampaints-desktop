@@ -327,10 +327,12 @@ export default function CustomerStatement() {
   }, [allSales, paidSales, unpaidSales, paymentHistory, customerReturns])
 
   // FIXED: Corrected transactions calculation with proper balance tracking
+  // User's preferred logic: Show DEBIT and CREDIT in the SAME row for bills paid at POS
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
     // First, collect all bills in chronological order
+    // Include initial payment (at POS) as credit in the same row
     const billTransactions: Transaction[] = allSalesWithItems.map((sale) => {
       const saleItems: SaleItemDisplay[] =
         sale.saleItems?.map((item) => ({
@@ -346,6 +348,13 @@ export default function CustomerStatement() {
       const totalAmt = safeParseFloat(sale.totalAmount)
       const paidAmt = safeParseFloat(sale.amountPaid)
       const outstandingAmt = Math.max(0, totalAmt - paidAmt)
+      
+      // Calculate initial payment (paid at POS, not via recovery)
+      // Initial payment = amountPaid - sum of recovery payments for this sale
+      const recoveryPayments = paymentHistory
+        .filter((p) => p.saleId === sale.id)
+        .reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
+      const initialPayment = Math.max(0, paidAmt - recoveryPayments)
 
       return {
         id: `bill-${sale.id}`,
@@ -354,7 +363,7 @@ export default function CustomerStatement() {
         description: sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`,
         reference: sale.id.slice(0, 8).toUpperCase(),
         debit: totalAmt,
-        credit: 0,
+        credit: initialPayment, // Include initial payment as credit in same row
         balance: 0,
         paid: paidAmt,
         totalAmount: totalAmt,
@@ -367,7 +376,8 @@ export default function CustomerStatement() {
       }
     })
 
-    // Then collect all payments from payment_history (recovery payments)
+    // Then collect all payments from payment_history (recovery payments only)
+    // These are payments made AFTER the initial sale
     const paymentTransactions: Transaction[] = paymentHistory.map((payment) => ({
       id: `payment-${payment.id}`,
       date: safeParseDate(payment.createdAt),
@@ -383,43 +393,6 @@ export default function CustomerStatement() {
       notes: payment.notes || undefined,
       saleId: payment.saleId,
     }))
-
-    // Calculate initial payments (paid at POS, not in payment_history)
-    // For each sale: initial payment = amountPaid - sum of recovery payments for that sale
-    const initialPaymentTransactions: Transaction[] = allSalesWithItems
-      .filter((sale) => {
-        const paidAmt = safeParseFloat(sale.amountPaid)
-        // Get recovery payments for this sale from payment_history
-        const recoveryPayments = paymentHistory
-          .filter((p) => p.saleId === sale.id)
-          .reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
-        // Initial payment is amountPaid minus recovery payments
-        const initialPayment = paidAmt - recoveryPayments
-        return initialPayment > 0
-      })
-      .map((sale) => {
-        const paidAmt = safeParseFloat(sale.amountPaid)
-        const recoveryPayments = paymentHistory
-          .filter((p) => p.saleId === sale.id)
-          .reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
-        const initialPayment = paidAmt - recoveryPayments
-        
-        return {
-          id: `initial-payment-${sale.id}`,
-          date: safeParseDate(sale.createdAt), // Same date as the bill
-          type: "payment" as TransactionType,
-          description: sale.isManualBalance ? "Manual Balance Payment" : "Payment at POS",
-          reference: `PAY-${sale.id.slice(0, 6).toUpperCase()}`,
-          debit: 0,
-          credit: initialPayment,
-          balance: 0,
-          paid: 0,
-          totalAmount: 0,
-          outstanding: 0,
-          notes: undefined,
-          saleId: sale.id,
-        }
-      })
 
     // Collect all returns as transactions (refunds reduce balance)
     const returnTransactions: Transaction[] = customerReturns.map((ret) => {
@@ -453,7 +426,7 @@ export default function CustomerStatement() {
     })
 
     // Combine and sort by date and time (oldest first for balance calculation)
-    txns.push(...billTransactions, ...paymentTransactions, ...initialPaymentTransactions, ...returnTransactions)
+    txns.push(...billTransactions, ...paymentTransactions, ...returnTransactions)
     txns.sort((a, b) => {
       const dateA = safeParseDate(a.date)
       const dateB = safeParseDate(b.date)
@@ -465,7 +438,9 @@ export default function CustomerStatement() {
       return timeDiff
     })
 
-    // CORRECTED: Calculate running balance - SIMPLE AND ACCURATE METHOD
+    // CORRECTED: Calculate running balance with combined debit/credit per row
+    // For bills: net effect = debit - credit (bill amount minus initial payment)
+    // For payments/returns: net effect = -credit (reduces balance)
     let runningBalance = 0
     
     txns.forEach((txn) => {
@@ -473,9 +448,9 @@ export default function CustomerStatement() {
         // Payments and returns reduce the balance (customer pays us / we refund)
         runningBalance -= txn.credit
       } else {
-        // Bills increase the balance (customer owes us)
-        // Add the total amount of the bill
-        runningBalance += txn.debit
+        // Bills: add debit (bill amount) and subtract credit (initial payment at POS)
+        // This gives the net effect in one row
+        runningBalance += txn.debit - txn.credit
       }
       txn.balance = runningBalance
     })
