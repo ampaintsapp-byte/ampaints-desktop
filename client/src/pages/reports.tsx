@@ -332,6 +332,47 @@ export default function Reports() {
     return filteredReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
   }, [filteredReturns]);
 
+  // Store Cash Balance Calculation - TRUE CASH FLOW METHOD
+  // Goal: Calculate actual cash received during the date range
+  // 
+  // For sales CREATED in range:
+  //   - Initial payment at POS = amountPaid - sum(recovery payments for this sale)
+  //   - This gives us the cash received at the time of sale, not later recoveries
+  //
+  // For recovery payments in range:
+  //   - All payment_history records in the date range (for any sale, old or new)
+  //
+  // This avoids double counting and properly attributes cash to when it was received.
+  
+  const filteredSaleIds = useMemo(() => {
+    return new Set(filteredSales.map(s => s.id));
+  }, [filteredSales]);
+
+  // Calculate total recovery payments made for each sale in the filtered range
+  // (These would have been added to amountPaid but represent later cash, not initial)
+  const recoveryForFilteredSales = useMemo(() => {
+    // Get ALL recovery payments for sales in the filtered range (not just filtered payments)
+    return paymentHistory
+      .filter(payment => payment.saleId && filteredSaleIds.has(payment.saleId))
+      .reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+  }, [paymentHistory, filteredSaleIds]);
+
+  // Initial payments at POS for new sales = amountPaid - recovery payments for those sales
+  const initialPaymentsForNewSales = useMemo(() => {
+    return Math.max(0, filteredSalesPaid - recoveryForFilteredSales);
+  }, [filteredSalesPaid, recoveryForFilteredSales]);
+
+  // Recovery payments received during the filter range (for any sale)
+  const recoveryInRange = useMemo(() => {
+    return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+  }, [filteredPayments]);
+
+  // Store Cash Balance = Initial payments at POS + Recovery in range - Refunds
+  // This represents actual cash received during the date range
+  const storeCashBalance = useMemo(() => {
+    return initialPaymentsForNewSales + recoveryInRange - filteredReturnsTotal;
+  }, [initialPaymentsForNewSales, recoveryInRange, filteredReturnsTotal]);
+
   const filteredSalesOutstanding = useMemo(() => {
     // Outstanding = Sales Total - Paid - Return Credits (returns reduce outstanding)
     return Math.max(0, filteredSalesTotal - filteredSalesPaid - filteredReturnsTotal);
@@ -720,143 +761,70 @@ export default function Reports() {
           <div className="absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/5 blur-md" />
         </div>
 
-        {/* Quick Summary Bar - Filter-based stats */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-slate-100/80 via-white/60 to-slate-100/80 dark:from-zinc-900/50 dark:via-zinc-800/30 dark:to-zinc-900/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
-          <div className="flex flex-wrap items-center gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-blue-100/70 dark:bg-blue-900/30 rounded-md">
-                <Receipt className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Sales</div>
-                <div className="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                  {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+        {/* Filters Bar - Clean Design */}
+        <Card className="rounded-xl border border-slate-200/50 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/40 backdrop-blur-sm shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center flex-1">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Search customers..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 h-10 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-lg"
+                    data-testid="input-search"
+                  />
+                </div>
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-zinc-800/50 border border-slate-200/50 dark:border-slate-700/50">
+                  <Calendar className="h-4 w-4 text-slate-500" />
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
+                    data-testid="input-date-from"
+                  />
+                  <span className="text-xs text-slate-400 font-medium">to</span>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
+                    data-testid="input-date-to"
+                  />
                 </div>
               </div>
-            </div>
-            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-emerald-100/70 dark:bg-emerald-900/30 rounded-md">
-                <TrendingUpIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Paid</div>
-                <div className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                  {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                </div>
-              </div>
-            </div>
-            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-rose-100/70 dark:bg-rose-900/30 rounded-md">
-                <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding</div>
-                <div className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                  {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                </div>
-              </div>
-            </div>
-            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-purple-100/70 dark:bg-purple-900/30 rounded-md">
-                <Wallet className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Recovery</div>
-                <div className="font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
-                  {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                </div>
+              <div className="flex items-center gap-2">
+                {activeTab !== "recovery-payments" && activeTab !== "returns" && activeTab !== "overview" && activeTab !== "transactions" && (
+                  <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                    <SelectTrigger className="w-32 h-10 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-lg" data-testid="select-payment-status">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="partial">Partial</SelectItem>
+                      <SelectItem value="unpaid">Unpaid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                {hasActiveFilters && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={clearFilters} 
+                    data-testid="button-clear-filters"
+                    className="h-10"
+                  >
+                    <X className="h-4 w-4 mr-1.5" />
+                    Clear Filters
+                  </Button>
+                )}
               </div>
             </div>
-            {filteredReturnsTotal > 0 && (
-              <>
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-amber-100/70 dark:bg-amber-900/30 rounded-md">
-                    <RotateCcw className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  </div>
-                  <div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Returns</div>
-                    <div className="font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                      {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="h-6 px-2 text-xs bg-white/60 dark:bg-zinc-800/60">
-              {filteredSales.length} bills
-            </Badge>
-            <Badge variant="outline" className="h-6 px-2 text-xs bg-white/60 dark:bg-zinc-800/60">
-              {collectionRate.toFixed(0)}% collected
-            </Badge>
-          </div>
-        </div>
-
-        {/* Filters - Compact */}
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between p-3 rounded-xl bg-white/40 dark:bg-zinc-900/30 border border-slate-200/50 dark:border-slate-800/50 backdrop-blur-sm">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center flex-1">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <Input
-                placeholder="Search customers..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                data-testid="input-search"
-              />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Calendar className="h-3.5 w-3.5 text-slate-400" />
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                data-testid="input-date-from"
-              />
-              <span className="text-xs text-slate-400">to</span>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                data-testid="input-date-to"
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {activeTab !== "recovery-payments" && activeTab !== "returns" && activeTab !== "overview" && activeTab !== "transactions" && (
-              <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                <SelectTrigger className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg" data-testid="select-payment-status">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
-                  <SelectItem value="all" className="text-sm">All Status</SelectItem>
-                  <SelectItem value="paid" className="text-sm">Paid</SelectItem>
-                  <SelectItem value="partial" className="text-sm">Partial</SelectItem>
-                  <SelectItem value="unpaid" className="text-sm">Unpaid</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            {hasActiveFilters && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={clearFilters} 
-                data-testid="button-clear-filters"
-                className="text-xs h-9 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-              >
-                <X className="h-3.5 w-3.5 mr-1" />
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Tabs - More Prominent */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
@@ -919,400 +887,191 @@ export default function Reports() {
           {/* Overview Tab */}
           <TabsContent value="overview">
             <div className="space-y-5">
-              {/* Lifetime Totals - Main Overview Cards */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Lifetime Overview</h3>
-                  <Badge variant="outline" className="h-5 text-[10px] px-1.5">All Time</Badge>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Sales</span>
-                        <div className="p-1.5 bg-blue-100/50 dark:bg-blue-900/20 rounded-lg">
-                          <Receipt className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+              {/* STORE CASH BALANCE - Main Highlight Card */}
+              <Card className="rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-gradient-to-br from-emerald-50 via-white to-emerald-50 dark:from-emerald-950/30 dark:via-zinc-900 dark:to-emerald-950/30 shadow-lg overflow-hidden">
+                <CardContent className="p-0">
+                  <div className="flex flex-col lg:flex-row">
+                    {/* Main Balance Display */}
+                    <div className="flex-1 p-6 lg:p-8">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="p-3 bg-emerald-500 rounded-xl shadow-lg">
+                          <Banknote className="h-6 w-6 text-white" />
+                        </div>
+                        <div>
+                          <h2 className="text-lg font-bold text-slate-800 dark:text-white">Store Cash Balance</h2>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            {dateFrom === dateTo ? `Today (${formatDisplayDate(dateFrom)})` : `${formatDisplayDate(dateFrom)} to ${formatDisplayDate(dateTo)}`}
+                          </p>
                         </div>
                       </div>
-                      <div className="text-lg font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                        {Math.round(stats.totalSalesAmount).toLocaleString("en-IN")}
+                      <div className="text-4xl lg:text-5xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums tracking-tight">
+                        Rs. {Math.round(storeCashBalance).toLocaleString("en-IN")}
                       </div>
-                      <div className="flex items-center justify-between mt-1.5 gap-2">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.totalBillsCount} bills</p>
-                        <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-white/50 dark:bg-zinc-800/50">
-                          {stats.uniqueCustomers} customers
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                        Total cash received minus refunds
+                      </p>
+                    </div>
 
-                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Collected</span>
-                        <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded-lg">
-                          <TrendingUpIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    {/* Balance Breakdown */}
+                    <div className="lg:w-80 p-6 bg-slate-50/50 dark:bg-zinc-800/30 border-t lg:border-t-0 lg:border-l border-slate-200/50 dark:border-slate-700/50">
+                      <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">Cash Flow</h3>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-500" />
+                            <span className="text-sm text-slate-600 dark:text-slate-400">Sales (at POS)</span>
+                          </div>
+                          <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                            +{Math.round(initialPaymentsForNewSales).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        {recoveryInRange > 0 && (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-purple-500" />
+                              <span className="text-sm text-slate-600 dark:text-slate-400">Recovery Payments</span>
+                            </div>
+                            <span className="text-sm font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                              +{Math.round(recoveryInRange).toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        )}
+                        {filteredReturnsTotal > 0 && (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-rose-500" />
+                              <span className="text-sm text-slate-600 dark:text-slate-400">Refunds Given</span>
+                            </div>
+                            <span className="text-sm font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                              -{Math.round(filteredReturnsTotal).toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        )}
+                        <div className="border-t border-slate-200 dark:border-slate-700 pt-3 mt-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Net Cash</span>
+                            <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                              {Math.round(storeCashBalance).toLocaleString("en-IN")}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                        {Math.round(stats.totalPaidAmount).toLocaleString("en-IN")}
-                      </div>
-                      <div className="flex items-center justify-between mt-1.5 gap-2">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.paidBillsCount} paid bills</p>
-                        <div className="text-xs text-emerald-500 dark:text-emerald-400 font-medium">
-                          {stats.totalSalesAmount > 0 ? ((stats.totalPaidAmount / stats.totalSalesAmount) * 100).toFixed(1) : "0.0"}%
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Outstanding</span>
-                        <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded-lg">
-                          <TrendingDown className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                        </div>
-                      </div>
-                      <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                        {Math.round(stats.totalOutstanding).toLocaleString("en-IN")}
-                      </div>
-                      <div className="flex items-center justify-between mt-1.5 gap-2">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.unpaidBillsCount} unpaid</p>
-                        <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-                          {stats.returnsCount > 0 ? `-${stats.totalReturnsAmount.toLocaleString("en-IN")} returns` : `${stats.totalPaymentRecords} payments`}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+              {/* Quick Stats Row */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* Sales */}
+                <Card className="rounded-xl border border-blue-200/50 dark:border-blue-800/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Receipt className="h-4 w-4 text-blue-500" />
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Sales</span>
+                    </div>
+                    <div className="text-xl font-bold text-slate-800 dark:text-white tabular-nums">
+                      {Math.round(filteredSalesTotal).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {filteredSales.length} bills
+                    </div>
+                  </CardContent>
+                </Card>
 
-                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Revenue</span>
-                        <div className="p-1.5 bg-purple-100/50 dark:bg-purple-900/20 rounded-lg">
-                          <Activity className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                        </div>
-                      </div>
-                      <div className="text-lg font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
-                        {Math.round(stats.totalSalesAmount - stats.totalReturnsAmount).toLocaleString("en-IN")}
-                      </div>
-                      <div className="flex items-center justify-between mt-1.5 gap-2">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.returnsCount} returns</p>
-                        <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-                          {stats.totalReturnsAmount.toLocaleString("en-IN")} refunded
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                {/* Paid */}
+                <Card className="rounded-xl border border-emerald-200/50 dark:border-emerald-800/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="h-4 w-4 text-emerald-500" />
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid</span>
+                    </div>
+                    <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      {Math.round(filteredSalesPaid).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {paidSales.length} paid bills
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Outstanding */}
+                <Card className="rounded-xl border border-rose-200/50 dark:border-rose-800/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingDown className="h-4 w-4 text-rose-500" />
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Unpaid</span>
+                    </div>
+                    <div className="text-xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                      {Math.round(filteredSalesOutstanding).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {unpaidSales.length} bills
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Recovery */}
+                <Card className="rounded-xl border border-purple-200/50 dark:border-purple-800/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Wallet className="h-4 w-4 text-purple-500" />
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Recovery</span>
+                    </div>
+                    <div className="text-xl font-bold text-purple-600 dark:text-purple-400 tabular-nums">
+                      {Math.round(filteredPaymentsTotal).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {filteredPayments.length} payments
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Returns */}
+                <Card className="rounded-xl border border-amber-200/50 dark:border-amber-800/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <RotateCcw className="h-4 w-4 text-amber-500" />
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Returns</span>
+                    </div>
+                    <div className="text-xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                      {Math.round(filteredReturnsTotal).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {filteredReturns.length} returns
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
-              {/* Filtered Performance Card */}
-              <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 rounded-lg">
-                        <Target className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Filtered Performance</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Based on selected date range</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-xs h-6 px-2 bg-white/50 dark:bg-zinc-800/50">
-                      <Filter className="h-3 w-3 mr-1" />
-                      {filteredSales.length} bills
-                    </Badge>
-                  </div>
-                  
-                  {/* Top Metrics Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-                    {/* Collected Card */}
-                    <Card className="border border-emerald-200/50 dark:border-emerald-900/30 bg-gradient-to-br from-emerald-50/30 to-white/30 dark:from-emerald-900/10 dark:to-zinc-900/20">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded">
-                              <Banknote className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-medium text-slate-700 dark:text-slate-300">Total Collected</h4>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Paid + Recovery</p>
-                            </div>
-                          </div>
-                          <Badge className="bg-emerald-100/80 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] h-5">
+              {/* Collection Progress */}
+              {showDetailedMetrics && (
+                <Card className="rounded-xl border border-slate-200/50 dark:border-slate-700/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-5">
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Collection Progress</h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-slate-600 dark:text-slate-400">Collection Rate</span>
+                          <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                             {collectionRate.toFixed(1)}%
-                          </Badge>
+                          </span>
                         </div>
-                        <div className="text-xl font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                          {totalCollectedAmount.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                        <div className="h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(100, collectionRate)}%` }}
+                          />
                         </div>
-                        <div className="flex justify-between mt-3 text-xs">
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Paid</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">
-                              {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Recovery</div>
-                            <div className="font-medium text-purple-600 dark:text-purple-400 tabular-nums">
-                              {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Outstanding Card */}
-                    <Card className="border border-rose-200/50 dark:border-rose-900/30 bg-gradient-to-br from-rose-50/30 to-white/30 dark:from-rose-900/10 dark:to-zinc-900/20">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded">
-                              <Clock className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-medium text-slate-700 dark:text-slate-300">Outstanding</h4>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Pending collection</p>
-                            </div>
-                          </div>
-                          <Badge className="bg-rose-100/80 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 text-[10px] h-5">
-                            {unpaidSales.length} bills
-                          </Badge>
-                        </div>
-                        <div className="text-xl font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                        <div className="flex justify-between mt-3 text-xs">
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Partial</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200">
-                              {filteredSales.filter(s => s.paymentStatus === "partial").length}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Unpaid</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200">
-                              {filteredSales.filter(s => s.paymentStatus === "unpaid").length}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Net Sales Card */}
-                    <Card className="border border-blue-200/50 dark:border-blue-900/30 bg-gradient-to-br from-blue-50/30 to-white/30 dark:from-blue-900/10 dark:to-zinc-900/20">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-blue-100/50 dark:bg-blue-900/20 rounded">
-                              <Activity className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-medium text-slate-700 dark:text-slate-300">Net Sales</h4>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">After returns</p>
-                            </div>
-                          </div>
-                          <Badge className="bg-blue-100/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-[10px] h-5">
-                            {returnStats.totalReturns} returns
-                          </Badge>
-                        </div>
-                        <div className="text-xl font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
-                          {(filteredSalesTotal - filteredReturnsTotal).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                        <div className="flex justify-between mt-3 text-xs">
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Gross Sales</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">
-                              {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Refunds</div>
-                            <div className="font-medium text-rose-600 dark:text-rose-400 tabular-nums">
-                              {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* Detailed Metrics - Toggleable */}
-                  {showDetailedMetrics && (
-                    <>
-                      {/* Metrics Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-slate-100/50 dark:bg-slate-800/50 rounded">
-                              <Receipt className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Sales</span>
-                          </div>
-                          <div className="text-base font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                            {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {filteredSales.length} bills
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded">
-                              <TrendingUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Paid</span>
-                          </div>
-                          <div className="text-base font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                            {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {paidSales.length} paid bills
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded">
-                              <TrendingDown className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Outstanding</span>
-                          </div>
-                          <div className="text-base font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                            {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {unpaidSales.length} unpaid
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-purple-100/50 dark:bg-purple-900/20 rounded">
-                              <Wallet className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Recovery</span>
-                          </div>
-                          <div className="text-base font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
-                            {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {filteredPayments.length} payments
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Progress Bars */}
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">Collection Rate</span>
-                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                              {collectionRate.toFixed(1)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 bg-slate-100/50 dark:bg-slate-800/50 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
-                              style={{ width: `${Math.min(100, collectionRate)}%` }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            Collected {totalCollectedAmount.toLocaleString("en-IN")} of {filteredSalesTotal.toLocaleString("en-IN")}
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">Refund Rate</span>
-                            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                              {refundRate.toFixed(1)}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 bg-slate-100/50 dark:bg-slate-800/50 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-rose-500 to-rose-400 rounded-full transition-all duration-500"
-                              style={{ width: `${Math.min(100, refundRate)}%` }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {returnStats.totalReturns} returns totaling {filteredReturnsTotal.toLocaleString("en-IN")}
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Returns Analysis Card */}
-              <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs">
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-2.5 mb-4">
-                    <div className="p-2 bg-gradient-to-r from-rose-500/10 to-red-500/10 rounded-lg">
-                      <RotateCcw className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Returns Analysis</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Return metrics and impact</p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded">
-                            <AlertTriangle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                          </div>
-                          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Returns</span>
-                        </div>
-                        <div className="text-base font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          {returnStats.totalReturns}
-                        </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          {returnStats.billReturns} bills, {returnStats.itemReturns} items
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-amber-100/50 dark:bg-amber-900/20 rounded">
-                            <DollarSign className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                          </div>
-                          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Refunded</span>
-                        </div>
-                        <div className="text-base font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                          {returnStats.totalRefunded.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          Filtered returns
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          Collected Rs. {totalCollectedAmount.toLocaleString("en-IN")} of Rs. {filteredSalesTotal.toLocaleString("en-IN")} total sales
                         </div>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              )}
 
-                    <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                      <div>
-                        <span className="text-xs text-slate-600 dark:text-slate-400">Net Sales</span>
-                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                          {(filteredSalesTotal - filteredReturnsTotal).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-600 dark:text-slate-400">Refund Impact</span>
-                        <div className="text-sm font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          {refundRate.toFixed(1)}%
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
             </div>
           </TabsContent>
 
