@@ -9,6 +9,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { DateFormatProvider } from "@/hooks/use-date-format";
 import { NavigationRefreshContext } from "@/hooks/use-navigation-refresh";
 import { PageSkeleton } from "@/components/page-skeleton";
+import { LicenseGuard } from "@/components/license-guard";
 import ActivationScreen from "@/components/activation-screen";
 import NotFound from "@/pages/not-found";
 
@@ -113,23 +114,25 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <DateFormatProvider>
-          <NavigationRefreshContext.Provider value={{ refreshKey, triggerRefresh }}>
-            <SidebarProvider style={style as React.CSSProperties}>
-              <div className="flex h-screen w-full">
-                <AppSidebar />
-                <div className="flex flex-col flex-1 overflow-hidden">
-                  <header className="flex items-center justify-between h-16 px-4 border-b border-border">
-                    <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  </header>
-                  <main key={refreshKey} className="flex-1 overflow-auto">
-                    <Router />
-                  </main>
+        <LicenseGuard>
+          <DateFormatProvider>
+            <NavigationRefreshContext.Provider value={{ refreshKey, triggerRefresh }}>
+              <SidebarProvider style={style as React.CSSProperties}>
+                <div className="flex h-screen w-full">
+                  <AppSidebar />
+                  <div className="flex flex-col flex-1 overflow-hidden">
+                    <header className="flex items-center justify-between h-16 px-4 border-b border-border">
+                      <SidebarTrigger data-testid="button-sidebar-toggle" />
+                    </header>
+                    <main key={refreshKey} className="flex-1 overflow-auto">
+                      <Router />
+                    </main>
+                  </div>
                 </div>
-              </div>
-            </SidebarProvider>
-          </NavigationRefreshContext.Provider>
-        </DateFormatProvider>
+              </SidebarProvider>
+            </NavigationRefreshContext.Provider>
+          </DateFormatProvider>
+        </LicenseGuard>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

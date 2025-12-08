@@ -321,7 +321,7 @@ function createTables() {
       );
     `)
 
-    // Create settings table with ALL columns INCLUDING AUDIT PIN
+    // Create settings table with ALL columns INCLUDING AUDIT PIN and MASTER PIN
     console.log("[Database] Creating settings table...")
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS settings (
@@ -335,6 +335,8 @@ function createTables() {
         show_stock_badge_border INTEGER NOT NULL DEFAULT 0,
         audit_pin_hash TEXT,
         audit_pin_salt TEXT,
+        master_pin_hash TEXT,
+        master_pin_salt TEXT,
         perm_stock_delete INTEGER NOT NULL DEFAULT 1,
         perm_stock_edit INTEGER NOT NULL DEFAULT 1,
         perm_stock_history_delete INTEGER NOT NULL DEFAULT 1,
@@ -521,6 +523,51 @@ function createTables() {
         UNIQUE(color_id, date_summary)
       );
     `)
+
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS software_licenses (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL UNIQUE,
+        device_name TEXT,
+        store_name TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        blocked_reason TEXT,
+        blocked_at INTEGER,
+        blocked_by TEXT,
+        last_heartbeat INTEGER,
+        last_sync_time INTEGER,
+        ip_address TEXT,
+        user_agent TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `)
+
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS license_audit_log (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        reason TEXT,
+        performed_by TEXT,
+        previous_status TEXT,
+        new_status TEXT,
+        ip_address TEXT,
+        created_at INTEGER NOT NULL
+      );
+    `)
+
+    try {
+      sqlite.exec("ALTER TABLE settings ADD COLUMN master_pin_hash TEXT")
+    } catch (e) {
+      console.log("[Database] master_pin_hash column might already exist")
+    }
+    
+    try {
+      sqlite.exec("ALTER TABLE settings ADD COLUMN master_pin_salt TEXT")
+    } catch (e) {
+      console.log("[Database] master_pin_salt column might already exist")
+    }
 
     console.log("[Database] Creating stock movement indexes...")
 

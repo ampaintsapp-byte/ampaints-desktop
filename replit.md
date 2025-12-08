@@ -53,7 +53,22 @@ None specified yet.
   - **Live Status Display**: Shows last sync time and sync active status indicator
   - **Connection Status**: Automatic online/offline detection with sync on reconnect
   - All cloud operations protected by audit PIN verification. Enables installing software on multiple laptops with shared data access.
-- **Activation System**: Uses a one-time activation code.
+- **Activation System**: Uses a one-time activation code stored locally.
+- **Software Licensing & Remote Blocking**: Two-tier security system for billing control:
+  - **Activation Layer**: One-time activation code stored locally in localStorage (browser) or electron-store (desktop)
+  - **License Layer**: Server-side license management with remote blocking capability
+  - **Master Admin PIN**: Configurable via `MASTER_ADMIN_PIN` environment variable (defaults to 3620192373285 if not set)
+  - **Device Registration**: Each device generates unique client ID stored in localStorage, persisted for consistent blocking/unblocking
+  - **License Status Check**: App checks license status on startup and periodically
+  - **Blocked Screen**: Shows clear message when device is blocked with reason and contact info
+  - **API Endpoints**: 
+    - `POST /api/license/check` - Check/register device license status
+    - `POST /api/license/devices` - Get all registered devices (requires master PIN)
+    - `POST /api/license/block` - Block a device (requires master PIN)
+    - `POST /api/license/unblock` - Unblock a device (requires master PIN)
+    - `GET /api/license/audit` - Get license audit log (requires master PIN)
+  - **Audit Trail**: All block/unblock actions logged with timestamps and reasons
+  - **Use Case**: Block devices with overdue billing until payment is received
 - **Desktop Application**: Features include a maximized (not fullscreen) windowed desktop mode with saved size and position, and solutions for Windows SmartScreen warnings.
 
 ### System Design Choices

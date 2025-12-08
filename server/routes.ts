@@ -3056,6 +3056,182 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // ============ SOFTWARE LICENSE MANAGEMENT (BLOCKING/UNBLOCKING) ============
+  
+  // Master PIN for software blocking - loaded from environment variable for security
+  // If not set, uses a default (should be set in production via MASTER_ADMIN_PIN env var)
+  const MASTER_ADMIN_PIN = process.env.MASTER_ADMIN_PIN || "3620192373285"
+
+  // Verify master admin PIN
+  function verifyMasterPin(pin: string): boolean {
+    if (!pin || !MASTER_ADMIN_PIN) return false
+    return pin === MASTER_ADMIN_PIN
+  }
+
+  // Check license status (called on app startup and periodically)
+  // Device ID is provided by the client and persisted for consistent blocking/unblocking
+  app.post("/api/license/check", async (req, res) => {
+    try {
+      const { deviceId, deviceName, storeName } = req.body
+      
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+      
+      const now = new Date()
+      
+      // Create or update the license record using client-provided deviceId
+      const license = await storage.createOrUpdateSoftwareLicense({
+        deviceId: deviceId,
+        deviceName: deviceName || `Device-${deviceId.substring(0, 6)}`,
+        storeName: storeName || "Unknown Store",
+        lastHeartbeat: now,
+        ipAddress: req.ip || req.socket.remoteAddress || null,
+        userAgent: req.headers["user-agent"] || null,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      res.json({
+        deviceId: license.deviceId,
+        status: license.status,
+        isBlocked: license.status === "blocked",
+        blockedReason: license.blockedReason,
+        blockedAt: license.blockedAt,
+        message: license.status === "blocked" 
+          ? `Software blocked: ${license.blockedReason || "Contact administrator"}` 
+          : "License active",
+      })
+    } catch (error) {
+      console.error("Error checking license:", error)
+      res.status(500).json({ error: "Failed to check license" })
+    }
+  })
+
+  // Get all registered devices (requires master PIN)
+  app.post("/api/license/devices", async (req, res) => {
+    try {
+      const { masterPin } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      const licenses = await storage.getSoftwareLicenses()
+      res.json({ devices: licenses })
+    } catch (error) {
+      console.error("Error getting devices:", error)
+      res.status(500).json({ error: "Failed to get devices" })
+    }
+  })
+
+  // Block a device (requires master PIN)
+  app.post("/api/license/block", async (req, res) => {
+    try {
+      const { masterPin, deviceId, reason } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+
+      const license = await storage.blockSoftwareLicense(
+        deviceId, 
+        reason || "Blocked by administrator",
+        "master_admin"
+      )
+
+      if (!license) {
+        res.status(404).json({ error: "Device not found" })
+        return
+      }
+
+      res.json({
+        success: true,
+        message: `Device ${deviceId} has been blocked`,
+        device: license,
+      })
+    } catch (error) {
+      console.error("Error blocking device:", error)
+      res.status(500).json({ error: "Failed to block device" })
+    }
+  })
+
+  // Unblock a device (requires master PIN)
+  app.post("/api/license/unblock", async (req, res) => {
+    try {
+      const { masterPin, deviceId } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+
+      const license = await storage.unblockSoftwareLicense(deviceId)
+
+      if (!license) {
+        res.status(404).json({ error: "Device not found" })
+        return
+      }
+
+      res.json({
+        success: true,
+        message: `Device ${deviceId} has been unblocked`,
+        device: license,
+      })
+    } catch (error) {
+      console.error("Error unblocking device:", error)
+      res.status(500).json({ error: "Failed to unblock device" })
+    }
+  })
+
+  // Get license audit log (requires master PIN)
+  app.post("/api/license/audit", async (req, res) => {
+    try {
+      const { masterPin, deviceId } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      const auditLog = await storage.getLicenseAuditLog(deviceId)
+      res.json({ auditLog })
+    } catch (error) {
+      console.error("Error getting audit log:", error)
+      res.status(500).json({ error: "Failed to get audit log" })
+    }
+  })
+
+  // Verify master PIN (for admin panel access)
+  app.post("/api/license/verify-pin", async (req, res) => {
+    try {
+      const { masterPin } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ valid: false, error: "Invalid master PIN" })
+        return
+      }
+
+      res.json({ valid: true, message: "Master PIN verified" })
+    } catch (error) {
+      console.error("Error verifying PIN:", error)
+      res.status(500).json({ error: "Failed to verify PIN" })
+    }
+  })
+
   const httpServer = createServer(app)
   return httpServer
 }

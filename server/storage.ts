@@ -11,6 +11,8 @@ import {
   returns,
   returnItems,
   customerAccounts,
+  softwareLicenses,
+  licenseAuditLog,
   type Product,
   type InsertProduct,
   type Variant,
@@ -35,6 +37,11 @@ import {
   type InsertReturnItem,
   type ReturnWithItems,
   type StockInHistory,
+  type SoftwareLicense,
+  type InsertSoftwareLicense,
+  type UpdateSoftwareLicense,
+  type LicenseAuditLog,
+  type InsertLicenseAuditLog,
 } from "@shared/schema"
 import { db } from "./db"
 import { eq, desc, sql, and, gt } from "drizzle-orm"
@@ -299,6 +306,16 @@ export interface IStorage {
   upsertPaymentHistory(data: PaymentHistory): Promise<void>
   upsertReturn(data: Return): Promise<void>
   upsertReturnItem(data: ReturnItem): Promise<void>
+
+  // Software Licenses (for blocking/unblocking software instances)
+  getSoftwareLicenses(): Promise<SoftwareLicense[]>
+  getSoftwareLicense(deviceId: string): Promise<SoftwareLicense | undefined>
+  createOrUpdateSoftwareLicense(data: InsertSoftwareLicense): Promise<SoftwareLicense>
+  updateSoftwareLicense(deviceId: string, data: UpdateSoftwareLicense): Promise<SoftwareLicense | null>
+  blockSoftwareLicense(deviceId: string, reason: string, blockedBy?: string): Promise<SoftwareLicense | null>
+  unblockSoftwareLicense(deviceId: string): Promise<SoftwareLicense | null>
+  recordLicenseAudit(data: InsertLicenseAuditLog): Promise<LicenseAuditLog>
+  getLicenseAuditLog(deviceId?: string): Promise<LicenseAuditLog[]>
 }
 
 // ENHANCED: Smart Sync Configuration
@@ -893,6 +910,9 @@ export class DatabaseStorage implements IStorage {
           cardButtonColor: "gray-900",
           cardPriceColor: "blue-600",
           showStockBadgeBorder: false,
+          displayTheme: "glass",
+          displayShadowIntensity: "medium",
+          displayBlurIntensity: "medium",
           auditPinHash: null,
           auditPinSalt: null,
           permStockDelete: true,
@@ -906,6 +926,8 @@ export class DatabaseStorage implements IStorage {
           cloudDatabaseUrl: null,
           cloudSyncEnabled: false,
           lastSyncTime: null,
+          masterPinHash: null,
+          masterPinSalt: null,
           updatedAt: new Date(),
         }
         try {
@@ -928,6 +950,9 @@ export class DatabaseStorage implements IStorage {
         cardButtonColor: "gray-900",
         cardPriceColor: "blue-600",
         showStockBadgeBorder: false,
+        displayTheme: "glass",
+        displayShadowIntensity: "medium",
+        displayBlurIntensity: "medium",
         auditPinHash: null,
         auditPinSalt: null,
         permStockDelete: true,
@@ -941,6 +966,8 @@ export class DatabaseStorage implements IStorage {
         cloudDatabaseUrl: null,
         cloudSyncEnabled: false,
         lastSyncTime: null,
+        masterPinHash: null,
+        masterPinSalt: null,
         updatedAt: new Date(),
       }
       return defaultSettings
@@ -961,6 +988,9 @@ export class DatabaseStorage implements IStorage {
           cardButtonColor: data.cardButtonColor || "gray-900",
           cardPriceColor: data.cardPriceColor || "blue-600",
           showStockBadgeBorder: data.showStockBadgeBorder ?? false,
+          displayTheme: data.displayTheme || "glass",
+          displayShadowIntensity: data.displayShadowIntensity || "medium",
+          displayBlurIntensity: data.displayBlurIntensity || "medium",
           auditPinHash: data.auditPinHash || null,
           auditPinSalt: data.auditPinSalt || null,
           permStockDelete: data.permStockDelete ?? true,
@@ -974,6 +1004,8 @@ export class DatabaseStorage implements IStorage {
           cloudDatabaseUrl: data.cloudDatabaseUrl || null,
           cloudSyncEnabled: data.cloudSyncEnabled ?? false,
           lastSyncTime: data.lastSyncTime ?? null,
+          masterPinHash: data.masterPinHash || null,
+          masterPinSalt: data.masterPinSalt || null,
           updatedAt: new Date(),
         }
         await db.insert(settings).values(defaultSettings)
@@ -991,6 +1023,9 @@ export class DatabaseStorage implements IStorage {
       if (data.cardButtonColor !== undefined) updateData.cardButtonColor = data.cardButtonColor
       if (data.cardPriceColor !== undefined) updateData.cardPriceColor = data.cardPriceColor
       if (data.showStockBadgeBorder !== undefined) updateData.showStockBadgeBorder = data.showStockBadgeBorder
+      if (data.displayTheme !== undefined) updateData.displayTheme = data.displayTheme
+      if (data.displayShadowIntensity !== undefined) updateData.displayShadowIntensity = data.displayShadowIntensity
+      if (data.displayBlurIntensity !== undefined) updateData.displayBlurIntensity = data.displayBlurIntensity
       if (data.auditPinHash !== undefined) updateData.auditPinHash = data.auditPinHash
       if (data.auditPinSalt !== undefined) updateData.auditPinSalt = data.auditPinSalt
       if (data.permStockDelete !== undefined) updateData.permStockDelete = data.permStockDelete
@@ -1004,6 +1039,8 @@ export class DatabaseStorage implements IStorage {
       if (data.cloudDatabaseUrl !== undefined) updateData.cloudDatabaseUrl = data.cloudDatabaseUrl
       if (data.cloudSyncEnabled !== undefined) updateData.cloudSyncEnabled = data.cloudSyncEnabled
       if (data.lastSyncTime !== undefined) updateData.lastSyncTime = data.lastSyncTime
+      if (data.masterPinHash !== undefined) updateData.masterPinHash = data.masterPinHash
+      if (data.masterPinSalt !== undefined) updateData.masterPinSalt = data.masterPinSalt
 
       await db.update(settings).set(updateData).where(eq(settings.id, "default"))
 
@@ -3655,6 +3692,127 @@ export class DatabaseStorage implements IStorage {
     } else {
       await db.insert(returnItems).values(data)
     }
+  }
+
+  // ================== SOFTWARE LICENSE MANAGEMENT ==================
+
+  async getSoftwareLicenses(): Promise<SoftwareLicense[]> {
+    return await db.select().from(softwareLicenses).orderBy(desc(softwareLicenses.createdAt))
+  }
+
+  async getSoftwareLicense(deviceId: string): Promise<SoftwareLicense | undefined> {
+    const result = await db.select().from(softwareLicenses).where(eq(softwareLicenses.deviceId, deviceId))
+    return result[0]
+  }
+
+  async createOrUpdateSoftwareLicense(data: InsertSoftwareLicense): Promise<SoftwareLicense> {
+    const existing = await this.getSoftwareLicense(data.deviceId)
+    
+    if (existing) {
+      const [updated] = await db
+        .update(softwareLicenses)
+        .set({
+          ...data,
+          updatedAt: new Date(),
+        })
+        .where(eq(softwareLicenses.deviceId, data.deviceId))
+        .returning()
+      return updated
+    } else {
+      const [created] = await db.insert(softwareLicenses).values(data).returning()
+      return created
+    }
+  }
+
+  async updateSoftwareLicense(deviceId: string, data: UpdateSoftwareLicense): Promise<SoftwareLicense | null> {
+    const existing = await this.getSoftwareLicense(deviceId)
+    if (!existing) return null
+
+    const [updated] = await db
+      .update(softwareLicenses)
+      .set({
+        ...data,
+        updatedAt: new Date(),
+      })
+      .where(eq(softwareLicenses.deviceId, deviceId))
+      .returning()
+    return updated
+  }
+
+  async blockSoftwareLicense(deviceId: string, reason: string, blockedBy?: string): Promise<SoftwareLicense | null> {
+    const existing = await this.getSoftwareLicense(deviceId)
+    if (!existing) return null
+
+    const previousStatus = existing.status
+
+    const [updated] = await db
+      .update(softwareLicenses)
+      .set({
+        status: "blocked",
+        blockedReason: reason,
+        blockedAt: new Date(),
+        blockedBy: blockedBy || "admin",
+        updatedAt: new Date(),
+      })
+      .where(eq(softwareLicenses.deviceId, deviceId))
+      .returning()
+
+    await this.recordLicenseAudit({
+      deviceId,
+      action: "block",
+      reason,
+      performedBy: blockedBy || "admin",
+      previousStatus,
+      newStatus: "blocked",
+    })
+
+    return updated
+  }
+
+  async unblockSoftwareLicense(deviceId: string): Promise<SoftwareLicense | null> {
+    const existing = await this.getSoftwareLicense(deviceId)
+    if (!existing) return null
+
+    const previousStatus = existing.status
+
+    const [updated] = await db
+      .update(softwareLicenses)
+      .set({
+        status: "active",
+        blockedReason: null,
+        blockedAt: null,
+        blockedBy: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(softwareLicenses.deviceId, deviceId))
+      .returning()
+
+    await this.recordLicenseAudit({
+      deviceId,
+      action: "unblock",
+      reason: "Unblocked by admin",
+      performedBy: "admin",
+      previousStatus,
+      newStatus: "active",
+    })
+
+    return updated
+  }
+
+  async recordLicenseAudit(data: InsertLicenseAuditLog): Promise<LicenseAuditLog> {
+    const [created] = await db.insert(licenseAuditLog).values(data).returning()
+    return created
+  }
+
+  async getLicenseAuditLog(deviceId?: string): Promise<LicenseAuditLog[]> {
+    if (deviceId) {
+      return await db
+        .select()
+        .from(licenseAuditLog)
+        .where(eq(licenseAuditLog.deviceId, deviceId))
+        .orderBy(desc(licenseAuditLog.createdAt))
+    }
+    return await db.select().from(licenseAuditLog).orderBy(desc(licenseAuditLog.createdAt))
   }
 }
 
