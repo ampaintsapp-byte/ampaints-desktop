@@ -65,9 +65,19 @@ type ConsolidatedCustomer = {
   bills: ExtendedSale[]
   totalAmount: number
   totalPaid: number
+  totalReturnCredits: number
   totalOutstanding: number
   oldestBillDate: Date
   daysOverdue: number
+}
+
+type ReturnRecord = {
+  id: string
+  saleId: string
+  customerName: string
+  customerPhone: string
+  totalRefund: string
+  createdAt: string
 }
 
 const safeParseFloat = (value: string | number | null | undefined): number => {
@@ -120,6 +130,10 @@ export default function UnpaidBills() {
     queryKey: ["/api/sales"],
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
+  })
+
+  const { data: allReturns = [] } = useQuery<ReturnRecord[]>({
+    queryKey: ["/api/returns"],
   })
 
   const allSales = useDeferredValue(allSalesRaw)
@@ -181,28 +195,28 @@ export default function UnpaidBills() {
   }
 
   const consolidatedCustomers = useMemo(() => {
-    const unpaidSales = allSales.filter((sale) => {
-      const totalAmount = safeParseFloat(sale.totalAmount)
-      const amountPaid = safeParseFloat(sale.amountPaid)
-      const outstanding = roundNumber(totalAmount - amountPaid)
-      return outstanding > 0 && sale.paymentStatus !== "paid" && sale.paymentStatus !== "full_return"
+    const returnsByPhone = new Map<string, number>()
+    allReturns.forEach((ret) => {
+      const phone = ret.customerPhone || "unknown"
+      const existing = returnsByPhone.get(phone) || 0
+      returnsByPhone.set(phone, existing + safeParseFloat(ret.totalRefund))
     })
 
     const customerMap = new Map<string, ConsolidatedCustomer>()
 
-    unpaidSales.forEach((sale) => {
+    allSales.forEach((sale) => {
+      if (sale.paymentStatus === "full_return") return
+
       const phone = sale.customerPhone || "unknown"
       const existing = customerMap.get(phone)
 
       const totalAmount = safeParseFloat(sale.totalAmount)
       const amountPaid = safeParseFloat(sale.amountPaid)
-      const outstanding = roundNumber(totalAmount - amountPaid)
 
       if (existing) {
         existing.bills.push(sale)
         existing.totalAmount = roundNumber(existing.totalAmount + totalAmount)
         existing.totalPaid = roundNumber(existing.totalPaid + amountPaid)
-        existing.totalOutstanding = roundNumber(existing.totalOutstanding + outstanding)
         const saleDate = new Date(sale.createdAt)
         if (saleDate < existing.oldestBillDate) {
           existing.oldestBillDate = saleDate
@@ -214,21 +228,26 @@ export default function UnpaidBills() {
           bills: [sale],
           totalAmount: roundNumber(totalAmount),
           totalPaid: roundNumber(amountPaid),
-          totalOutstanding: roundNumber(outstanding),
+          totalReturnCredits: 0,
+          totalOutstanding: 0,
           oldestBillDate: new Date(sale.createdAt),
-          daysOverdue: Math.floor((Date.now() - new Date(sale.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
+          daysOverdue: 0,
         })
       }
     })
 
-    customerMap.forEach((customer) => {
+    customerMap.forEach((customer, phone) => {
+      customer.totalReturnCredits = roundNumber(returnsByPhone.get(phone) || 0)
+      customer.totalOutstanding = roundNumber(
+        customer.totalAmount - customer.totalPaid - customer.totalReturnCredits
+      )
       customer.daysOverdue = Math.floor(
         (Date.now() - customer.oldestBillDate.getTime()) / (1000 * 60 * 60 * 24)
       )
     })
 
-    return Array.from(customerMap.values())
-  }, [allSales])
+    return Array.from(customerMap.values()).filter((c) => c.totalOutstanding > 0)
+  }, [allSales, allReturns])
 
   const filteredCustomers = useMemo(() => {
     let filtered = consolidatedCustomers
@@ -541,7 +560,7 @@ export default function UnpaidBills() {
                 {/* Amount Summary */}
                 <div className="bg-muted/50 rounded-lg p-3 space-y-2 mb-3">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total</span>
+                    <span className="text-muted-foreground">Total Bills</span>
                     <span className="font-mono font-medium">
                       Rs. {Math.round(customer.totalAmount).toLocaleString()}
                     </span>
@@ -552,8 +571,16 @@ export default function UnpaidBills() {
                       Rs. {Math.round(customer.totalPaid).toLocaleString()}
                     </span>
                   </div>
+                  {customer.totalReturnCredits > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Returns</span>
+                      <span className="font-mono font-medium text-amber-600 dark:text-amber-400">
+                        Rs. {Math.round(customer.totalReturnCredits).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between pt-2 border-t border-border">
-                    <span className="font-medium">Balance</span>
+                    <span className="font-medium">Balance Due</span>
                     <span className="font-mono font-bold text-red-600 dark:text-red-400">
                       Rs. {Math.round(customer.totalOutstanding).toLocaleString()}
                     </span>
