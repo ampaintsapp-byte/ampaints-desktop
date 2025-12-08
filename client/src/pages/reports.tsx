@@ -720,215 +720,295 @@ export default function Reports() {
           <div className="absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/5 blur-md" />
         </div>
 
-        {/* Key Metrics - Compact Glass Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Sales</span>
-                <div className="p-1.5 bg-blue-100/50 dark:bg-blue-900/20 rounded-lg">
-                  <Receipt className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+        {/* Quick Summary Bar - Filter-based stats */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-gradient-to-r from-slate-100/80 via-white/60 to-slate-100/80 dark:from-zinc-900/50 dark:via-zinc-800/30 dark:to-zinc-900/50 border border-slate-200/50 dark:border-slate-700/50 backdrop-blur-sm">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-blue-100/70 dark:bg-blue-900/30 rounded-md">
+                <Receipt className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Sales</div>
+                <div className="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
+                  {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
                 </div>
-              </div>
-              <div className="text-lg font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                {Math.round(stats.totalSalesAmount).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.totalBillsCount} bills</p>
-                <Badge variant="outline" className="text-xs h-5 px-1.5 bg-white/50 dark:bg-zinc-800/50">
-                  {stats.uniqueCustomers} customers
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Collected</span>
-                <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded-lg">
-                  <TrendingUpIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                </div>
-              </div>
-              <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                {Math.round(stats.totalPaidAmount).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.paidBillsCount} paid bills</p>
-                <div className="text-xs text-emerald-500 dark:text-emerald-400 font-medium">
-                  {stats.totalSalesAmount > 0 ? ((stats.totalPaidAmount / stats.totalSalesAmount) * 100).toFixed(1) : "0.0"}%
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Outstanding</span>
-                <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded-lg">
-                  <TrendingDown className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                </div>
-              </div>
-              <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                {Math.round(stats.totalOutstanding).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.unpaidBillsCount} unpaid bills</p>
-                <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-                  {stats.returnsCount > 0 ? `-${stats.totalReturnsAmount.toLocaleString("en-IN")} returns` : `${stats.totalPaymentRecords} payments`}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Revenue</span>
-                <div className="p-1.5 bg-purple-100/50 dark:bg-purple-900/20 rounded-lg">
-                  <Activity className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                </div>
-              </div>
-              <div className="text-lg font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
-                {Math.round(stats.totalSalesAmount - stats.totalReturnsAmount).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.returnsCount} returns</p>
-                <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-                  {stats.totalReturnsAmount.toLocaleString("en-IN")} refunded
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters - Minimal Glass Card */}
-        <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs">
-          <CardContent className="p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center flex-1">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <Input
-                    placeholder="Search customers..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                    data-testid="input-search"
-                  />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                  <div className="relative">
-                    <Input
-                      type="date"
-                      value={dateFrom}
-                      onChange={(e) => setDateFrom(e.target.value)}
-                      className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                      data-testid="input-date-from"
-                    />
-                  </div>
-                  <span className="text-xs text-slate-400">to</span>
-                  <div className="relative">
-                    <Input
-                      type="date"
-                      value={dateTo}
-                      onChange={(e) => setDateTo(e.target.value)}
-                      className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                      data-testid="input-date-to"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {activeTab !== "recovery-payments" && activeTab !== "returns" && activeTab !== "overview" && (
-                  <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                    <SelectTrigger className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg" data-testid="select-payment-status">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
-                      <SelectItem value="all" className="text-sm">All Status</SelectItem>
-                      <SelectItem value="paid" className="text-sm">Paid</SelectItem>
-                      <SelectItem value="partial" className="text-sm">Partial</SelectItem>
-                      <SelectItem value="unpaid" className="text-sm">Unpaid</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-                {hasActiveFilters && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={clearFilters} 
-                    data-testid="button-clear-filters"
-                    className="text-xs h-9 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                  >
-                    <X className="h-3.5 w-3.5 mr-1" />
-                    Clear
-                  </Button>
-                )}
               </div>
             </div>
-          </CardContent>
-        </Card>
+            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-emerald-100/70 dark:bg-emerald-900/30 rounded-md">
+                <TrendingUpIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Paid</div>
+                <div className="font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                  {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                </div>
+              </div>
+            </div>
+            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-rose-100/70 dark:bg-rose-900/30 rounded-md">
+                <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding</div>
+                <div className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                  {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                </div>
+              </div>
+            </div>
+            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-purple-100/70 dark:bg-purple-900/30 rounded-md">
+                <Wallet className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Recovery</div>
+                <div className="font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                  {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                </div>
+              </div>
+            </div>
+            {filteredReturnsTotal > 0 && (
+              <>
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-amber-100/70 dark:bg-amber-900/30 rounded-md">
+                    <RotateCcw className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">Returns</div>
+                    <div className="font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
+                      {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="h-6 px-2 text-xs bg-white/60 dark:bg-zinc-800/60">
+              {filteredSales.length} bills
+            </Badge>
+            <Badge variant="outline" className="h-6 px-2 text-xs bg-white/60 dark:bg-zinc-800/60">
+              {collectionRate.toFixed(0)}% collected
+            </Badge>
+          </div>
+        </div>
 
-        {/* Tabs */}
+        {/* Filters - Compact */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between p-3 rounded-xl bg-white/40 dark:bg-zinc-900/30 border border-slate-200/50 dark:border-slate-800/50 backdrop-blur-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center flex-1">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <Input
+                placeholder="Search customers..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
+                data-testid="input-search"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
+                data-testid="input-date-from"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
+                data-testid="input-date-to"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {activeTab !== "recovery-payments" && activeTab !== "returns" && activeTab !== "overview" && activeTab !== "transactions" && (
+              <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                <SelectTrigger className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg" data-testid="select-payment-status">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
+                  <SelectItem value="all" className="text-sm">All Status</SelectItem>
+                  <SelectItem value="paid" className="text-sm">Paid</SelectItem>
+                  <SelectItem value="partial" className="text-sm">Partial</SelectItem>
+                  <SelectItem value="unpaid" className="text-sm">Unpaid</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {hasActiveFilters && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={clearFilters} 
+                data-testid="button-clear-filters"
+                className="text-xs h-9 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+              >
+                <X className="h-3.5 w-3.5 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Tabs - More Prominent */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-6 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-800/50">
+          <TabsList className="flex w-full h-auto p-1.5 bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm gap-1">
             <TabsTrigger 
               value="overview" 
               data-testid="tab-overview"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-500 data-[state=active]:text-white data-[state=active]:shadow-md"
             >
-              <PieChart className="h-3.5 w-3.5 mr-1.5" />
+              <PieChart className="h-4 w-4 mr-2" />
               Overview
             </TabsTrigger>
             <TabsTrigger 
               value="transactions" 
               data-testid="tab-transactions"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-600 data-[state=active]:to-slate-700 data-[state=active]:text-white data-[state=active]:shadow-md"
             >
-              <Activity className="h-3.5 w-3.5 mr-1.5" />
-              All ({unifiedTransactions.length})
+              <Activity className="h-4 w-4 mr-2" />
+              All
+              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{unifiedTransactions.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="all-sales" 
               data-testid="tab-all-sales"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md"
             >
-              <Receipt className="h-3.5 w-3.5 mr-1.5" />
-              Bills ({filteredSales.length})
+              <Receipt className="h-4 w-4 mr-2" />
+              Bills
+              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{filteredSales.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="recovery-payments" 
               data-testid="tab-recovery-payments"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md"
             >
-              <Wallet className="h-3.5 w-3.5 mr-1.5" />
-              Payments ({filteredPayments.length})
+              <Wallet className="h-4 w-4 mr-2" />
+              Payments
+              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{filteredPayments.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="returns" 
               data-testid="tab-returns"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md"
             >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              Returns ({filteredReturns.length})
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Returns
+              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{filteredReturns.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="unpaid-bills" 
               data-testid="tab-unpaid-bills"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-rose-500 data-[state=active]:to-rose-600 data-[state=active]:text-white data-[state=active]:shadow-md"
             >
-              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
-              Unpaid ({unpaidSales.length})
+              <CreditCard className="h-4 w-4 mr-2" />
+              Unpaid
+              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{unpaidSales.length}</Badge>
             </TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
           <TabsContent value="overview">
-            <div className="space-y-4">
-              {/* Financial Summary Card */}
+            <div className="space-y-5">
+              {/* Lifetime Totals - Main Overview Cards */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Lifetime Overview</h3>
+                  <Badge variant="outline" className="h-5 text-[10px] px-1.5">All Time</Badge>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Sales</span>
+                        <div className="p-1.5 bg-blue-100/50 dark:bg-blue-900/20 rounded-lg">
+                          <Receipt className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                      </div>
+                      <div className="text-lg font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
+                        {Math.round(stats.totalSalesAmount).toLocaleString("en-IN")}
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5 gap-2">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.totalBillsCount} bills</p>
+                        <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-white/50 dark:bg-zinc-800/50">
+                          {stats.uniqueCustomers} customers
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Collected</span>
+                        <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded-lg">
+                          <TrendingUpIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                      </div>
+                      <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        {Math.round(stats.totalPaidAmount).toLocaleString("en-IN")}
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5 gap-2">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.paidBillsCount} paid bills</p>
+                        <div className="text-xs text-emerald-500 dark:text-emerald-400 font-medium">
+                          {stats.totalSalesAmount > 0 ? ((stats.totalPaidAmount / stats.totalSalesAmount) * 100).toFixed(1) : "0.0"}%
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Outstanding</span>
+                        <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded-lg">
+                          <TrendingDown className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                        </div>
+                      </div>
+                      <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                        {Math.round(stats.totalOutstanding).toLocaleString("en-IN")}
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5 gap-2">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.unpaidBillsCount} unpaid</p>
+                        <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
+                          {stats.returnsCount > 0 ? `-${stats.totalReturnsAmount.toLocaleString("en-IN")} returns` : `${stats.totalPaymentRecords} payments`}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Revenue</span>
+                        <div className="p-1.5 bg-purple-100/50 dark:bg-purple-900/20 rounded-lg">
+                          <Activity className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                        </div>
+                      </div>
+                      <div className="text-lg font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                        {Math.round(stats.totalSalesAmount - stats.totalReturnsAmount).toLocaleString("en-IN")}
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5 gap-2">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{stats.returnsCount} returns</p>
+                        <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
+                          {stats.totalReturnsAmount.toLocaleString("en-IN")} refunded
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Filtered Performance Card */}
               <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs">
                 <CardContent className="p-5">
                   <div className="flex items-center justify-between mb-4">
@@ -937,8 +1017,8 @@ export default function Reports() {
                         <Target className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Financial Performance</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Based on current filters</p>
+                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Filtered Performance</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Based on selected date range</p>
                       </div>
                     </div>
                     <Badge variant="outline" className="text-xs h-6 px-2 bg-white/50 dark:bg-zinc-800/50">
