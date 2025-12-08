@@ -1,5 +1,5 @@
 import { startTransition, useState, useEffect } from "react";
-import { LayoutDashboard, Package, ShoppingCart, Receipt, CreditCard, TrendingUp, Settings, BarChart3, RotateCcw, ShieldCheck, ChevronDown, ArrowUpCircle, History } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, Receipt, CreditCard, Settings, BarChart3, RotateCcw, ShieldCheck, ChevronDown, ArrowUpCircle, History } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigationRefresh } from "@/hooks/use-navigation-refresh";
@@ -76,18 +76,13 @@ const analyticsItems: MenuItem[] = [
     icon: BarChart3,
   },
   {
-    title: "Audit",
-    url: "/audit",
+    title: "Admin",
+    url: "/admin",
     icon: ShieldCheck,
   },
 ];
 
 const settingsItems: MenuItem[] = [
-  {
-    title: "Rates",
-    url: "/rates",
-    icon: TrendingUp,
-  },
   {
     title: "Settings",
     url: "/settings",

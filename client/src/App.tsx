@@ -22,7 +22,6 @@ const Sales = lazy(() => import("@/pages/sales"));
 const UnpaidBills = lazy(() => import("@/pages/unpaid-bills"));
 const CustomerStatement = lazy(() => import("@/pages/customer-statement"));
 const Reports = lazy(() => import("@/pages/reports"));
-const RateManagement = lazy(() => import("@/pages/rate-management"));
 const BillPrint = lazy(() => import("@/pages/bill-print"));
 const Returns = lazy(() => import("@/pages/returns"));
 const ReturnsHistory = lazy(() => import("@/pages/returns-history"));
@@ -44,8 +43,7 @@ function Router() {
         <Route path="/reports" component={Reports} />
         <Route path="/returns" component={Returns} />
         <Route path="/returns/history" component={ReturnsHistory} />
-        <Route path="/audit" component={Audit} />
-        <Route path="/rates" component={RateManagement} />
+        <Route path="/admin" component={Audit} />
         <Route path="/settings" component={Settings} />
         <Route path="/bill/:id" component={BillPrint} />
         <Route component={NotFound} />
