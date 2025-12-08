@@ -55,6 +55,11 @@ import {
   ArrowDown,
   IndianRupee,
   FileText,
+  Shield,
+  Ban,
+  CheckCircle,
+  Smartphone,
+  History,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { apiRequest, queryClient } from "@/lib/queryClient"
@@ -203,6 +208,18 @@ export default function Audit() {
   const [showCurrentPin, setShowCurrentPin] = useState(false)
   const [showNewPin, setShowNewPin] = useState(false)
   const [showConfirmPin, setShowConfirmPin] = useState(false)
+
+  // License Management State
+  const [licenseDevices, setLicenseDevices] = useState<any[]>([])
+  const [licenseAuditLog, setLicenseAuditLog] = useState<any[]>([])
+  const [licenseLoading, setLicenseLoading] = useState(false)
+  const [masterPinInput, setMasterPinInput] = useState("")
+  const [showMasterPin, setShowMasterPin] = useState(false)
+  const [masterPinVerified, setMasterPinVerified] = useState(false)
+  const [masterPinError, setMasterPinError] = useState("")
+  const [blockReason, setBlockReason] = useState("")
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
+  const [showBlockDialog, setShowBlockDialog] = useState(false)
 
   // Cloud Sync State
   const [cloudUrl, setCloudUrl] = useState("")
@@ -624,6 +641,170 @@ export default function Audit() {
       currentPin: currentPin || "0000",
       newPin: newPin,
     })
+  }
+
+  // License Management Functions
+  const verifyMasterPin = async () => {
+    if (!masterPinInput) {
+      setMasterPinError("Please enter the master PIN")
+      return
+    }
+    
+    setLicenseLoading(true)
+    setMasterPinError("")
+    
+    try {
+      const response = await fetch("/api/license/devices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ masterPin: masterPinInput }),
+      })
+      
+      if (!response.ok) {
+        const data = await response.json()
+        setMasterPinError(data.error || "Invalid master PIN")
+        setMasterPinVerified(false)
+        return
+      }
+      
+      const data = await response.json()
+      setLicenseDevices(data.devices || [])
+      setMasterPinVerified(true)
+      setMasterPinError("")
+      
+      // Also fetch audit log
+      const auditResponse = await fetch(`/api/license/audit?masterPin=${encodeURIComponent(masterPinInput)}`)
+      if (auditResponse.ok) {
+        const auditData = await auditResponse.json()
+        setLicenseAuditLog(auditData.auditLog || [])
+      }
+    } catch (error) {
+      console.error("Error verifying master PIN:", error)
+      setMasterPinError("Failed to verify master PIN")
+    } finally {
+      setLicenseLoading(false)
+    }
+  }
+
+  const refreshDevices = async () => {
+    if (!masterPinVerified) return
+    
+    setLicenseLoading(true)
+    try {
+      const response = await fetch("/api/license/devices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ masterPin: masterPinInput }),
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setLicenseDevices(data.devices || [])
+      }
+      
+      const auditResponse = await fetch(`/api/license/audit?masterPin=${encodeURIComponent(masterPinInput)}`)
+      if (auditResponse.ok) {
+        const auditData = await auditResponse.json()
+        setLicenseAuditLog(auditData.auditLog || [])
+      }
+    } catch (error) {
+      console.error("Error refreshing devices:", error)
+    } finally {
+      setLicenseLoading(false)
+    }
+  }
+
+  const handleBlockDevice = async () => {
+    if (!selectedDeviceId || !blockReason) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter a reason for blocking.",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    setLicenseLoading(true)
+    try {
+      const response = await fetch("/api/license/block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          masterPin: masterPinInput,
+          deviceId: selectedDeviceId,
+          reason: blockReason,
+        }),
+      })
+      
+      if (!response.ok) {
+        const data = await response.json()
+        toast({
+          title: "Failed to Block",
+          description: data.error || "Could not block device",
+          variant: "destructive",
+        })
+        return
+      }
+      
+      toast({
+        title: "Device Blocked",
+        description: "The device has been blocked successfully.",
+      })
+      
+      setShowBlockDialog(false)
+      setBlockReason("")
+      setSelectedDeviceId(null)
+      refreshDevices()
+    } catch (error) {
+      console.error("Error blocking device:", error)
+      toast({
+        title: "Error",
+        description: "Failed to block device",
+        variant: "destructive",
+      })
+    } finally {
+      setLicenseLoading(false)
+    }
+  }
+
+  const handleUnblockDevice = async (deviceId: string) => {
+    setLicenseLoading(true)
+    try {
+      const response = await fetch("/api/license/unblock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          masterPin: masterPinInput,
+          deviceId,
+        }),
+      })
+      
+      if (!response.ok) {
+        const data = await response.json()
+        toast({
+          title: "Failed to Unblock",
+          description: data.error || "Could not unblock device",
+          variant: "destructive",
+        })
+        return
+      }
+      
+      toast({
+        title: "Device Unblocked",
+        description: "The device has been unblocked successfully.",
+      })
+      
+      refreshDevices()
+    } catch (error) {
+      console.error("Error unblocking device:", error)
+      toast({
+        title: "Error",
+        description: "Failed to unblock device",
+        variant: "destructive",
+      })
+    } finally {
+      setLicenseLoading(false)
+    }
   }
 
   const companies = useMemo(() => {
@@ -1281,10 +1462,10 @@ export default function Audit() {
             <div className="h-full overflow-auto p-4">
               <div className="max-w-4xl mx-auto">
                 <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
-                  <TabsList className="grid grid-cols-4 mb-6">
+                  <TabsList className="grid grid-cols-5 mb-6">
                     <TabsTrigger value="pin" className="flex items-center gap-2">
                       <Key className="h-4 w-4" />
-                      PIN Settings
+                      PIN
                     </TabsTrigger>
                     <TabsTrigger value="permissions" className="flex items-center gap-2">
                       <Users className="h-4 w-4" />
@@ -1293,6 +1474,10 @@ export default function Audit() {
                     <TabsTrigger value="cloud" className="flex items-center gap-2">
                       <Cloud className="h-4 w-4" />
                       Cloud Sync
+                    </TabsTrigger>
+                    <TabsTrigger value="licenses" className="flex items-center gap-2">
+                      <Shield className="h-4 w-4" />
+                      Licenses
                     </TabsTrigger>
                     <TabsTrigger value="system" className="flex items-center gap-2">
                       <Cpu className="h-4 w-4" />
@@ -1727,6 +1912,254 @@ export default function Audit() {
                       </CardContent>
                     </Card>
                   </TabsContent>
+
+                  {/* LICENSE MANAGEMENT TAB */}
+                  <TabsContent value="licenses" className="space-y-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Shield className="h-5 w-5" />
+                          Software License Control
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-6">
+                        {!masterPinVerified ? (
+                          <div className="space-y-4">
+                            <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
+                              <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                                Enter your Master Admin PIN to access license management
+                              </p>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label htmlFor="masterPin">Master Admin PIN</Label>
+                              <div className="relative">
+                                <Input
+                                  id="masterPin"
+                                  type={showMasterPin ? "text" : "password"}
+                                  value={masterPinInput}
+                                  onChange={(e) => setMasterPinInput(e.target.value)}
+                                  placeholder="Enter master admin PIN"
+                                  data-testid="input-master-pin"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute right-0 top-0"
+                                  onClick={() => setShowMasterPin(!showMasterPin)}
+                                >
+                                  {showMasterPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </Button>
+                              </div>
+                            </div>
+                            
+                            {masterPinError && (
+                              <p className="text-sm text-destructive">{masterPinError}</p>
+                            )}
+                            
+                            <Button
+                              onClick={verifyMasterPin}
+                              disabled={licenseLoading || !masterPinInput}
+                              className="w-full"
+                              data-testid="button-verify-master-pin"
+                            >
+                              {licenseLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              ) : (
+                                <Shield className="h-4 w-4 mr-2" />
+                              )}
+                              Verify & Access
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-green-600">
+                                <CheckCircle className="h-5 w-5" />
+                                <span className="font-medium">Master PIN Verified</span>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={refreshDevices}
+                                disabled={licenseLoading}
+                                data-testid="button-refresh-devices"
+                              >
+                                {licenseLoading ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+
+                            <div className="border rounded-md">
+                              <div className="p-3 bg-muted/30 border-b">
+                                <h4 className="font-medium flex items-center gap-2">
+                                  <Smartphone className="h-4 w-4" />
+                                  Registered Devices ({licenseDevices.length})
+                                </h4>
+                              </div>
+                              
+                              {licenseDevices.length === 0 ? (
+                                <div className="p-6 text-center text-muted-foreground">
+                                  <Smartphone className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                  <p>No devices registered yet</p>
+                                  <p className="text-xs mt-1">Devices will appear here when they connect</p>
+                                </div>
+                              ) : (
+                                <div className="divide-y">
+                                  {licenseDevices.map((device) => (
+                                    <div key={device.id} className="p-4 flex items-center justify-between gap-4">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium truncate">{device.deviceName || device.deviceId}</span>
+                                          {device.status === "blocked" ? (
+                                            <Badge variant="destructive" className="shrink-0">
+                                              <Ban className="h-3 w-3 mr-1" />
+                                              Blocked
+                                            </Badge>
+                                          ) : (
+                                            <Badge variant="secondary" className="shrink-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                              <CheckCircle className="h-3 w-3 mr-1" />
+                                              Active
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                                          <p>Store: {device.storeName || "Unknown"}</p>
+                                          <p>ID: {device.deviceId}</p>
+                                          {device.lastHeartbeat && (
+                                            <p>Last seen: {formatDateShort(new Date(device.lastHeartbeat))}</p>
+                                          )}
+                                          {device.status === "blocked" && device.blockedReason && (
+                                            <p className="text-red-600 dark:text-red-400">Reason: {device.blockedReason}</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0">
+                                        {device.status === "blocked" ? (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => handleUnblockDevice(device.deviceId)}
+                                            disabled={licenseLoading}
+                                            data-testid={`button-unblock-${device.deviceId}`}
+                                          >
+                                            <CheckCircle className="h-4 w-4 mr-1" />
+                                            Unblock
+                                          </Button>
+                                        ) : (
+                                          <Button
+                                            size="sm"
+                                            variant="destructive"
+                                            onClick={() => {
+                                              setSelectedDeviceId(device.deviceId)
+                                              setShowBlockDialog(true)
+                                            }}
+                                            disabled={licenseLoading}
+                                            data-testid={`button-block-${device.deviceId}`}
+                                          >
+                                            <Ban className="h-4 w-4 mr-1" />
+                                            Block
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {licenseAuditLog.length > 0 && (
+                              <div className="border rounded-md">
+                                <div className="p-3 bg-muted/30 border-b">
+                                  <h4 className="font-medium flex items-center gap-2">
+                                    <History className="h-4 w-4" />
+                                    Action History
+                                  </h4>
+                                </div>
+                                <div className="divide-y max-h-64 overflow-auto">
+                                  {licenseAuditLog.slice(0, 10).map((log) => (
+                                    <div key={log.id} className="p-3 text-sm">
+                                      <div className="flex items-center gap-2">
+                                        {log.action === "block" ? (
+                                          <Ban className="h-4 w-4 text-red-500" />
+                                        ) : (
+                                          <CheckCircle className="h-4 w-4 text-green-500" />
+                                        )}
+                                        <span className="font-medium capitalize">{log.action}</span>
+                                        <span className="text-muted-foreground">-</span>
+                                        <span className="truncate">{log.deviceId}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        {log.reason && <p>Reason: {log.reason}</p>}
+                                        <p>{formatDateShort(new Date(log.createdAt))}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Block Device Dialog */}
+                  <Dialog open={showBlockDialog} onOpenChange={setShowBlockDialog}>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <Ban className="h-5 w-5 text-red-500" />
+                          Block Device
+                        </DialogTitle>
+                        <DialogDescription>
+                          This will prevent the device from accessing the software until unblocked.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="blockReason">Reason for blocking</Label>
+                          <Input
+                            id="blockReason"
+                            value={blockReason}
+                            onChange={(e) => setBlockReason(e.target.value)}
+                            placeholder="e.g., Overdue billing, License expired"
+                            data-testid="input-block-reason"
+                          />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowBlockDialog(false)
+                              setBlockReason("")
+                              setSelectedDeviceId(null)
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            onClick={handleBlockDevice}
+                            disabled={licenseLoading || !blockReason}
+                            data-testid="button-confirm-block"
+                          >
+                            {licenseLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <Ban className="h-4 w-4 mr-2" />
+                            )}
+                            Block Device
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
 
                   {/* SYSTEM TAB */}
                   <TabsContent value="system" className="space-y-6">

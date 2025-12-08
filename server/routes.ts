@@ -3089,8 +3089,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastHeartbeat: now,
         ipAddress: req.ip || req.socket.remoteAddress || null,
         userAgent: req.headers["user-agent"] || null,
-        createdAt: now,
-        updatedAt: now,
       })
 
       res.json({
@@ -3197,12 +3195,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Get license audit log (requires master PIN)
+  // Get license audit log (requires master PIN) - POST version
   app.post("/api/license/audit", async (req, res) => {
     try {
       const { masterPin, deviceId } = req.body
       
       if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      const auditLog = await storage.getLicenseAuditLog(deviceId)
+      res.json({ auditLog })
+    } catch (error) {
+      console.error("Error getting audit log:", error)
+      res.status(500).json({ error: "Failed to get audit log" })
+    }
+  })
+
+  // Get license audit log (requires master PIN) - GET version
+  app.get("/api/license/audit", async (req, res) => {
+    try {
+      const { masterPin, deviceId } = req.query as { masterPin?: string; deviceId?: string }
+      
+      if (!masterPin || !verifyMasterPin(masterPin)) {
         res.status(403).json({ error: "Invalid master PIN" })
         return
       }
