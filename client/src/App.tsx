@@ -15,6 +15,8 @@ import NotFound from "@/pages/not-found";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const StockManagement = lazy(() => import("@/pages/stock-management"));
+const StockIn = lazy(() => import("@/pages/stock-in"));
+const StockHistory = lazy(() => import("@/pages/stock-history"));
 const POSSales = lazy(() => import("@/pages/pos-sales"));
 const Sales = lazy(() => import("@/pages/sales"));
 const UnpaidBills = lazy(() => import("@/pages/unpaid-bills"));
@@ -23,6 +25,7 @@ const Reports = lazy(() => import("@/pages/reports"));
 const RateManagement = lazy(() => import("@/pages/rate-management"));
 const BillPrint = lazy(() => import("@/pages/bill-print"));
 const Returns = lazy(() => import("@/pages/returns"));
+const ReturnsHistory = lazy(() => import("@/pages/returns-history"));
 const Audit = lazy(() => import("@/pages/audit"));
 const Settings = lazy(() => import("@/pages/settings"));
 
@@ -32,12 +35,15 @@ function Router() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/stock" component={StockManagement} />
+        <Route path="/stock/in" component={StockIn} />
+        <Route path="/stock/history" component={StockHistory} />
         <Route path="/pos" component={POSSales} />
         <Route path="/sales" component={Sales} />
         <Route path="/unpaid-bills" component={UnpaidBills} />
         <Route path="/customer/:phone" component={CustomerStatement} />
         <Route path="/reports" component={Reports} />
         <Route path="/returns" component={Returns} />
+        <Route path="/returns/history" component={ReturnsHistory} />
         <Route path="/audit" component={Audit} />
         <Route path="/rates" component={RateManagement} />
         <Route path="/settings" component={Settings} />
