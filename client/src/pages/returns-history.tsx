@@ -31,10 +31,19 @@ interface ReturnStats {
 
 export default function ReturnsHistory() {
   const { formatDateShort, formatDate } = useDateFormat()
+  
+  // Get today's date in YYYY-MM-DD format for default filter
+  const getTodayString = () => {
+    const today = new Date()
+    return today.toISOString().split('T')[0]
+  }
+  
   const [searchQuery, setSearchQuery] = useState("")
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL)
   const [selectedReturn, setSelectedReturn] = useState<ReturnWithItems | null>(null)
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false)
+  const [startDate, setStartDate] = useState(getTodayString())
+  const [endDate, setEndDate] = useState(getTodayString())
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
@@ -56,15 +65,34 @@ export default function ReturnsHistory() {
   }, [returns])
 
   const filteredReturns = useMemo(() => {
-    if (!debouncedSearchQuery.trim()) return returns
-    const query = debouncedSearchQuery.toLowerCase()
-    return returns.filter(
-      (r) =>
-        r.customerName.toLowerCase().includes(query) ||
-        r.customerPhone.includes(query) ||
-        r.id.toLowerCase().includes(query)
-    )
-  }, [returns, debouncedSearchQuery])
+    let filtered = returns
+
+    // Date filtering
+    if (startDate) {
+      const start = new Date(startDate)
+      start.setHours(0, 0, 0, 0)
+      filtered = filtered.filter((r) => new Date(r.createdAt) >= start)
+    }
+
+    if (endDate) {
+      const end = new Date(endDate)
+      end.setHours(23, 59, 59, 999)
+      filtered = filtered.filter((r) => new Date(r.createdAt) <= end)
+    }
+
+    // Search filtering
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase()
+      filtered = filtered.filter(
+        (r) =>
+          r.customerName.toLowerCase().includes(query) ||
+          r.customerPhone.includes(query) ||
+          r.id.toLowerCase().includes(query)
+      )
+    }
+
+    return filtered
+  }, [returns, debouncedSearchQuery, startDate, endDate])
 
   const visibleReturns = useMemo(() => {
     return filteredReturns.slice(0, visibleLimit)
@@ -181,8 +209,8 @@ export default function ReturnsHistory() {
         </Card>
       </div>
 
-      <div className="flex gap-4">
-        <div className="flex-1 relative">
+      <div className="flex flex-wrap gap-4">
+        <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by customer name, phone, or return ID..."
@@ -190,6 +218,26 @@ export default function ReturnsHistory() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
             data-testid="input-search"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">From:</span>
+          <Input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-36"
+            data-testid="input-start-date"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">To:</span>
+          <Input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="w-36"
+            data-testid="input-end-date"
           />
         </div>
         <Button
