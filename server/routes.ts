@@ -2043,15 +2043,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // FIXED: Record payment - UPDATED WITH BETTER ERROR HANDLING
+  // Record payment with strict validation
   app.post("/api/sales/:id/payment", requirePerm("payment:edit"), async (req, res) => {
     try {
       const { amount, paymentMethod, notes } = req.body
 
-      if (typeof amount !== "number" || amount <= 0) {
-        res.status(400).json({ error: "Invalid payment amount: must be greater than 0" })
+      // Strict validation: must be a positive number, not NaN
+      if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
+        res.status(400).json({ error: "Invalid payment amount: must be a positive number" })
         return
       }
+
+      // Round to 2 decimal places to avoid floating point issues
+      const roundedAmount = Math.round(amount * 100) / 100
 
       // Get sale details before update
       const sale = await storage.getSale(req.params.id)
@@ -2060,28 +2064,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      const totalAmount = Number.parseFloat(sale.totalAmount || "0")
-      const amountPaid = Number.parseFloat(sale.amountPaid || "0")
-      const outstanding = Math.max(0, totalAmount - amountPaid)
+      const totalAmount = Math.round(Number.parseFloat(sale.totalAmount || "0") * 100) / 100
+      const amountPaid = Math.round(Number.parseFloat(sale.amountPaid || "0") * 100) / 100
+      const outstanding = Math.round(Math.max(0, totalAmount - amountPaid) * 100) / 100
 
-      console.log("[Payment Debug API]", {
-        saleId: req.params.id,
-        totalAmount,
-        amountPaid,
-        outstanding,
-        paymentAmount: amount,
-      })
-
-      if (amount > outstanding) {
+      if (roundedAmount > outstanding) {
         res.status(400).json({
-          error: `Payment amount (Rs. ${amount}) exceeds outstanding balance (Rs. ${outstanding})`,
+          error: `Payment amount (Rs. ${roundedAmount}) exceeds outstanding balance (Rs. ${outstanding})`,
         })
         return
       }
 
       try {
-        // Record payment with proper balance tracking
-        const updatedSale = await storage.updateSalePayment(req.params.id, amount, paymentMethod, notes)
+        // Record payment with proper balance tracking (use rounded amount)
+        const updatedSale = await storage.updateSalePayment(req.params.id, roundedAmount, paymentMethod, notes)
 
         // Invalidate real-time queries
         invalidateCustomerQueries(sale.customerPhone)

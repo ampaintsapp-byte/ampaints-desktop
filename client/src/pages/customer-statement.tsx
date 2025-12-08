@@ -345,16 +345,17 @@ export default function CustomerStatement() {
           subtotal: safeParseFloat(item.subtotal),
         })) || []
 
-      const totalAmt = safeParseFloat(sale.totalAmount)
-      const paidAmt = safeParseFloat(sale.amountPaid)
-      const outstandingAmt = Math.max(0, totalAmt - paidAmt)
+      const totalAmt = roundNumber(safeParseFloat(sale.totalAmount))
+      const paidAmt = roundNumber(safeParseFloat(sale.amountPaid))
+      const outstandingAmt = roundNumber(Math.max(0, totalAmt - paidAmt))
       
       // Calculate initial payment (paid at POS, not via recovery)
       // Initial payment = amountPaid - sum of recovery payments for this sale
-      const recoveryPayments = paymentHistory
+      // Use roundNumber to avoid floating point precision issues
+      const recoveryPayments = roundNumber(paymentHistory
         .filter((p) => p.saleId === sale.id)
-        .reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
-      const initialPayment = Math.max(0, paidAmt - recoveryPayments)
+        .reduce((sum, p) => sum + safeParseFloat(p.amount), 0))
+      const initialPayment = roundNumber(Math.max(0, paidAmt - recoveryPayments))
 
       return {
         id: `bill-${sale.id}`,
@@ -438,19 +439,20 @@ export default function CustomerStatement() {
       return timeDiff
     })
 
-    // CORRECTED: Calculate running balance with combined debit/credit per row
+    // Calculate running balance with combined debit/credit per row
     // For bills: net effect = debit - credit (bill amount minus initial payment)
     // For payments/returns: net effect = -credit (reduces balance)
+    // Use roundNumber to avoid floating point precision issues
     let runningBalance = 0
     
     txns.forEach((txn) => {
       if (txn.type === "payment" || txn.type === "return") {
         // Payments and returns reduce the balance (customer pays us / we refund)
-        runningBalance -= txn.credit
+        runningBalance = roundNumber(runningBalance - txn.credit)
       } else {
         // Bills: add debit (bill amount) and subtract credit (initial payment at POS)
         // This gives the net effect in one row
-        runningBalance += txn.debit - txn.credit
+        runningBalance = roundNumber(runningBalance + txn.debit - txn.credit)
       }
       txn.balance = runningBalance
     })

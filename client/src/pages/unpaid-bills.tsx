@@ -129,6 +129,11 @@ const safeParseFloat = (value: string | number | null | undefined): number => {
   return isNaN(num) ? 0 : num
 }
 
+// Utility function to round numbers consistently (avoid floating point issues)
+const roundNumber = (num: number): number => {
+  return Math.round(num * 100) / 100
+}
+
 export default function UnpaidBills() {
   const { formatDateShort } = useDateFormat()
   const { receiptSettings } = useReceiptSettings()
@@ -357,8 +362,7 @@ export default function UnpaidBills() {
       setEditingSaleId(null)
       setDueDateForm({ dueDate: "", notes: "" })
     },
-    onError: (error: Error) => {
-      console.error("Update due date error:", error)
+    onError: () => {
       toast({ title: "Failed to update due date", variant: "destructive" })
     },
   })
@@ -384,7 +388,7 @@ export default function UnpaidBills() {
       return
     }
 
-    const amount = Number.parseFloat(paymentAmount)
+    const amount = roundNumber(Number.parseFloat(paymentAmount))
     const validationError = validatePayment(amount, selectedCustomer)
     if (validationError) {
       toast({
@@ -395,8 +399,6 @@ export default function UnpaidBills() {
     }
 
     try {
-      await refetchAllSales()
-
       // Sort bills by date (oldest first) and apply payment
       const sortedBills = [...selectedCustomer.bills].sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -408,14 +410,14 @@ export default function UnpaidBills() {
       for (const bill of sortedBills) {
         if (remainingPayment <= 0) break
 
-        const billTotal = safeParseFloat(bill.totalAmount)
-        const billPaid = safeParseFloat(bill.amountPaid)
-        const billOutstanding = Math.max(0, billTotal - billPaid)
+        const billTotal = roundNumber(safeParseFloat(bill.totalAmount))
+        const billPaid = roundNumber(safeParseFloat(bill.amountPaid))
+        const billOutstanding = roundNumber(Math.max(0, billTotal - billPaid))
 
         if (billOutstanding > 0) {
-          const paymentForThisBill = Math.min(remainingPayment, billOutstanding)
+          const paymentForThisBill = roundNumber(Math.min(remainingPayment, billOutstanding))
           paymentsToApply.push({ saleId: bill.id, amount: paymentForThisBill })
-          remainingPayment -= paymentForThisBill
+          remainingPayment = roundNumber(remainingPayment - paymentForThisBill)
         }
       }
 
@@ -430,8 +432,7 @@ export default function UnpaidBills() {
       }
 
       // Success handled in mutation onSuccess
-    } catch (error) {
-      console.error("Payment processing error:", error)
+    } catch {
       toast({
         title: "Failed to record payment",
         description: "Please try again",
@@ -503,7 +504,7 @@ export default function UnpaidBills() {
     }
   }
 
-  // FIXED: Correct calculation of totals like in customer-statement.tsx
+  // Consolidate customers with proper number handling
   const consolidateCustomers = (sales: ExtendedSale[]): ConsolidatedCustomer[] => {
     const customerMap = new Map<string, ConsolidatedCustomer>()
 
@@ -511,17 +512,18 @@ export default function UnpaidBills() {
       const phone = sale.customerPhone
       const existing = customerMap.get(phone)
 
-      const totalAmount = safeParseFloat(sale.totalAmount)
-      const totalPaid = safeParseFloat(sale.amountPaid)
-      const outstanding = Math.max(0, totalAmount - totalPaid)
+      // Use safeParseFloat and roundNumber to prevent NaN propagation
+      const totalAmount = roundNumber(safeParseFloat(sale.totalAmount))
+      const totalPaid = roundNumber(safeParseFloat(sale.amountPaid))
+      const outstanding = roundNumber(Math.max(0, totalAmount - totalPaid))
       const billDate = new Date(sale.createdAt)
       const daysOverdue = Math.max(0, Math.ceil((new Date().getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24)))
 
       if (existing) {
         existing.bills.push(sale)
-        existing.totalAmount += totalAmount
-        existing.totalPaid += totalPaid
-        existing.totalOutstanding += outstanding
+        existing.totalAmount = roundNumber(existing.totalAmount + totalAmount)
+        existing.totalPaid = roundNumber(existing.totalPaid + totalPaid)
+        existing.totalOutstanding = roundNumber(existing.totalOutstanding + outstanding)
         if (billDate < existing.oldestBillDate) {
           existing.oldestBillDate = billDate
           existing.daysOverdue = daysOverdue
@@ -545,18 +547,20 @@ export default function UnpaidBills() {
     return Array.from(customerMap.values())
   }
 
-  // FIXED: Calculate stats correctly
+  // Calculate stats with proper rounding
   const calculateStats = (customers: ConsolidatedCustomer[]) => {
-    const totalOutstanding = customers.reduce((sum, customer) => sum + customer.totalOutstanding, 0)
+    const totalOutstanding = roundNumber(customers.reduce((sum, customer) => sum + customer.totalOutstanding, 0))
     const totalCustomers = customers.length
-    const averageOutstanding = totalCustomers > 0 ? totalOutstanding / totalCustomers : 0
+    const averageOutstanding = roundNumber(totalCustomers > 0 ? totalOutstanding / totalCustomers : 0)
+    const totalAmount = roundNumber(customers.reduce((sum, customer) => sum + customer.totalAmount, 0))
+    const totalPaid = roundNumber(customers.reduce((sum, customer) => sum + customer.totalPaid, 0))
 
     return {
       totalOutstanding,
       totalCustomers,
       averageOutstanding,
-      totalAmount: customers.reduce((sum, customer) => sum + customer.totalAmount, 0),
-      totalPaid: customers.reduce((sum, customer) => sum + customer.totalPaid, 0),
+      totalAmount,
+      totalPaid,
     }
   }
 
