@@ -23,8 +23,7 @@ const Reports = lazy(() => import("@/pages/reports"));
 const RateManagement = lazy(() => import("@/pages/rate-management"));
 const BillPrint = lazy(() => import("@/pages/bill-print"));
 const Returns = lazy(() => import("@/pages/returns"));
-const Audit = lazy(() => import("@/pages/audit"));
-const Settings = lazy(() => import("@/pages/settings"));
+const Admin = lazy(() => import("@/pages/admin"));
 
 function Router() {
   return (
@@ -38,9 +37,8 @@ function Router() {
         <Route path="/customer/:phone" component={CustomerStatement} />
         <Route path="/reports" component={Reports} />
         <Route path="/returns" component={Returns} />
-        <Route path="/audit" component={Audit} />
         <Route path="/rates" component={RateManagement} />
-        <Route path="/settings" component={Settings} />
+        <Route path="/admin" component={Admin} />
         <Route path="/bill/:id" component={BillPrint} />
         <Route component={NotFound} />
       </Switch>
