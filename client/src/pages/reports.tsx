@@ -891,79 +891,95 @@ export default function Reports() {
           {/* Overview Tab */}
           <TabsContent value="overview">
             <div className="space-y-5">
-              {/* Summary Cards - Simple 4-Column Layout */}
+              {/* Summary Cards - Premium Glass Banking Style */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Total Bills */}
-                <Card className="rounded-xl border border-blue-200/50 dark:border-blue-800/50 bg-white dark:bg-zinc-900/50">
-                  <CardContent className="p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                        <Receipt className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 to-blue-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-blue-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+                          <Receipt className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Total Bills</span>
                       </div>
-                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Bills</span>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesTotal).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {filteredSales.length} bills in this period
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-slate-800 dark:text-white tabular-nums">
-                      Rs. {Math.round(filteredSalesTotal).toLocaleString("en-IN")}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {filteredSales.length} bills in this period
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
 
                 {/* Collected (Paid) */}
-                <Card className="rounded-xl border border-emerald-200/50 dark:border-emerald-800/50 bg-white dark:bg-zinc-900/50">
-                  <CardContent className="p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
-                        <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-emerald-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
+                          <TrendingUp className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Collected</span>
                       </div>
-                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Collected</span>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesPaid).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {paidSales.length} fully paid bills
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                      Rs. {Math.round(filteredSalesPaid).toLocaleString("en-IN")}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {paidSales.length} fully paid bills
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
 
                 {/* Unpaid */}
-                <Card className="rounded-xl border border-rose-200/50 dark:border-rose-800/50 bg-white dark:bg-zinc-900/50">
-                  <CardContent className="p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30">
-                        <CreditCard className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-rose-400/20 to-rose-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-rose-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-rose-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 shadow-lg shadow-rose-500/30">
+                          <CreditCard className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Unpaid</span>
                       </div>
-                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Unpaid</span>
+                      <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesOutstanding).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {unpaidSales.length} bills pending
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                      Rs. {Math.round(filteredSalesOutstanding).toLocaleString("en-IN")}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {unpaidSales.length} bills pending
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
 
-                {/* Refunds (for bills in this period) */}
-                <Card className="rounded-xl border border-amber-200/50 dark:border-amber-800/50 bg-white dark:bg-zinc-900/50">
-                  <CardContent className="p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                        <RotateCcw className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                {/* Returns */}
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-amber-400/20 to-amber-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-amber-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-amber-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/30">
+                          <RotateCcw className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Returns</span>
                       </div>
-                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Returns</span>
+                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesReturnCredits).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {filteredSalesReturns.length} returns on these bills
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
-                      Rs. {Math.round(filteredSalesReturnCredits).toLocaleString("en-IN")}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {filteredSalesReturns.length} returns on these bills
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </div>
 
               {/* Cash Balance Card */}
