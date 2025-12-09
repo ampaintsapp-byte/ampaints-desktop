@@ -741,38 +741,33 @@ export default function Reports() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
       <div className="p-6 space-y-5">
         {/* Header */}
-        <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-950 p-5 text-white shadow-sm">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10" />
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
-                <BarChart3 className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight" data-testid="text-reports-title">
-                  Financial Reports
-                </h1>
-                <p className="text-white/70 text-xs">Real-time financial overview and analytics</p>
-              </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-blue-500/20">
+              <BarChart3 className="h-6 w-6 text-white" />
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="text-white/80 hover:text-white hover:bg-white/10 text-xs">
-                <Download className="h-3.5 w-3.5 mr-1.5" />
-                Export
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setShowDetailedMetrics(!showDetailedMetrics)}
-                className="text-white/80 hover:text-white hover:bg-white/10 text-xs"
-              >
-                {showDetailedMetrics ? <EyeOff className="h-3.5 w-3.5 mr-1.5" /> : <Eye className="h-3.5 w-3.5 mr-1.5" />}
-                {showDetailedMetrics ? "Hide Details" : "Show Details"}
-              </Button>
+            <div>
+              <h1 className="text-xl font-bold text-slate-800 dark:text-white" data-testid="text-reports-title">
+                Financial Reports
+              </h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Real-time financial overview and analytics</p>
             </div>
           </div>
-          <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-white/5 blur-lg" />
-          <div className="absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/5 blur-md" />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="border-slate-200 dark:border-slate-700">
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setShowDetailedMetrics(!showDetailedMetrics)}
+              className="border-slate-200 dark:border-slate-700"
+            >
+              {showDetailedMetrics ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+              {showDetailedMetrics ? "Hide" : "Show"}
+            </Button>
+          </div>
         </div>
 
         {/* Filters Bar - Clean Design */}
@@ -840,61 +835,56 @@ export default function Reports() {
           </CardContent>
         </Card>
 
-        {/* Tabs - More Prominent */}
+        {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="flex w-full h-auto p-1.5 bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm gap-1">
+          <TabsList className="grid w-full grid-cols-6 h-auto p-1 bg-slate-100 dark:bg-zinc-800 rounded-xl">
             <TabsTrigger 
               value="overview" 
               data-testid="tab-overview"
-              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-indigo-500 data-[state=active]:text-white data-[state=active]:shadow-md"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <PieChart className="h-4 w-4 mr-2" />
+              <PieChart className="h-3.5 w-3.5 mr-1.5" />
               Overview
             </TabsTrigger>
             <TabsTrigger 
               value="transactions" 
               data-testid="tab-transactions"
-              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-600 data-[state=active]:to-slate-700 data-[state=active]:text-white data-[state=active]:shadow-md"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <Activity className="h-4 w-4 mr-2" />
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
               All
-              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{unifiedTransactions.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="all-sales" 
               data-testid="tab-all-sales"
-              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <Receipt className="h-4 w-4 mr-2" />
+              <Receipt className="h-3.5 w-3.5 mr-1.5" />
               Bills
-              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{filteredSales.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="recovery-payments" 
               data-testid="tab-recovery-payments"
-              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-md"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <Wallet className="h-4 w-4 mr-2" />
+              <Wallet className="h-3.5 w-3.5 mr-1.5" />
               Payments
-              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{filteredPayments.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="returns" 
               data-testid="tab-returns"
-              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <RotateCcw className="h-4 w-4 mr-2" />
+              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
               Returns
-              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{filteredReturns.length}</Badge>
             </TabsTrigger>
             <TabsTrigger 
               value="unpaid-bills" 
               data-testid="tab-unpaid-bills"
-              className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all data-[state=active]:bg-gradient-to-r data-[state=active]:from-rose-500 data-[state=active]:to-rose-600 data-[state=active]:text-white data-[state=active]:shadow-md"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <CreditCard className="h-4 w-4 mr-2" />
+              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
               Unpaid
-              <Badge variant="secondary" className="ml-2 h-5 text-[10px] px-1.5">{unpaidSales.length}</Badge>
             </TabsTrigger>
           </TabsList>
 
