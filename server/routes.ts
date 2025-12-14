@@ -171,68 +171,46 @@ function invalidateInventoryCache(): void {
   cache.colors = null
 }
 
-// Auto-sync state
+// Auto-sync state - REMOVED AUTO SYNC TRIGGERING AUTO REFRESH
 let autoSyncEnabled = false
 let syncInterval: NodeJS.Timeout | null = null
-const pendingChanges = {
-  products: false,
-  sales: false,
-  colors: false,
-  payments: false,
-  returns: false,
-}
 
 // Helper function to hash PIN
 function hashPin(pin: string, salt: string): string {
   return crypto.pbkdf2Sync(pin, salt, 100000, 64, "sha512").toString("hex")
 }
 
-// Helper function to get appropriate SQL client for both Neon and Supabase
-async function getCloudSqlClient(connectionUrl: string) {
-  // Check if it's a Supabase URL
-  if (connectionUrl.includes("supabase.co") || connectionUrl.includes("supabase.com")) {
-    // Supabase PostgreSQL connection
-    const { createClient } = await import("@supabase/supabase-js")
-
-    // Extract connection details from URL
-    const urlObj = new URL(connectionUrl)
-    const host = urlObj.hostname
-    const db = urlObj.pathname.slice(1)
-    const username = urlObj.username
-    const password = urlObj.password
-    const port = urlObj.port || "5432"
-
-    // Use postgres-js for Supabase direct connection
-    const { default: postgres } = await import("postgres")
-    const sql = postgres({
-      hostname: host,
-      port: Number.parseInt(port),
-      database: db,
-      username: username,
-      password: password,
-      ssl: "require",
-    })
-
-    return { sql, type: "supabase" }
+// Helper function to get Neon SQL client only (removed Supabase support)
+async function getNeonSqlClient(connectionUrl: string) {
+  const { neon } = await import("@neondatabase/serverless")
+  
+  // Clean URL for Neon
+  let cleanUrl = connectionUrl
+  
+  // Remove problematic parameters
+  if (cleanUrl.includes('?')) {
+    const urlParts = cleanUrl.split('?')
+    const baseUrl = urlParts[0]
+    const params = new URLSearchParams(urlParts[1])
+    
+    // Remove incompatible params
+    params.delete('channel_binding')
+    params.delete('application_name')
+    
+    // Ensure sslmode is require for Neon
+    if (!params.has('sslmode')) {
+      params.set('sslmode', 'require')
+    }
+    
+    cleanUrl = `${baseUrl}?${params.toString()}`
   } else {
-    // Improved Neon connection with SSL handling
-    const { neon } = await import("@neondatabase/serverless")
-
-    // Clean up the connection URL for Neon
-    let cleanUrl = connectionUrl
-    if (cleanUrl.includes("channel_binding=require")) {
-      cleanUrl = cleanUrl.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
-    }
-
-    // Ensure sslmode is set correctly for Neon
-    if (!cleanUrl.includes("sslmode")) {
-      const separator = cleanUrl.includes("?") ? "&" : "?"
-      cleanUrl += `${separator}sslmode=require`
-    }
-
-    const sql = neon(cleanUrl)
-    return { sql, type: "neon" }
+    cleanUrl = `${cleanUrl}?sslmode=require`
   }
+  
+  console.log('[Neon] Connecting with URL:', cleanUrl.replace(/:[^:@]*@/, ':****@'))
+  
+  const sql = neon(cleanUrl)
+  return { sql, type: "neon" }
 }
 
 // Middleware to verify audit token
@@ -271,121 +249,78 @@ setInterval(
   60 * 60 * 1000,
 ) // Run every hour
 
-// Real-time query invalidation helper
-function invalidateCustomerQueries(customerPhone: string) {
-  console.log(`[Real-time] Invalidating queries for customer: ${customerPhone}`)
-  // Invalidate React Query cache for this customer
-  // This would be connected to your frontend cache invalidation system
-}
-
-// Global query invalidation helper
-function invalidateGlobalQueries() {
-  console.log("[Real-time] Invalidating global queries")
-  // Invalidate all React Query caches
-  // This would be connected to your frontend cache invalidation system
-}
-
-// Auto-sync functions
-async function triggerAutoSync() {
-  if (!autoSyncEnabled) return
-
+// FIXED: Create tables for Neon with proper data types
+async function createNeonTables(sql: any) {
   try {
-    console.log("[Auto-Sync] Starting automatic sync...")
-
-    const settings = await storage.getSettings()
-    if (!settings.cloudDatabaseUrl || !settings.cloudSyncEnabled) {
-      console.log("[Auto-Sync] Cloud sync not configured")
-      return
-    }
-
-    // Import first, then export
-    await importFromCloudData()
-    await exportToCloudData()
-
-    // Reset pending changes
-    Object.keys(pendingChanges).forEach((key) => {
-      pendingChanges[key as keyof typeof pendingChanges] = false
-    })
-
-    // Update sync timestamp
-    await storage.updateSettings({ lastSyncTime: new Date() })
-
-    console.log("[Auto-Sync] Automatic sync completed")
-  } catch (error) {
-    console.error("[Auto-Sync] Failed:", error)
-  }
-}
-
-// Detect changes for auto-sync
-function detectChanges(entity: keyof typeof pendingChanges) {
-  pendingChanges[entity] = true
-
-  // Auto-sync after 30 seconds if changes detected
-  if (Object.values(pendingChanges).some((changed) => changed)) {
-    setTimeout(async () => {
-      if (pendingChanges[entity]) {
-        await triggerAutoSync()
-      }
-    }, 30000)
-  }
-}
-
-async function exportToCloudData() {
-  try {
-    const settings = await storage.getSettings()
-    if (!settings.cloudDatabaseUrl) {
-      throw new Error("Cloud database not configured")
-    }
-
-    const { sql, type } = await getCloudSqlClient(settings.cloudDatabaseUrl)
-
-    console.log(`[Cloud Export] Starting export to ${type}...`)
-
-    // Create tables if they don't exist
-    const createTablesSQL = [
-      `CREATE TABLE IF NOT EXISTS products (
+    console.log('[Neon] Creating tables if not exist...')
+    
+    // Use transaction for better reliability
+    await sql.begin(async (tx: any) => {
+      // Products table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS products (
           id TEXT PRIMARY KEY,
           company TEXT NOT NULL,
           product_name TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS variants (
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+      
+      // Variants table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS variants (
           id TEXT PRIMARY KEY,
           product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
           packing_size TEXT NOT NULL,
           rate TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS colors (
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+      
+      // Colors table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS colors (
           id TEXT PRIMARY KEY,
           variant_id TEXT NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
           color_name TEXT NOT NULL,
           color_code TEXT NOT NULL,
           stock_quantity INTEGER DEFAULT 0,
           rate_override TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS sales (
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+      
+      // Sales table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS sales (
           id TEXT PRIMARY KEY,
           customer_name TEXT NOT NULL,
           customer_phone TEXT NOT NULL,
           total_amount TEXT NOT NULL,
           amount_paid TEXT DEFAULT '0',
           payment_status TEXT DEFAULT 'unpaid',
-          due_date TIMESTAMP,
+          due_date TIMESTAMP WITH TIME ZONE,
           is_manual_balance BOOLEAN DEFAULT FALSE,
           notes TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS sale_items (
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+      
+      // Sale items table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS sale_items (
           id TEXT PRIMARY KEY,
           sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
           color_id TEXT NOT NULL,
           quantity INTEGER NOT NULL,
           rate TEXT NOT NULL,
           subtotal TEXT NOT NULL
-        )`,
-      `CREATE TABLE IF NOT EXISTS stock_in_history (
+        )
+      `)
+      
+      // Stock history table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS stock_in_history (
           id TEXT PRIMARY KEY,
           color_id TEXT NOT NULL,
           quantity INTEGER NOT NULL,
@@ -393,9 +328,13 @@ async function exportToCloudData() {
           new_stock INTEGER NOT NULL,
           stock_in_date TEXT NOT NULL,
           notes TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS payment_history (
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+      
+      // Payment history table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS payment_history (
           id TEXT PRIMARY KEY,
           sale_id TEXT NOT NULL,
           customer_phone TEXT NOT NULL,
@@ -404,9 +343,13 @@ async function exportToCloudData() {
           new_balance TEXT NOT NULL,
           payment_method TEXT DEFAULT 'cash',
           notes TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS returns (
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+      
+      // Returns table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS returns (
           id TEXT PRIMARY KEY,
           sale_id TEXT,
           customer_name TEXT NOT NULL,
@@ -415,35 +358,52 @@ async function exportToCloudData() {
           total_refund TEXT DEFAULT '0',
           reason TEXT,
           status TEXT DEFAULT 'completed',
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS return_items (
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `)
+      
+      // Return items table
+      await tx.unsafe(`
+        CREATE TABLE IF NOT EXISTS return_items (
           id TEXT PRIMARY KEY,
-          return_id TEXT NOT NULL,
+          return_id TEXT NOT NULL REFERENCES returns(id) ON DELETE CASCADE,
           color_id TEXT NOT NULL,
           sale_item_id TEXT,
           quantity INTEGER NOT NULL,
           rate TEXT NOT NULL,
           subtotal TEXT NOT NULL,
           stock_restored BOOLEAN DEFAULT TRUE
-        )`,
-    ]
+        )
+      `)
+    })
+    
+    console.log('[Neon] Tables created/verified successfully')
+    return true
+  } catch (error) {
+    console.error('[Neon] Error creating tables:', error)
+    return false
+  }
+}
 
-    // Execute table creation for both Neon and Supabase
-    for (const createTable of createTablesSQL) {
-      try {
-        if (type === "supabase") {
-          await sql(createTable)
-        } else {
-          await sql.unsafe(createTable)
-        }
-      } catch (err: any) {
-        // Tables might already exist, that's okay
-        console.log(`[Cloud] Table creation info: ${err.message}`)
-      }
+// FIXED: Neon-specific export function - NO AUTO REFRESH
+async function exportToNeonData() {
+  try {
+    const settings = await storage.getSettings()
+    if (!settings.cloudDatabaseUrl) {
+      throw new Error("Cloud database not configured")
     }
 
-    // Get all data from local storage
+    const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
+
+    console.log(`[Neon Export] Starting export...`)
+
+    // Step 1: Create tables if they don't exist
+    const tablesCreated = await createNeonTables(sql)
+    if (!tablesCreated) {
+      throw new Error("Failed to create tables in Neon")
+    }
+
+    // Step 2: Get all data from local storage
     const products = await storage.getProducts()
     const variants = await storage.getVariants()
     const colorsData = await storage.getColors()
@@ -466,266 +426,152 @@ async function exportToCloudData() {
       returnItems: 0,
     }
 
-    // Export all data (code remains the same as before for each entity)
-    for (const p of products) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO products (id, company, product_name, created_at)
-            VALUES (${p.id}, ${p.company}, ${p.productName}, ${p.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              company = EXCLUDED.company,
-              product_name = EXCLUDED.product_name`
-        } else {
-          await sql`
-            INSERT INTO products (id, company, product_name, created_at)
-            VALUES (${p.id}, ${p.company}, ${p.productName}, ${p.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              company = EXCLUDED.company,
-              product_name = EXCLUDED.product_name
-          `
-        }
+    // Step 3: Export data using transactions
+    await sql.begin(async (tx: any) => {
+      // Clear existing data first
+      await tx.unsafe(`TRUNCATE TABLE return_items, returns, payment_history, stock_in_history, sale_items, sales, colors, variants, products RESTART IDENTITY CASCADE`)
+      
+      // Export products
+      for (const p of products) {
+        await tx.unsafe(`
+          INSERT INTO products (id, company, product_name, created_at)
+          VALUES ($1, $2, $3, $4)
+        `, [p.id, p.company, p.productName, p.createdAt])
         exportedCounts.products++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting product ${p.id}:`, err)
       }
-    }
 
-    for (const v of variants) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO variants (id, product_id, packing_size, rate, created_at)
-            VALUES (${v.id}, ${v.productId}, ${v.packingSize}, ${v.rate}, ${v.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              product_id = EXCLUDED.product_id,
-              packing_size = EXCLUDED.packing_size,
-              rate = EXCLUDED.rate`
-        } else {
-          await sql`
-            INSERT INTO variants (id, product_id, packing_size, rate, created_at)
-            VALUES (${v.id}, ${v.productId}, ${v.packingSize}, ${v.rate}, ${v.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              product_id = EXCLUDED.product_id,
-              packing_size = EXCLUDED.packing_size,
-              rate = EXCLUDED.rate
-          `
-        }
+      // Export variants
+      for (const v of variants) {
+        await tx.unsafe(`
+          INSERT INTO variants (id, product_id, packing_size, rate, created_at)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [v.id, v.productId, v.packingSize, v.rate, v.createdAt])
         exportedCounts.variants++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting variant ${v.id}:`, err)
       }
-    }
 
-    for (const c of colorsData) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
-            VALUES (${c.id}, ${c.variantId}, ${c.colorName}, ${c.colorCode}, ${c.stockQuantity}, ${c.rateOverride}, ${c.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              variant_id = EXCLUDED.variant_id,
-              color_name = EXCLUDED.color_name,
-              color_code = EXCLUDED.color_code,
-              stock_quantity = EXCLUDED.stock_quantity,
-              rate_override = EXCLUDED.rate_override`
-        } else {
-          await sql`
-            INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
-            VALUES (${c.id}, ${c.variantId}, ${c.colorName}, ${c.colorCode}, ${c.stockQuantity}, ${c.rateOverride}, ${c.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              variant_id = EXCLUDED.variant_id,
-              color_name = EXCLUDED.color_name,
-              color_code = EXCLUDED.color_code,
-              stock_quantity = EXCLUDED.stock_quantity,
-              rate_override = EXCLUDED.rate_override
-          `
-        }
+      // Export colors
+      for (const c of colorsData) {
+        await tx.unsafe(`
+          INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [c.id, c.variantId, c.colorName, c.colorCode, c.stockQuantity, c.rateOverride, c.createdAt])
         exportedCounts.colors++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting color ${c.id}:`, err)
       }
-    }
 
-    for (const s of sales) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
-            VALUES (${s.id}, ${s.customerName}, ${s.customerPhone}, ${s.totalAmount}, ${s.amountPaid}, ${s.paymentStatus || "unpaid"}, ${s.dueDate}, ${s.isManualBalance}, ${s.notes}, ${s.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount_paid = EXCLUDED.amount_paid,
-              payment_status = EXCLUDED.payment_status`
-        } else {
-          await sql`
-            INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
-            VALUES (${s.id}, ${s.customerName}, ${s.customerPhone}, ${s.totalAmount}, ${s.amountPaid}, ${s.paymentStatus || "unpaid"}, ${s.dueDate}, ${s.isManualBalance}, ${s.notes}, ${s.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount_paid = EXCLUDED.amount_paid,
-              payment_status = EXCLUDED.payment_status
-          `
-        }
+      // Export sales
+      for (const s of sales) {
+        await tx.unsafe(`
+          INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `, [s.id, s.customerName, s.customerPhone, s.totalAmount, s.amountPaid, s.paymentStatus || "unpaid", s.dueDate, s.isManualBalance, s.notes, s.createdAt])
         exportedCounts.sales++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting sale ${s.id}:`, err)
       }
-    }
 
-    for (const si of saleItems) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
-            VALUES (${si.id}, ${si.saleId}, ${si.colorId}, ${si.quantity}, ${si.rate}, ${si.subtotal})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              rate = EXCLUDED.rate,
-              subtotal = EXCLUDED.subtotal`
-        } else {
-          await sql`
-            INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
-            VALUES (${si.id}, ${si.saleId}, ${si.colorId}, ${si.quantity}, ${si.rate}, ${si.subtotal})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              rate = EXCLUDED.rate,
-              subtotal = EXCLUDED.subtotal
-          `
-        }
+      // Export sale items
+      for (const si of saleItems) {
+        await tx.unsafe(`
+          INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [si.id, si.saleId, si.colorId, si.quantity, si.rate, si.subtotal])
         exportedCounts.saleItems++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting sale item ${si.id}:`, err)
       }
-    }
 
-    for (const sih of stockInHistory) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
-            VALUES (${sih.id}, ${sih.colorId}, ${sih.quantity}, ${sih.previousStock}, ${sih.newStock}, ${sih.stockInDate}, ${sih.notes}, ${sih.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              new_stock = EXCLUDED.new_stock`
-        } else {
-          await sql`
-            INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
-            VALUES (${sih.id}, ${sih.colorId}, ${sih.quantity}, ${sih.previousStock}, ${sih.newStock}, ${sih.stockInDate}, ${sih.notes}, ${sih.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              new_stock = EXCLUDED.new_stock
-          `
-        }
+      // Export stock history
+      for (const sih of stockInHistory) {
+        await tx.unsafe(`
+          INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [sih.id, sih.colorId, sih.quantity, sih.previousStock, sih.newStock, sih.stockInDate, sih.notes, sih.createdAt])
         exportedCounts.stockInHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting stock history ${sih.id}:`, err)
       }
-    }
 
-    for (const ph of paymentHistory) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
-            VALUES (${ph.id}, ${ph.saleId}, ${ph.customerPhone}, ${ph.amount}, ${ph.previousBalance}, ${ph.newBalance}, ${ph.paymentMethod}, ${ph.notes}, ${ph.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount = EXCLUDED.amount,
-              new_balance = EXCLUDED.new_balance`
-        } else {
-          await sql`
-            INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
-            VALUES (${ph.id}, ${ph.saleId}, ${ph.customerPhone}, ${ph.amount}, ${ph.previousBalance}, ${ph.newBalance}, ${ph.paymentMethod}, ${ph.notes}, ${ph.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount = EXCLUDED.amount,
-              new_balance = EXCLUDED.new_balance
-          `
-        }
+      // Export payment history
+      for (const ph of paymentHistory) {
+        await tx.unsafe(`
+          INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [ph.id, ph.saleId, ph.customerPhone, ph.amount, ph.previousBalance, ph.newBalance, ph.paymentMethod, ph.notes, ph.createdAt])
         exportedCounts.paymentHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting payment history ${ph.id}:`, err)
       }
-    }
 
-    for (const r of returns) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
-            VALUES (${r.id}, ${r.saleId}, ${r.customerName}, ${r.customerPhone}, ${r.returnType}, ${r.totalRefund}, ${r.reason}, ${r.status}, ${r.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              total_refund = EXCLUDED.total_refund,
-              status = EXCLUDED.status`
-        } else {
-          await sql`
-            INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
-            VALUES (${r.id}, ${r.saleId}, ${r.customerName}, ${r.customerPhone}, ${r.returnType}, ${r.totalRefund}, ${r.reason}, ${r.status}, ${r.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              total_refund = EXCLUDED.total_refund,
-              status = EXCLUDED.status
-          `
-        }
+      // Export returns
+      for (const r of returns) {
+        await tx.unsafe(`
+          INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [r.id, r.saleId, r.customerName, r.customerPhone, r.returnType, r.totalRefund, r.reason, r.status, r.createdAt])
         exportedCounts.returns++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting return ${r.id}:`, err)
       }
-    }
 
-    for (const ri of returnItems) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
-            VALUES (${ri.id}, ${ri.returnId}, ${ri.colorId}, ${ri.saleItemId}, ${ri.quantity}, ${ri.rate}, ${ri.subtotal}, ${ri.stockRestored})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              subtotal = EXCLUDED.subtotal`
-        } else {
-          await sql`
-            INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
-            VALUES (${ri.id}, ${ri.returnId}, ${ri.colorId}, ${ri.saleItemId}, ${ri.quantity}, ${ri.rate}, ${ri.subtotal}, ${ri.stockRestored})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              subtotal = EXCLUDED.subtotal
-          `
-        }
+      // Export return items
+      for (const ri of returnItems) {
+        await tx.unsafe(`
+          INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [ri.id, ri.returnId, ri.colorId, ri.saleItemId, ri.quantity, ri.rate, ri.subtotal, ri.stockRestored])
         exportedCounts.returnItems++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting return item ${ri.id}:`, err)
       }
+    })
+
+    // Step 4: Verify data was exported
+    const verifyProducts = await sql`SELECT COUNT(*) as count FROM products`
+    const verifySales = await sql`SELECT COUNT(*) as count FROM sales`
+    
+    console.log(`[Neon Export] Verification:`)
+    console.log(`  Products: ${verifyProducts[0]?.count || 0}`)
+    console.log(`  Sales: ${verifySales[0]?.count || 0}`)
+    console.log(`  Exported counts:`, exportedCounts)
+
+    // Step 5: Update last sync time WITHOUT triggering refresh
+    await storage.updateSettings({ 
+      lastSyncTime: new Date(),
+      lastExportCounts: JSON.stringify(exportedCounts)
+    })
+
+    // Step 6: Return success WITHOUT invalidating queries
+    return { 
+      success: true, 
+      counts: exportedCounts,
+      dataInCloud: {
+        products: parseInt(verifyProducts[0]?.count || "0"),
+        sales: parseInt(verifySales[0]?.count || "0")
+      },
+      message: `Exported ${exportedCounts.products} products, ${exportedCounts.sales} sales to Neon`
     }
-
-    // Update last sync time
-    await storage.updateSettings({ lastSyncTime: new Date() })
-
-    console.log(`[Cloud Export] Completed successfully. Exported: ${JSON.stringify(exportedCounts)}`)
-
-    return { success: true, counts: exportedCounts }
   } catch (error: any) {
-    console.error("Cloud export failed:", error)
-    throw error
+    console.error("Neon export failed:", error)
+    throw new Error(`Neon export failed: ${error.message}`)
   }
 }
 
-async function importFromCloudData() {
+// FIXED: Neon-specific import function
+async function importFromNeonData() {
   try {
     const settings = await storage.getSettings()
     if (!settings.cloudDatabaseUrl) {
       throw new Error("Cloud database not configured")
     }
 
-    const { sql, type } = await getCloudSqlClient(settings.cloudDatabaseUrl)
+    const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
 
-    console.log(`[Cloud Import] Starting import from ${type}...`)
+    console.log(`[Neon Import] Starting import...`)
 
     // Check if tables exist
     let tablesCheck
-    if (type === "supabase") {
+    try {
       tablesCheck = await sql`
         SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name = 'products'
       `
-    } else {
-      tablesCheck = await sql`
-        SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'products'
-      `
+    } catch (error) {
+      throw new Error("Tables do not exist in Neon. Please export first.")
     }
 
     if (tablesCheck.length === 0) {
       throw new Error("No data found in cloud database. Please export first.")
     }
 
-    // Fetch all data from cloud
+    // Fetch all data from Neon
     const cloudProducts = await sql`SELECT * FROM products ORDER BY created_at`
     const cloudVariants = await sql`SELECT * FROM variants ORDER BY created_at`
     const cloudColors = await sql`SELECT * FROM colors ORDER BY created_at`
@@ -748,171 +594,180 @@ async function importFromCloudData() {
       returnItems: 0,
     }
 
+    // Import data
+    // Clear local data first
+    await storage.clearAllData()
+    
+    // Import products
     for (const p of cloudProducts) {
-      try {
-        await storage.upsertProduct({
-          id: p.id,
-          company: p.company,
-          productName: p.product_name,
-          createdAt: new Date(p.created_at),
-        } as Product)
-        importedCounts.products++
-      } catch (err) {
-        console.error(`[Cloud] Error importing product ${p.id}:`, err)
-      }
+      await storage.upsertProduct({
+        id: p.id,
+        company: p.company,
+        productName: p.product_name,
+        createdAt: new Date(p.created_at),
+      } as Product)
+      importedCounts.products++
     }
 
+    // Import variants
     for (const v of cloudVariants) {
-      try {
-        await storage.upsertVariant({
-          id: v.id,
-          productId: v.product_id,
-          packingSize: v.packing_size,
-          rate: v.rate,
-          createdAt: new Date(v.created_at),
-        } as Variant)
-        importedCounts.variants++
-      } catch (err) {
-        console.error(`[Cloud] Error importing variant ${v.id}:`, err)
-      }
+      await storage.upsertVariant({
+        id: v.id,
+        productId: v.product_id,
+        packingSize: v.packing_size,
+        rate: v.rate,
+        createdAt: new Date(v.created_at),
+      } as Variant)
+      importedCounts.variants++
     }
 
+    // Import colors
     for (const c of cloudColors) {
-      try {
-        await storage.upsertColor({
-          id: c.id,
-          variantId: c.variant_id,
-          colorName: c.color_name,
-          colorCode: c.color_code,
-          stockQuantity: c.stock_quantity,
-          rateOverride: c.rate_override,
-          createdAt: new Date(c.created_at),
-        } as Color)
-        importedCounts.colors++
-      } catch (err) {
-        console.error(`[Cloud] Error importing color ${c.id}:`, err)
-      }
+      await storage.upsertColor({
+        id: c.id,
+        variantId: c.variant_id,
+        colorName: c.color_name,
+        colorCode: c.color_code,
+        stockQuantity: c.stock_quantity,
+        rateOverride: c.rate_override,
+        createdAt: new Date(c.created_at),
+      } as Color)
+      importedCounts.colors++
     }
 
+    // Import sales
     for (const s of cloudSales) {
-      try {
-        await storage.upsertSale({
-          id: s.id,
-          customerName: s.customer_name,
-          customerPhone: s.customer_phone,
-          totalAmount: s.total_amount,
-          amountPaid: s.amount_paid,
-          paymentStatus: s.payment_status,
-          dueDate: s.due_date ? new Date(s.due_date) : null,
-          isManualBalance: s.is_manual_balance,
-          notes: s.notes,
-          createdAt: new Date(s.created_at),
-        } as ExtendedSale)
-        importedCounts.sales++
-      } catch (err) {
-        console.error(`[Cloud] Error importing sale ${s.id}:`, err)
-      }
+      await storage.upsertSale({
+        id: s.id,
+        customerName: s.customer_name,
+        customerPhone: s.customer_phone,
+        totalAmount: s.total_amount,
+        amountPaid: s.amount_paid,
+        paymentStatus: s.payment_status,
+        dueDate: s.due_date ? new Date(s.due_date) : null,
+        isManualBalance: s.is_manual_balance,
+        notes: s.notes,
+        createdAt: new Date(s.created_at),
+      } as ExtendedSale)
+      importedCounts.sales++
     }
 
+    // Import sale items
     for (const si of cloudSaleItems) {
-      try {
-        await storage.upsertSaleItem({
-          id: si.id,
-          saleId: si.sale_id,
-          colorId: si.color_id,
-          quantity: si.quantity,
-          rate: si.rate,
-          subtotal: si.subtotal,
-        } as SaleItem)
-        importedCounts.saleItems++
-      } catch (err) {
-        console.error(`[Cloud] Error importing sale item ${si.id}:`, err)
-      }
+      await storage.upsertSaleItem({
+        id: si.id,
+        saleId: si.sale_id,
+        colorId: si.color_id,
+        quantity: si.quantity,
+        rate: si.rate,
+        subtotal: si.subtotal,
+      } as SaleItem)
+      importedCounts.saleItems++
     }
 
+    // Import stock history
     for (const sih of cloudStockInHistory) {
-      try {
-        await storage.upsertStockInHistory({
-          id: sih.id,
-          colorId: sih.color_id,
-          quantity: sih.quantity,
-          previousStock: sih.previous_stock,
-          newStock: sih.new_stock,
-          stockInDate: sih.stock_in_date,
-          notes: sih.notes,
-          createdAt: new Date(sih.created_at),
-        } as StockInHistory)
-        importedCounts.stockInHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error importing stock history ${sih.id}:`, err)
-      }
+      await storage.upsertStockInHistory({
+        id: sih.id,
+        colorId: sih.color_id,
+        quantity: sih.quantity,
+        previousStock: sih.previous_stock,
+        newStock: sih.new_stock,
+        stockInDate: sih.stock_in_date,
+        notes: sih.notes,
+        createdAt: new Date(sih.created_at),
+      } as StockInHistory)
+      importedCounts.stockInHistory++
     }
 
+    // Import payment history
     for (const ph of cloudPaymentHistory) {
-      try {
-        await storage.upsertPaymentHistory({
-          id: ph.id,
-          saleId: ph.sale_id,
-          customerPhone: ph.customer_phone,
-          amount: ph.amount,
-          previousBalance: ph.previous_balance,
-          newBalance: ph.new_balance,
-          paymentMethod: ph.payment_method,
-          notes: ph.notes,
-          createdAt: new Date(ph.created_at),
-        } as PaymentHistory)
-        importedCounts.paymentHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error importing payment history ${ph.id}:`, err)
-      }
+      await storage.upsertPaymentHistory({
+        id: ph.id,
+        saleId: ph.sale_id,
+        customerPhone: ph.customer_phone,
+        amount: ph.amount,
+        previousBalance: ph.previous_balance,
+        newBalance: ph.new_balance,
+        paymentMethod: ph.payment_method,
+        notes: ph.notes,
+        createdAt: new Date(ph.created_at),
+      } as PaymentHistory)
+      importedCounts.paymentHistory++
     }
 
+    // Import returns
     for (const r of cloudReturns) {
-      try {
-        await storage.upsertReturn({
-          id: r.id,
-          saleId: r.sale_id,
-          customerName: r.customer_name,
-          customerPhone: r.customer_phone,
-          returnType: r.return_type,
-          totalRefund: r.total_refund,
-          reason: r.reason,
-          status: r.status,
-          createdAt: new Date(r.created_at),
-        } as Return)
-        importedCounts.returns++
-      } catch (err) {
-        console.error(`[Cloud] Error importing return ${r.id}:`, err)
-      }
+      await storage.upsertReturn({
+        id: r.id,
+        saleId: r.sale_id,
+        customerName: r.customer_name,
+        customerPhone: r.customer_phone,
+        returnType: r.return_type,
+        totalRefund: r.total_refund,
+        reason: r.reason,
+        status: r.status,
+        createdAt: new Date(r.created_at),
+      } as Return)
+      importedCounts.returns++
     }
 
+    // Import return items
     for (const ri of cloudReturnItems) {
-      try {
-        await storage.upsertReturnItem({
-          id: ri.id,
-          returnId: ri.return_id,
-          colorId: ri.color_id,
-          saleItemId: ri.sale_item_id,
-          quantity: ri.quantity,
-          rate: ri.rate,
-          subtotal: ri.subtotal,
-          stockRestored: ri.stock_restored,
-        } as ReturnItem)
-        importedCounts.returnItems++
-      } catch (err) {
-        console.error(`[Cloud] Error importing return item ${ri.id}:`, err)
-      }
+      await storage.upsertReturnItem({
+        id: ri.id,
+        returnId: ri.return_id,
+        colorId: ri.color_id,
+        saleItemId: ri.sale_item_id,
+        quantity: ri.quantity,
+        rate: ri.rate,
+        subtotal: ri.subtotal,
+        stockRestored: ri.stock_restored,
+      } as ReturnItem)
+      importedCounts.returnItems++
     }
+
+    console.log(`[Neon Import] Completed. Imported:`, importedCounts)
 
     // Update last sync time
+    await storage.updateSettings({ 
+      lastSyncTime: new Date(),
+      lastImportCounts: JSON.stringify(importedCounts)
+    })
+
+    return { 
+      success: true, 
+      counts: importedCounts,
+      message: `Imported ${importedCounts.products} products, ${importedCounts.sales} sales from Neon`
+    }
+  } catch (error) {
+    console.error("[Neon Import] Failed:", error)
+    throw error
+  }
+}
+
+// FIXED: Silent sync trigger - NO AUTO REFRESH
+async function triggerSilentSync() {
+  if (!autoSyncEnabled) return
+
+  try {
+    console.log("[Silent Sync] Starting automatic sync...")
+
+    const settings = await storage.getSettings()
+    if (!settings.cloudDatabaseUrl || !settings.cloudSyncEnabled) {
+      console.log("[Silent Sync] Cloud sync not configured")
+      return
+    }
+
+    // Export only (no import in auto-sync to avoid conflicts)
+    await exportToNeonData()
+
+    // Update sync timestamp
     await storage.updateSettings({ lastSyncTime: new Date() })
 
-    console.log(`[Cloud Import] Completed successfully. Imported: ${JSON.stringify(importedCounts)}`)
-
-    return { success: true, counts: importedCounts }
+    console.log("[Silent Sync] Automatic sync completed")
   } catch (error) {
-    console.error("[Cloud Import] Failed:", error)
-    throw error
+    console.error("[Silent Sync] Failed:", error)
   }
 }
 
@@ -938,8 +793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertProductSchema.parse(req.body)
       const product = await storage.createProduct(validated)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(product)
@@ -962,8 +816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const product = await storage.updateProduct(req.params.id, { company, productName })
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(product)
@@ -977,8 +830,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteProduct(req.params.id)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json({ success: true })
@@ -1009,8 +861,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertVariantSchema.parse(req.body)
       const variant = await storage.createVariant(validated)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(variant)
@@ -1037,8 +888,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rate: Number.parseFloat(rate),
       })
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(variant)
@@ -1057,8 +907,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const variant = await storage.updateVariantRate(req.params.id, rate)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(variant)
@@ -1072,8 +921,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteVariant(req.params.id)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json({ success: true })
@@ -1105,8 +953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       validated.colorCode = validated.colorCode.trim().toUpperCase()
       const color = await storage.createColor(validated)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1134,8 +981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stockQuantity: Number.parseInt(stockQuantity),
       })
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1154,8 +1000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const color = await storage.updateColorStock(req.params.id, stockQuantity)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1174,8 +1019,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const color = await storage.updateColorRateOverride(req.params.id, rateOverride)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1237,9 +1081,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[API] Stock in successful: ${color.colorName} - New stock: ${color.stockQuantity}`)
 
-      // Auto-sync trigger
-      detectChanges("colors")
-
       res.json({
         ...color,
         message: `Successfully added ${quantity} units to ${color.colorName}`,
@@ -1269,8 +1110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteColor(req.params.id)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json({ success: true })
@@ -1397,9 +1237,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use the fixed updateStockInHistory function that recalculates newStock
       const updatedRecord = await storage.updateStockInHistory(id, { quantity, notes, stockInDate })
 
-      // Auto-sync trigger
-      detectChanges("colors")
-
       res.json(updatedRecord)
     } catch (error) {
       console.error("[API] Error updating stock history:", error)
@@ -1514,9 +1351,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: validated.notes ?? undefined,
       })
 
-      // Auto-sync trigger
-      detectChanges("payments")
-
       res.json(paymentHistory)
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1545,9 +1379,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      // Auto-sync trigger
-      detectChanges("payments")
-
       res.json(updated)
     } catch (error) {
       console.error("Error updating payment history:", error)
@@ -1565,9 +1396,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Payment record not found" })
         return
       }
-
-      // Auto-sync trigger
-      detectChanges("payments")
 
       res.json({ success: true })
     } catch (error) {
@@ -1600,7 +1428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Add customer note - UPDATED WITH REAL-TIME INVALIDATION
+  // Add customer note
   app.post("/api/customer/:phone/notes", async (req, res) => {
     try {
       const { phone } = req.params
@@ -1624,13 +1452,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dueDate: null,
         notes: note,
       })
-
-      // Invalidate real-time queries
-      invalidateCustomerQueries(phone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
 
       res.json({
         success: true,
@@ -1768,7 +1589,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   })
 
   // OPTIMIZED: Combined customer statement endpoint - fetches all data in one request
-  // AUTO-FIX: Sanitizes old/corrupted data to prevent statement loading failures
   app.get("/api/customer/:phone/statement", async (req, res) => {
     try {
       const { phone } = req.params
@@ -1786,183 +1606,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getReturnsByCustomerPhone(phone)
       ])
 
-      // AUTO-FIX: Sanitize sales data to handle old/corrupted database entries
-      const sanitizeSale = (sale: any) => {
-        if (!sale) return null
-        try {
-          return {
-            ...sale,
-            id: sale.id || `sale-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            customerName: sale.customerName || "Unknown Customer",
-            customerPhone: sale.customerPhone || phone,
-            totalAmount: sanitizeNumber(sale.totalAmount),
-            amountPaid: sanitizeNumber(sale.amountPaid),
-            discountAmount: sanitizeNumber(sale.discountAmount),
-            discountPercentage: sanitizeNumber(sale.discountPercentage),
-            paymentStatus: sale.paymentStatus || "unpaid",
-            isManualBalance: Boolean(sale.isManualBalance),
-            notes: sale.notes || null,
-            dueDate: sanitizeDate(sale.dueDate),
-            createdAt: sanitizeDate(sale.createdAt) || new Date().toISOString(),
-            saleItems: Array.isArray(sale.saleItems) 
-              ? sale.saleItems.map(sanitizeSaleItem).filter(Boolean)
-              : []
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize sale ${sale?.id}:`, err)
-          return null
-        }
-      }
-
-      // AUTO-FIX: Sanitize sale items
-      const sanitizeSaleItem = (item: any) => {
-        if (!item) return null
-        try {
-          return {
-            ...item,
-            id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            quantity: sanitizeNumber(item.quantity) || 1,
-            rate: sanitizeNumber(item.rate),
-            subtotal: sanitizeNumber(item.subtotal),
-            quantityReturned: sanitizeNumber(item.quantityReturned),
-            color: item.color ? sanitizeColor(item.color) : null
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize sale item:`, err)
-          return null
-        }
-      }
-
-      // AUTO-FIX: Sanitize color data
-      const sanitizeColor = (color: any) => {
-        if (!color) return null
-        return {
-          ...color,
-          id: color.id || "unknown",
-          colorName: color.colorName || "Unknown Color",
-          colorCode: color.colorCode || "N/A",
-          stockQuantity: sanitizeNumber(color.stockQuantity),
-          variant: color.variant ? {
-            ...color.variant,
-            packingSize: color.variant.packingSize || "N/A",
-            rate: sanitizeNumber(color.variant.rate),
-            product: color.variant.product ? {
-              ...color.variant.product,
-              productName: color.variant.product.productName || "Unknown Product",
-              companyName: color.variant.product.companyName || "Unknown Company"
-            } : { productName: "Unknown Product", companyName: "Unknown Company" }
-          } : null
-        }
-      }
-
-      // AUTO-FIX: Sanitize payment history
-      const sanitizePayment = (payment: any) => {
-        if (!payment) return null
-        try {
-          return {
-            ...payment,
-            id: payment.id || `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            amount: sanitizeNumber(payment.amount),
-            paymentMethod: payment.paymentMethod || "cash",
-            notes: payment.notes || null,
-            createdAt: sanitizeDate(payment.createdAt) || new Date().toISOString(),
-            saleId: payment.saleId || null
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize payment:`, err)
-          return null
-        }
-      }
-
-      // AUTO-FIX: Sanitize returns
-      const sanitizeReturn = (ret: any) => {
-        if (!ret) return null
-        try {
-          return {
-            ...ret,
-            id: ret.id || `return-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            totalRefund: sanitizeNumber(ret.totalRefund),
-            reason: ret.reason || "No reason provided",
-            createdAt: sanitizeDate(ret.createdAt) || new Date().toISOString(),
-            returnItems: Array.isArray(ret.returnItems) 
-              ? ret.returnItems.map((item: any) => ({
-                  ...item,
-                  quantityReturned: sanitizeNumber(item.quantityReturned) || sanitizeNumber(item.quantity),
-                  refundAmount: sanitizeNumber(item.refundAmount),
-                  color: item.color ? sanitizeColor(item.color) : null
-                }))
-              : []
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize return:`, err)
-          return null
-        }
-      }
-
-      // Helper: Sanitize number values
-      const sanitizeNumber = (value: any): number => {
-        if (value === null || value === undefined || value === "") return 0
-        const num = typeof value === "string" ? parseFloat(value) : Number(value)
-        return isNaN(num) || !isFinite(num) ? 0 : num
-      }
-
-      // Helper: Sanitize date values
-      const sanitizeDate = (value: any): string | null => {
-        if (!value) return null
-        try {
-          const date = new Date(value)
-          return isNaN(date.getTime()) ? null : date.toISOString()
-        } catch {
-          return null
-        }
-      }
-
-      // Apply sanitization to all data
-      // FIXED: Use originalSales instead of adjustedSales to prevent double-counting returns
-      // Returns are shown as separate transactions, so we don't want adjusted amounts in bill rows
-      const rawSales = purchaseHistory?.originalSales || []
-      const sanitizedSales = rawSales.map(sanitizeSale).filter(Boolean)
-      
-      const rawPayments = paymentHistory || []
-      const sanitizedPayments = rawPayments.map(sanitizePayment).filter(Boolean)
-      
-      const rawReturns = returns || []
-      const sanitizedReturns = rawReturns.map(sanitizeReturn).filter(Boolean)
-
-      // Log any data that was filtered out due to corruption
-      const salesFixed = rawSales.length - sanitizedSales.length
-      const paymentsFixed = rawPayments.length - sanitizedPayments.length
-      const returnsFixed = rawReturns.length - sanitizedReturns.length
-      
-      if (salesFixed > 0 || paymentsFixed > 0 || returnsFixed > 0) {
-        console.log(`[AUTO-FIX] Customer ${phone}: Fixed/filtered ${salesFixed} sales, ${paymentsFixed} payments, ${returnsFixed} returns`)
-      }
-
       const response = {
-        sales: sanitizedSales,
-        payments: sanitizedPayments,
-        returns: sanitizedReturns,
+        sales: purchaseHistory?.originalSales || [],
+        payments: paymentHistory || [],
+        returns: returns || [],
         summary: {
-          totalSales: sanitizedSales.length,
-          totalPayments: sanitizedPayments.length,
-          totalReturns: sanitizedReturns.length
+          totalSales: (purchaseHistory?.originalSales || []).length,
+          totalPayments: paymentHistory?.length || 0,
+          totalReturns: returns?.length || 0
         }
       }
 
       res.json(response)
     } catch (error) {
       console.error("Error fetching customer statement:", error)
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      
-      // AUTO-FIX: Return empty data instead of error to prevent UI crash
-      console.log(`[AUTO-FIX] Returning empty statement due to error for customer: ${req.params.phone}`)
       res.json({
         sales: [],
         payments: [],
         returns: [],
-        summary: { totalSales: 0, totalPayments: 0, totalReturns: 0 },
-        _autoFixed: true,
-        _error: errorMessage
+        summary: { totalSales: 0, totalPayments: 0, totalReturns: 0 }
       })
     }
   })
@@ -2004,7 +1666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create sale - UPDATED WITH REAL-TIME INVALIDATION
+  // Create sale
   app.post("/api/sales", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { items, ...saleData } = req.body
@@ -2025,13 +1687,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sale = await storage.createSale(extendedSaleData, validatedItems)
 
       console.log("Sale created successfully:", JSON.stringify(sale, null, 2))
-
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
 
       res.json(sale)
     } catch (error) {
@@ -2081,13 +1736,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Record payment with proper balance tracking (use rounded amount)
         const updatedSale = await storage.updateSalePayment(req.params.id, roundedAmount, paymentMethod, notes)
 
-        // Invalidate real-time queries
-        invalidateCustomerQueries(sale.customerPhone)
-        invalidateGlobalQueries()
-
-        // Auto-sync trigger
-        detectChanges("payments")
-
         res.json(updatedSale)
       } catch (storageError) {
         console.error("[API] Storage error on payment update:", storageError)
@@ -2134,13 +1782,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update the sale's paid amount and status directly
       const updatedSale = await storage.updateSalePaidAmount(req.params.id, roundedAmount, paymentStatus)
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("payments")
-
       res.json(updatedSale)
     } catch (error) {
       console.error("Error updating paid amount:", error)
@@ -2155,9 +1796,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertSaleItemSchema.parse(req.body)
       const saleItem = await storage.addSaleItem(req.params.id, validated)
 
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(saleItem)
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -2169,7 +1807,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // UPDATE SALE ITEM ENDPOINT - UPDATED WITH REAL-TIME INVALIDATION
+  // UPDATE SALE ITEM ENDPOINT
   app.patch("/api/sale-items/:id", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { quantity, rate, subtotal } = req.body
@@ -2204,13 +1842,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subtotal: rate * quantity,
       })
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(saleItem)
     } catch (error) {
       console.error("Error updating sale item:", error)
@@ -2218,7 +1849,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // DELETE SALE ITEM - UPDATED WITH REAL-TIME INVALIDATION
+  // DELETE SALE ITEM
   app.delete("/api/sale-items/:id", requirePerm("sales:delete"), async (req, res) => {
     try {
       // Get sale item details to find customer phone
@@ -2237,13 +1868,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.deleteSaleItem(req.params.id)
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json({ success: true })
     } catch (error) {
       console.error("Error deleting sale item:", error)
@@ -2251,7 +1875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create manual pending balance (no items, just a balance record) - UPDATED WITH REAL-TIME INVALIDATION
+  // Create manual pending balance (no items, just a balance record)
   app.post("/api/sales/manual-balance", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { customerName, customerPhone, totalAmount, dueDate, notes } = req.body
@@ -2274,13 +1898,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes,
       })
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(sale)
     } catch (error) {
       console.error("Error creating manual balance:", error)
@@ -2288,7 +1905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Update due date for a sale - UPDATED WITH REAL-TIME INVALIDATION
+  // Update due date for a sale
   app.patch("/api/sales/:id/due-date", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { dueDate, notes } = req.body
@@ -2305,13 +1922,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes,
       })
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(updatedSale)
     } catch (error) {
       console.error("Error updating due date:", error)
@@ -2319,7 +1929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Delete entire sale - UPDATED WITH REAL-TIME INVALIDATION
+  // Delete entire sale
   app.delete("/api/sales/:id", requirePerm("sales:delete"), async (req, res) => {
     try {
       // Get sale details before deletion to know customer phone
@@ -2332,13 +1942,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerPhone = sale.customerPhone
 
       await storage.deleteSale(req.params.id)
-
-      // Invalidate real-time queries
-      invalidateCustomerQueries(customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
 
       res.json({ success: true, message: "Sale deleted successfully" })
     } catch (error) {
@@ -2362,7 +1965,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create return - UPDATED WITH REAL-TIME INVALIDATION
+  // Create return
   app.post("/api/returns", async (req, res) => {
     try {
       const { returnData, items } = req.body
@@ -2370,15 +1973,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const returnRecord = await storage.createReturn(returnData, items || [])
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(returnData.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger & cache invalidation
-      detectChanges("returns")
-      detectChanges("sales")
-      detectChanges("colors")
-      invalidateCache("colors") // Stock updated by return
+      // Invalidate colors cache only
+      invalidateCache("colors")
 
       res.json(returnRecord)
     } catch (error) {
@@ -2387,20 +1983,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Quick return - UPDATED WITH REAL-TIME INVALIDATION
+  // Quick return
   app.post("/api/returns/quick", async (req, res) => {
     try {
       console.log("[API] Creating quick return:", req.body)
       const returnRecord = await storage.createQuickReturn(req.body)
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(req.body.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger & cache invalidation
-      detectChanges("returns")
-      detectChanges("colors")
-      invalidateCache("colors") // Stock updated by return
+      // Invalidate colors cache only
+      invalidateCache("colors")
 
       res.json(returnRecord)
     } catch (error) {
@@ -2526,9 +2116,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Reinitialize database connection
       setDatabasePath(currentDbPath)
-
-      // Invalidate all queries after import
-      invalidateGlobalQueries()
 
       res.json({
         success: true,
@@ -2730,89 +2317,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // ============ CLOUD DATABASE SYNC ENDPOINTS ============
+  // ============ CLOUD DATABASE SYNC ENDPOINTS (NEON ONLY) ============
 
-  // Test cloud database connection
+  // Test Neon database connection
   app.post("/api/cloud/test-connection", verifyAuditToken, async (req, res) => {
     try {
       const { connectionUrl } = req.body
 
       if (!connectionUrl || typeof connectionUrl !== "string" || !connectionUrl.trim()) {
-        console.log("[v0] Missing or invalid connection URL")
         res.status(400).json({
-          error: "Connection URL is required and must be a valid string",
+          error: "Connection URL is required",
+          ok: false,
+        })
+        return
+      }
+
+      // Validate URL format
+      if (!connectionUrl.startsWith('postgresql://')) {
+        res.status(400).json({
+          error: "URL must start with postgresql://",
           ok: false,
         })
         return
       }
 
       try {
-        new URL(connectionUrl)
-      } catch (e) {
-        console.log("[v0] Invalid URL format:", e)
-        res.status(400).json({
-          error: "Invalid connection URL format. Must start with 'postgresql://'",
-          ok: false,
+        const { sql } = await getNeonSqlClient(connectionUrl)
+        
+        // Test with simple query
+        const result = await sql`SELECT version() as neon_version, now() as server_time`
+        
+        // Verify we can create tables
+        await sql`CREATE TABLE IF NOT EXISTS test_paintpulse (id SERIAL PRIMARY KEY, test TEXT)`
+        await sql`DROP TABLE IF EXISTS test_paintpulse`
+        
+        // Save URL to settings
+        await storage.updateSettings({
+          cloudDatabaseUrl: connectionUrl,
+          cloudSyncEnabled: true
         })
-        return
+
+        res.json({
+          ok: true,
+          message: "Neon connection successful",
+          details: {
+            provider: "Neon",
+            version: result[0]?.neon_version?.substring(0, 50),
+            serverTime: result[0]?.server_time,
+          },
+        })
+      } catch (error: any) {
+        console.error("[Neon] Connection test failed:", error.message)
+        
+        let errorMessage = "Neon connection failed"
+        if (error.message?.includes("SSL")) {
+          errorMessage = "SSL error. Add ?sslmode=require to your connection URL."
+        } else if (error.message?.includes("authentication")) {
+          errorMessage = "Authentication failed. Check username/password."
+        } else if (error.message?.includes("does not exist")) {
+          errorMessage = "Database does not exist. Create it in Neon dashboard first."
+        }
+        
+        res.status(400).json({
+          ok: false,
+          error: errorMessage,
+          details: error.message,
+        })
       }
-
-      let cleanUrl = connectionUrl.trim()
-
-      if (cleanUrl.includes("channel_binding=require")) {
-        cleanUrl = cleanUrl.replace(/[?&]channel_binding=require/g, "")
-      }
-
-      console.log("[v0] Testing connection to cloud database...")
-      const { sql, type } = await getCloudSqlClient(cleanUrl)
-
-      // Test with a simple query
-      const result = await sql`SELECT version() as db_version, now() as server_time`
-
-      console.log(`[v0] Cloud connection successful (${type}):`, {
-        version: result[0]?.db_version?.substring(0, 50),
-        time: result[0]?.server_time,
-      })
-
-      res.json({
-        ok: true,
-        message: "Connection successful",
-        details: {
-          provider: type === "supabase" ? "Supabase" : "Neon",
-          version: result[0]?.db_version,
-          serverTime: result[0]?.server_time,
-        },
-      })
     } catch (error: any) {
-      console.error("[v0] Cloud connection test failed:", {
-        message: error.message,
-        code: error.code,
-        name: error.name,
-      })
-
-      let errorMessage = "Connection failed"
-      if (error.message?.includes("SSL") || error.message?.includes("ssl")) {
-        errorMessage = "SSL connection error. Check that sslmode=require is set and credentials are correct."
-      } else if (
-        error.message?.includes("authentication") ||
-        error.message?.includes("role") ||
-        error.message?.includes("FATAL")
-      ) {
-        errorMessage = "Authentication failed. Check username and password in the connection URL."
-      } else if (error.message?.includes("getaddrinfo") || error.message?.includes("ENOTFOUND")) {
-        errorMessage = "Cannot reach database server. Check the hostname in your connection URL."
-      } else if (error.message?.includes("ECONNREFUSED")) {
-        errorMessage = "Connection refused. Check if the server is running and the port is correct."
-      } else if (error.message?.includes("timeout")) {
-        errorMessage = "Connection timeout. The server is not responding. Check network connectivity."
-      } else if (error.message?.includes("no password")) {
-        errorMessage =
-          "Password not provided in connection URL. Include it in the format: postgresql://user:password@host/db"
-      }
-
-      res.status(400).json({
+      console.error("Connection test error:", error)
+      res.status(500).json({
         ok: false,
-        error: errorMessage,
+        error: "Failed to test connection",
         details: error.message,
       })
     }
@@ -2844,42 +2420,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // ENHANCED: Get cloud sync status with detailed stats
+  // Get cloud sync status
   app.get("/api/cloud/status", verifyAuditToken, async (_req, res) => {
     try {
       const settings = await storage.getSettings()
-      const syncStatus = storage.getSyncStatus()
-
-      // Test connection if configured
+      
       let connectionStatus = "not_configured"
-      const lastSync = settings.lastSyncTime
-
+      let dataInCloud = null
+      
       if (settings.cloudDatabaseUrl) {
         try {
-          const { neon } = await import("@neondatabase/serverless")
-          const sql = neon(settings.cloudDatabaseUrl)
-          await sql`SELECT 1 as test`
+          const { sql } = await getNeonSqlClient(settings.cloudDatabaseUrl)
+          
+          // Test connection
+          await sql`SELECT 1`
           connectionStatus = "connected"
-          storage.setOnlineStatus(true)
+          
+          // Check if data exists
+          try {
+            const productCount = await sql`SELECT COUNT(*) as count FROM products`
+            const salesCount = await sql`SELECT COUNT(*) as count FROM sales`
+            dataInCloud = {
+              products: parseInt(productCount[0]?.count || "0"),
+              sales: parseInt(salesCount[0]?.count || "0")
+            }
+          } catch (e) {
+            // Tables might not exist yet
+            dataInCloud = { products: 0, sales: 0 }
+          }
         } catch (error) {
           connectionStatus = "connection_failed"
-          storage.setOnlineStatus(false)
         }
       }
-
+      
       res.json({
         hasConnection: !!settings.cloudDatabaseUrl,
         connectionStatus,
-        syncEnabled: settings.cloudSyncEnabled,
-        lastSyncTime: lastSync,
-        lastSyncFormatted: lastSync ? new Date(lastSync).toLocaleString() : null,
-        autoSyncEnabled: autoSyncEnabled,
-        // Enhanced status info
-        isOnline: syncStatus.isOnline,
-        pendingChanges: syncStatus.pendingChanges,
-        syncInProgress: syncStatus.syncInProgress,
-        lastError: syncStatus.lastError,
-        syncStats: syncStatus.syncStats,
+        syncEnabled: settings.cloudSyncEnabled || false,
+        lastSyncTime: settings.lastSyncTime,
+        dataInCloud,
+        autoSyncEnabled,
+        note: "Auto-sync runs in background without refreshing UI"
       })
     } catch (error) {
       console.error("Error getting cloud status:", error)
@@ -2887,40 +2468,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // ENHANCED: Get pending sync queue
-  app.get("/api/cloud/queue", verifyAuditToken, async (_req, res) => {
-    try {
-      const queue = await storage.getSyncQueue()
-      res.json({
-        pending: queue.length,
-        queue: queue.map(c => ({
-          id: c.id,
-          action: c.action,
-          entity: c.entity,
-          entityId: c.entityId,
-          timestamp: c.timestamp,
-          retryCount: c.retryCount,
-        })),
-      })
-    } catch (error) {
-      console.error("Error getting sync queue:", error)
-      res.status(500).json({ error: "Failed to get sync queue" })
-    }
-  })
-
-  // ENHANCED: Set online/offline status (for manual override)
-  app.post("/api/cloud/online-status", verifyAuditToken, async (req, res) => {
-    try {
-      const { isOnline } = req.body
-      storage.setOnlineStatus(isOnline)
-      res.json({ ok: true, isOnline })
-    } catch (error) {
-      console.error("Error setting online status:", error)
-      res.status(500).json({ error: "Failed to set online status" })
-    }
-  })
-
-  // Auto-sync control
+  // Auto-sync control - NO AUTO REFRESH
   app.post("/api/cloud/auto-sync", verifyAuditToken, async (req, res) => {
     try {
       const { enabled, intervalMinutes } = req.body
@@ -2935,14 +2483,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Start new interval if enabled
       if (autoSyncEnabled && intervalMinutes) {
-        syncInterval = setInterval(triggerAutoSync, intervalMinutes * 60 * 1000)
-        console.log(`[Auto-Sync] Enabled with ${intervalMinutes} minute interval`)
+        syncInterval = setInterval(triggerSilentSync, intervalMinutes * 60 * 1000)
+        console.log(`[Auto-Sync] Enabled with ${intervalMinutes} minute interval (silent mode)`)
       }
+
+      // Save settings
+      await storage.updateSettings({
+        cloudSyncEnabled: autoSyncEnabled,
+        cloudSyncInterval: intervalMinutes || 5
+      })
 
       res.json({
         ok: true,
         autoSyncEnabled,
-        message: autoSyncEnabled ? "Auto-sync enabled" : "Auto-sync disabled",
+        message: autoSyncEnabled 
+          ? `Auto-sync enabled (every ${intervalMinutes} minutes)` 
+          : "Auto-sync disabled",
+        note: "Sync runs in background without UI refresh"
       })
     } catch (error: any) {
       console.error("Error configuring auto-sync:", error)
@@ -2950,14 +2507,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // ENHANCED: Manual sync trigger with stats
+  // Manual sync trigger
   app.post("/api/cloud/trigger-sync", verifyAuditToken, async (_req, res) => {
     try {
-      const result = await storage.triggerAutoSync()
+      await triggerSilentSync()
+      
       res.json({
-        ok: result.success,
-        message: result.message,
-        stats: result.stats,
+        ok: true,
+        message: "Sync completed in background"
       })
     } catch (error: any) {
       console.error("Error triggering sync:", error)
@@ -2965,101 +2522,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Export data to cloud PostgreSQL - FIXED: Now uses helper function properly
+  // Export data to Neon PostgreSQL - FIXED: NO AUTO REFRESH
   app.post("/api/cloud/export", verifyAuditToken, async (_req, res) => {
     try {
-      const data = await exportToCloudData()
+      console.log("[API] Export to Neon requested")
+      
+      const data = await exportToNeonData()
+      
       res.json({
         ok: true,
-        message: "Export successful",
-        counts: data.counts,
+        ...data,
+        note: "Data exported successfully. No automatic refresh triggered."
       })
     } catch (error: any) {
-      console.error("Cloud export failed:", error)
-      res.status(500).json({ error: error.message || "Export failed" })
+      console.error("Neon export failed:", error)
+      res.status(500).json({ 
+        ok: false,
+        error: error.message || "Export failed" 
+      })
     }
   })
 
-  // Import data from cloud PostgreSQL - FIXED: Now uses helper function properly
+  // Import data from Neon PostgreSQL
   app.post("/api/cloud/import", verifyAuditToken, async (_req, res) => {
     try {
-      const data = await importFromCloudData()
-
-      // Invalidate all queries after import
-      invalidateGlobalQueries()
-
+      console.log("[API] Import from Neon requested")
+      
+      const data = await importFromNeonData()
+      
       res.json({
         ok: true,
-        message: "Import successful",
-        counts: data.counts,
+        ...data,
+        note: "Data imported successfully. Refresh page to see changes."
       })
     } catch (error: any) {
-      console.error("Cloud import failed:", error)
-      res.status(500).json({ error: error.message || "Import failed" })
+      console.error("Neon import failed:", error)
+      res.status(500).json({ 
+        ok: false,
+        error: error.message || "Import failed" 
+      })
     }
   })
 
-  // ============ REAL-TIME WEBHOOK ENDPOINTS ============
-
-  // Webhook endpoint for real-time updates (can be called by other services)
-  app.post("/api/webhooks/data-updated", async (req, res) => {
-    try {
-      const { entity, entityId, customerPhone, action } = req.body
-
-      console.log(`[Real-time] Webhook received: ${action} on ${entity} ${entityId}`)
-
-      if (customerPhone) {
-        invalidateCustomerQueries(customerPhone)
-      }
-
-      invalidateGlobalQueries()
-
-      res.json({ success: true, message: "Queries invalidated successfully" })
-    } catch (error) {
-      console.error("Error processing webhook:", error)
-      res.status(500).json({ error: "Failed to process webhook" })
-    }
-  })
-
-  // Force refresh endpoint for clients
-  app.post("/api/refresh-data", async (req, res) => {
-    try {
-      const { customerPhone } = req.body
-
-      if (customerPhone) {
-        invalidateCustomerQueries(customerPhone)
-      }
-
-      invalidateGlobalQueries()
-
-      res.json({ success: true, message: "Data refresh triggered" })
-    } catch (error) {
-      console.error("Error triggering refresh:", error)
-      res.status(500).json({ error: "Failed to trigger refresh" })
-    }
-  })
-
-  app.get("/api/customer/:phone/account", async (req, res) => {
-    try {
-      const customerPhone = req.params.phone
-      const consolidatedAccount = await storage.getConsolidatedCustomerAccount(customerPhone)
-
-      if (!consolidatedAccount) {
-        res.status(404).json({ error: "Customer not found" })
-        return
-      }
-
-      res.json(consolidatedAccount)
-    } catch (error) {
-      console.error("Error fetching customer account:", error)
-      res.status(500).json({ error: "Failed to fetch customer account" })
-    }
-  })
-
-  // ============ SOFTWARE LICENSE MANAGEMENT (BLOCKING/UNBLOCKING) ============
+  // ============ SOFTWARE LICENSE MANAGEMENT ============
   
-  // Master PIN for software blocking - loaded from environment variable for security
-  // If not set, uses a default (should be set in production via MASTER_ADMIN_PIN env var)
+  // Master PIN for software blocking
   const MASTER_ADMIN_PIN = process.env.MASTER_ADMIN_PIN || "3620192373285"
 
   // Verify master admin PIN
@@ -3068,8 +2575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return pin === MASTER_ADMIN_PIN
   }
 
-  // Check license status (called on app startup and periodically)
-  // Device ID is provided by the client and persisted for consistent blocking/unblocking
+  // Check license status
   app.post("/api/license/check", async (req, res) => {
     try {
       const { deviceId, deviceName, storeName } = req.body

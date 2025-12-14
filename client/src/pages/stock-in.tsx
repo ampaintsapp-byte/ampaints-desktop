@@ -53,14 +53,13 @@ export default function StockIn() {
 
   const stockInMutation = useMutation({
     mutationFn: async (data: z.infer<typeof stockInFormSchema>) => {
-      // Use the correct API endpoint
       return apiRequest("POST", `/api/colors/${data.colorId}/stock-in`, {
         quantity: data.quantity,
         notes: data.notes || "",
         stockInDate: data.stockInDate,
       });
     },
-    onSuccess: (response, variables) => { // FIXED: Added variables parameter
+    onSuccess: (response, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stock-in/history"] });
       setIsDialogOpen(false);
@@ -73,7 +72,7 @@ export default function StockIn() {
       });
       toast({
         title: "Stock Added Successfully",
-        description: response.message || `${variables.quantity} units added to stock`, // FIXED: Use variables instead of data
+        description: response.message || `${variables.quantity} units added to stock`,
       });
     },
     onError: (error: any) => {
@@ -87,16 +86,46 @@ export default function StockIn() {
   });
 
   const filteredColors = useMemo(() => {
-    // Only show items when user searches - don't show all by default
     if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return colors.filter(color =>
-      color.colorCode.toLowerCase().includes(query) ||
-      color.colorName.toLowerCase().includes(query) ||
-      color.variant.product.company.toLowerCase().includes(query) ||
-      color.variant.product.productName.toLowerCase().includes(query) ||
-      color.variant.packingSize.toLowerCase().includes(query)
-    );
+    
+    const query = searchQuery.toLowerCase().trim();
+    const colorsWithScores = colors.map(color => {
+      let score = 0;
+      const colorCode = color.colorCode.toLowerCase();
+      const colorName = color.colorName.toLowerCase();
+      const company = color.variant.product.company.toLowerCase();
+      const productName = color.variant.product.productName.toLowerCase();
+      const packingSize = color.variant.packingSize.toLowerCase();
+
+      // Exact match for color code (highest priority)
+      if (colorCode === query) score += 100;
+      // Exact match for color name
+      else if (colorName === query) score += 90;
+      // Starts with query
+      else if (colorCode.startsWith(query)) score += 80;
+      else if (colorName.startsWith(query)) score += 70;
+      else if (company.startsWith(query)) score += 60;
+      else if (productName.startsWith(query)) score += 50;
+      // Contains query
+      else if (colorCode.includes(query)) score += 40;
+      else if (colorName.includes(query)) score += 30;
+      else if (company.includes(query)) score += 20;
+      else if (productName.includes(query)) score += 15;
+      else if (packingSize.includes(query)) score += 10;
+
+      // Additional boost for stock deficit items
+      if (color.stockQuantity < 0) score += 5;
+
+      return { color, score };
+    });
+
+    // Filter out items with no match and sort by score
+    const matchedColors = colorsWithScores
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(item => item.color);
+
+    return matchedColors;
   }, [colors, searchQuery]);
 
   const getStockBadge = (quantity: number) => {
@@ -106,7 +135,6 @@ export default function StockIn() {
     return <Badge className="bg-emerald-500 text-white">In Stock</Badge>;
   };
 
-  // Helper to validate date format
   const isValidDDMMYYYY = (dateStr: string): boolean => {
     const pattern = /^\d{2}-\d{2}-\d{4}$/;
     if (!pattern.test(dateStr)) return false;
@@ -118,7 +146,6 @@ export default function StockIn() {
 
   const handleSubmit = async (data: z.infer<typeof stockInFormSchema>) => {
     try {
-      // Validate date format
       if (!isValidDDMMYYYY(data.stockInDate)) {
         toast({
           title: "Invalid Date",
@@ -128,7 +155,6 @@ export default function StockIn() {
         return;
       }
 
-      // Validate quantity
       if (data.quantity <= 0) {
         toast({
           title: "Invalid Quantity",
@@ -138,7 +164,6 @@ export default function StockIn() {
         return;
       }
 
-      // Check if color exists
       if (!selectedColor) {
         toast({
           title: "No Color Selected",
@@ -217,10 +242,10 @@ export default function StockIn() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredColors.map(color => (
+                  {filteredColors.map((color, index) => (
                     <Card
                       key={color.id}
-                      className="rounded-2xl p-4 border border-slate-100 bg-slate-50 hover:shadow-lg hover:border-emerald-200 transition-all cursor-pointer group"
+                      className={`rounded-2xl p-4 border ${index === 0 && searchQuery.trim() ? 'border-2 border-blue-500 ring-2 ring-blue-100' : 'border-slate-100'} bg-slate-50 hover:shadow-lg hover:border-emerald-200 transition-all cursor-pointer group`}
                       onClick={() => {
                         stockInForm.setValue("colorId", color.id);
                         stockInForm.setValue("quantity", 0);
@@ -328,10 +353,10 @@ export default function StockIn() {
                     <p>{searchQuery ? "No colors found matching your search" : "No colors available"}</p>
                   </div>
                 ) : (
-                  filteredColors.map(color => (
+                  filteredColors.map((color, index) => (
                     <div
                       key={color.id}
-                      className="bg-white rounded-xl p-3 border border-slate-200 hover:shadow-md cursor-pointer transition-shadow"
+                      className={`bg-white rounded-xl p-3 border ${index === 0 && searchQuery.trim() ? 'border-2 border-blue-500 bg-blue-50' : 'border-slate-200'} hover:shadow-md cursor-pointer transition-shadow`}
                       onClick={() => {
                         setSelectedColor(color);
                         stockInForm.setValue("colorId", color.id);
@@ -341,6 +366,12 @@ export default function StockIn() {
                       }}
                       data-testid={`dialog-color-${color.id}`}
                     >
+                      {index === 0 && searchQuery.trim() && (
+                        <div className="mb-2 flex items-center gap-1">
+                          <Badge className="bg-blue-500 text-white text-xs">Best Match</Badge>
+                          <span className="text-xs text-blue-600">Exact match found</span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -494,7 +525,6 @@ export default function StockIn() {
                         {...field}
                         onChange={(e) => {
                           const value = e.target.value;
-                          // Allow only numbers and dashes in DD-MM-YYYY format
                           if (/^[\d-]*$/.test(value) && value.length <= 10) {
                             field.onChange(value);
                           }
