@@ -1,4 +1,4 @@
-// routes.ts - COMPLETE FIXED VERSION WITH ALL MISSING ROUTES - AUTO SYNC DISABLED
+// routes.ts - COMPLETE FIXED VERSION WITH ALL MISSING ROUTES
 import type { Express } from "express"
 import { createServer, type Server } from "http"
 import { storage } from "./storage"
@@ -171,7 +171,7 @@ function invalidateInventoryCache(): void {
   cache.colors = null
 }
 
-// Auto-sync state - COMPLETELY DISABLED
+// Auto-sync state - REMOVED AUTO SYNC TRIGGERING AUTO REFRESH
 let autoSyncEnabled = false
 let syncInterval: NodeJS.Timeout | null = null
 
@@ -420,7 +420,7 @@ setInterval(
   60 * 60 * 1000,
 ) // Run every hour
 
-// FIXED: Neon-specific export function - COMPLETELY MANUAL, NO AUTO REFRESH
+// FIXED: Neon-specific export function - NO AUTO REFRESH
 async function exportToNeonData() {
   try {
     const settings = await storage.getSettings()
@@ -804,28 +804,28 @@ async function importFromNeonData() {
   }
 }
 
-// Silent sync trigger - REMOVED: No auto-sync functionality
-async function triggerManualSync() {
+// FIXED: Silent sync trigger - NO AUTO REFRESH
+async function triggerSilentSync() {
+  if (!autoSyncEnabled) return
+
   try {
-    console.log("[Manual Sync] Starting sync...")
+    console.log("[Silent Sync] Starting automatic sync...")
 
     const settings = await storage.getSettings()
     if (!settings.cloudDatabaseUrl || !settings.cloudSyncEnabled) {
-      console.log("[Manual Sync] Cloud sync not configured")
-      return { success: false, message: "Cloud sync not configured" }
+      console.log("[Silent Sync] Cloud sync not configured")
+      return
     }
 
-    // Export only (no import in manual sync to avoid conflicts)
-    const result = await exportToNeonData()
+    // Export only (no import in auto-sync to avoid conflicts)
+    await exportToNeonData()
 
     // Update sync timestamp
     await storage.updateSettings({ lastSyncTime: new Date() })
 
-    console.log("[Manual Sync] Sync completed")
-    return { success: true, ...result }
+    console.log("[Silent Sync] Automatic sync completed")
   } catch (error) {
-    console.error("[Manual Sync] Failed:", error)
-    return { success: false, error: error.message }
+    console.error("[Silent Sync] Failed:", error)
   }
 }
 
@@ -2517,8 +2517,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         syncEnabled: settings.cloudSyncEnabled || false,
         lastSyncTime: settings.lastSyncTime,
         dataInCloud,
-        autoSyncEnabled: false, // ALWAYS FALSE - AUTO SYNC DISABLED
-        note: "Auto-sync is disabled. Use manual export/import only."
+        autoSyncEnabled,
+        note: "Auto-sync runs in background without refreshing UI"
       })
     } catch (error) {
       console.error("Error getting cloud status:", error)
@@ -2526,14 +2526,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Auto-sync control - DISABLED
+  // Auto-sync control - NO AUTO REFRESH
   app.post("/api/cloud/auto-sync", verifyAuditToken, async (req, res) => {
     try {
+      const { enabled, intervalMinutes } = req.body
+
+      autoSyncEnabled = enabled ?? autoSyncEnabled
+
+      // Clear existing interval
+      if (syncInterval) {
+        clearInterval(syncInterval)
+        syncInterval = null
+      }
+
+      // Start new interval if enabled
+      if (autoSyncEnabled && intervalMinutes) {
+        syncInterval = setInterval(triggerSilentSync, intervalMinutes * 60 * 1000)
+        console.log(`[Auto-Sync] Enabled with ${intervalMinutes} minute interval (silent mode)`)
+      }
+
+      // Save settings
+      await storage.updateSettings({
+        cloudSyncEnabled: autoSyncEnabled,
+        cloudSyncInterval: intervalMinutes || 5
+      })
+
       res.json({
-        ok: false,
-        autoSyncEnabled: false,
-        message: "Auto-sync is disabled. Use manual export/import only.",
-        note: "Auto-sync functionality has been removed for stability."
+        ok: true,
+        autoSyncEnabled,
+        message: autoSyncEnabled 
+          ? `Auto-sync enabled (every ${intervalMinutes} minutes)` 
+          : "Auto-sync disabled",
+        note: "Sync runs in background without UI refresh"
       })
     } catch (error: any) {
       console.error("Error configuring auto-sync:", error)
@@ -2541,21 +2565,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Manual sync trigger - MANUAL ONLY
+  // Manual sync trigger
   app.post("/api/cloud/trigger-sync", verifyAuditToken, async (_req, res) => {
     try {
-      const result = await triggerManualSync()
-      res.json(result)
+      await triggerSilentSync()
+      
+      res.json({
+        ok: true,
+        message: "Sync completed in background"
+      })
     } catch (error: any) {
       console.error("Error triggering sync:", error)
       res.status(500).json({ error: "Failed to trigger sync" })
     }
   })
 
-  // Export data to Neon PostgreSQL - COMPLETELY MANUAL
+  // Export data to Neon PostgreSQL - FIXED: NO AUTO REFRESH
   app.post("/api/cloud/export", verifyAuditToken, async (_req, res) => {
     try {
-      console.log("[API] Manual export to Neon requested")
+      console.log("[API] Export to Neon requested")
       
       const data = await exportToNeonData()
       
@@ -2576,7 +2604,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Import data from Neon PostgreSQL
   app.post("/api/cloud/import", verifyAuditToken, async (_req, res) => {
     try {
-      console.log("[API] Manual import from Neon requested")
+      console.log("[API] Import from Neon requested")
       
       const data = await importFromNeonData()
       
