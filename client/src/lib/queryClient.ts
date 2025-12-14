@@ -1,4 +1,4 @@
-[file name]: queryClient.ts
+// queryClient.ts
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
