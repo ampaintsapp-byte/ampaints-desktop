@@ -1,3 +1,4 @@
+// queryClient.ts
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
@@ -41,52 +42,35 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+// ✅ MAIN FIX: Disable ALL automatic refetching
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: 60000,
-      gcTime: 1000 * 60 * 30,
+      refetchOnReconnect: false, // ✅ No refetch on reconnect
+      refetchOnMount: false, // ✅ NO automatic refetch when component mounts
+      staleTime: Infinity, // ✅ Data never becomes stale
+      gcTime: 1000 * 60 * 60 * 24, // ✅ 24 hours cache
       retry: false,
-      refetchOnMount: "always",
-      networkMode: "offlineFirst",
+      networkMode: "online", // ✅ Only fetch when online
       structuralSharing: true,
+      // ✅ IMPORTANT: Prevent background updates
+      enabled: true,
     },
     mutations: {
       retry: false,
+      // ✅ No optimistic updates that might trigger refetch
+      onSettled: () => {
+        // Don't invalidate queries automatically
+      },
     },
   },
 });
 
+// ✅ COMPLETELY DISABLE prefetching
 export function prefetchPageData(page: string) {
-  const lightEndpoints: Record<string, string[]> = {
-    "/": ["/api/settings"],
-    "/stock": ["/api/settings"],
-    "/pos": ["/api/settings"],
-    "/sales": ["/api/settings"],
-    "/unpaid-bills": ["/api/settings"],
-    "/reports": ["/api/settings"],
-    "/returns": ["/api/settings"],
-    "/rates": ["/api/settings"],
-    "/audit": ["/api/settings"],
-    "/settings": ["/api/settings"],
-  };
-
-  const endpoints = lightEndpoints[page] || [];
-  
-  if (typeof requestIdleCallback !== 'undefined') {
-    requestIdleCallback(() => {
-      endpoints.forEach((endpoint) => {
-        const cached = queryClient.getQueryData([endpoint]);
-        if (!cached) {
-          queryClient.prefetchQuery({
-            queryKey: [endpoint],
-            staleTime: 60000,
-          });
-        }
-      });
-    }, { timeout: 100 });
-  }
+  // DO NOTHING - No automatic prefetching
+  console.log(`[DEBUG] Page: ${page} - Prefetching disabled to prevent reloads`);
 }
