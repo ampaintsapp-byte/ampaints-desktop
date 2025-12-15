@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { log } from "./utils";
 import { isDatabaseReady } from "./db";
+import { startAutoExportService, stopAutoExportService } from "./auto-export";
 
 const app = express();
 
@@ -76,6 +77,10 @@ app.use((req, res, next) => {
     console.log("[Server] Registering API routes...");
     const server = await registerRoutes(app);
 
+    // Start silent background auto-export service
+    console.log("[Server] Starting auto-export service...");
+    startAutoExportService();
+
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
@@ -96,6 +101,18 @@ app.use((req, res, next) => {
     const port = parseInt(process.env.PORT || '5000', 10);
     server.listen(port, "0.0.0.0", () => {
       log(`[Server] serving on port ${port}`);
+    });
+
+    // Handle graceful shutdown
+    process.on("SIGINT", () => {
+      log("[Server] Shutting down gracefully...");
+      stopAutoExportService();
+      process.exit(0);
+    });
+    process.on("SIGTERM", () => {
+      log("[Server] Shutting down gracefully...");
+      stopAutoExportService();
+      process.exit(0);
     });
   } catch (error) {
     console.error("[Server] ❌ FATAL ERROR starting server:", error);

@@ -53,6 +53,9 @@ import {
   Download,
   Eye,
   EyeOff,
+  Edit,
+  Save,
+  AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Sale, PaymentHistory, Return, SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema";
@@ -85,6 +88,11 @@ export default function Reports() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
   const [showDetailedMetrics, setShowDetailedMetrics] = useState(true);
+  const [editingReturnId, setEditingReturnId] = useState<string | null>(null);
+  const [editReturnData, setEditReturnData] = useState<{ reason?: string; refundMethod?: string; totalRefund?: string; status?: string }>({});
+  const [canEditReturn, setCanEditReturn] = useState<{ canEdit: boolean; hoursLeft?: number } | null>(null);
+  const [editingError, setEditingError] = useState<string | null>(null);
+  const [isSavingReturn, setIsSavingReturn] = useState(false);
   
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -416,9 +424,20 @@ export default function Reports() {
       totalReturns: filteredReturns.length,
       totalRefunded: filteredReturnsTotal,
       itemReturns: filteredReturns.filter((ret) => ret.returnType === "item").length,
-      billReturns: filteredReturns.filter((ret) => ret.returnType === "full_bill").length,
+      billReturns: filteredReturns.filter((ret) => ret.returnType === "bill").length,
     };
   }, [filteredReturns, filteredReturnsTotal]);
+
+  const refundMethodBreakdown = useMemo(() => {
+    return {
+      cashRefunds: filteredReturns.filter((ret) => ret.refundMethod === "cash").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      creditRefunds: filteredReturns.filter((ret) => ret.refundMethod === "credit").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      bankTransferRefunds: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      cashCount: filteredReturns.filter((ret) => ret.refundMethod === "cash").length,
+      creditCount: filteredReturns.filter((ret) => ret.refundMethod === "credit").length,
+      bankTransferCount: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").length,
+    };
+  }, [filteredReturns]);
 
   const stats = useMemo(() => {
     const totalSalesAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
@@ -528,11 +547,26 @@ export default function Reports() {
 
     // Add all returns (as credits)
     filteredReturns.forEach((ret) => {
+      const refundMethodLabel = (() => {
+        switch (ret.refundMethod?.toLowerCase()) {
+          case "cash":
+            return "💵 Cash Refund";
+          case "credit":
+            return "💳 Credit Refund";
+          case "bank_transfer":
+            return "🏦 Bank Transfer Refund";
+          default:
+            return "💵 Cash Refund";
+        }
+      })();
+      
+      const returnTypeLabel = ret.returnType === "bill" ? "Full Bill Return" : "Item Return";
+      
       transactions.push({
         id: `return-${ret.id}`,
         date: parseDate(ret.createdAt) || new Date(),
         type: "return",
-        description: ret.returnType === "full_bill" ? "Full Bill Return" : "Item Return",
+        description: `${returnTypeLabel} (${refundMethodLabel})`,
         customerName: ret.customerName,
         customerPhone: ret.customerPhone,
         debit: 0,
@@ -599,12 +633,82 @@ export default function Reports() {
 
   const getReturnTypeBadge = (type: string) => {
     switch (type) {
-      case "full_bill":
-        return <Badge className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 text-xs px-2 py-0 h-5 border border-rose-200 dark:border-rose-700">Full Bill</Badge>;
+      case "bill":
+        return <Badge className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 text-xs px-2 py-0 h-5 border border-rose-200 dark:border-rose-700">Full Bill Return</Badge>;
       case "item":
-        return <Badge className="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs px-2 py-0 h-5 border border-amber-200 dark:border-amber-700">Item</Badge>;
+        return <Badge className="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs px-2 py-0 h-5 border border-amber-200 dark:border-amber-700">Item Return</Badge>;
       default:
         return <Badge variant="secondary" className="text-xs px-2 py-0 h-5">{type}</Badge>;
+    }
+  };
+
+  const getRefundMethodBadge = (method: string) => {
+    switch (method?.toLowerCase()) {
+      case "cash":
+        return <Badge className="bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs px-2 py-0 h-5 border border-green-200 dark:border-green-700">💵 Cash</Badge>;
+      case "credit":
+        return <Badge className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs px-2 py-0 h-5 border border-blue-200 dark:border-blue-700">💳 Credit</Badge>;
+      case "bank_transfer":
+        return <Badge className="bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 text-xs px-2 py-0 h-5 border border-purple-200 dark:border-purple-700">🏦 Bank Transfer</Badge>;
+      default:
+        return <Badge variant="secondary" className="text-xs px-2 py-0 h-5 capitalize">{method || "cash"}</Badge>;
+    }
+  };
+
+  const handleEditReturn = async (returnId: string, ret: ReturnWithItems) => {
+    try {
+      setEditingError(null);
+      setEditingReturnId(returnId);
+      
+      // Check if return can be edited
+      const response = await fetch(`/api/returns/${returnId}/can-edit`);
+      const result = await response.json();
+      setCanEditReturn(result);
+      
+      if (result.canEdit) {
+        setEditReturnData({
+          reason: ret.reason || "",
+          refundMethod: ret.refundMethod || "cash",
+          totalRefund: ret.totalRefund,
+          status: ret.status,
+        });
+      } else {
+        setEditingError(result.reason || "Cannot edit this return");
+      }
+    } catch (error) {
+      setEditingError("Failed to check return edit status");
+      console.error("Error checking return edit status:", error);
+    }
+  };
+
+  const handleSaveReturn = async (returnId: string) => {
+    try {
+      setIsSavingReturn(true);
+      setEditingError(null);
+      
+      const response = await fetch(`/api/returns/${returnId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editReturnData),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update return");
+      }
+
+      // Invalidate returns query to refresh data
+      await fetch("/api/returns").then(() => {
+        window.location.reload();
+      });
+      
+      setEditingReturnId(null);
+      setEditReturnData({});
+    } catch (error) {
+      setEditingError(error instanceof Error ? error.message : "Failed to update return");
+      console.error("Error saving return:", error);
+    } finally {
+      setIsSavingReturn(false);
     }
   };
 
@@ -691,25 +795,34 @@ export default function Reports() {
             <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Showing <span className="text-slate-800 dark:text-slate-200">{filteredReturns.length}</span> returns
             </div>
-            <div className="flex gap-4 text-xs">
+            <div className="flex gap-3 text-xs flex-wrap">
               <div className="flex items-center gap-2">
                 <span className="text-slate-500 dark:text-slate-400">Total Refunded:</span>
                 <span className="font-semibold text-red-600 dark:text-red-400 tabular-nums">
-                  {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                  Rs. {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                </span>
+              </div>
+              <div className="text-slate-300 dark:text-slate-600">|</div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">💵 Cash:</span>
+                <span className="font-semibold text-green-600 dark:text-green-400 tabular-nums">
+                  Rs. {refundMethodBreakdown.cashRefunds.toLocaleString("en-IN", { minimumFractionDigits: 0 })} <span className="text-slate-500 dark:text-slate-400">({refundMethodBreakdown.cashCount})</span>
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 dark:text-slate-400">Item Returns:</span>
-                <span className="font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                  {returnStats.itemReturns}
+                <span className="text-slate-500 dark:text-slate-400">💳 Credit:</span>
+                <span className="font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                  Rs. {refundMethodBreakdown.creditRefunds.toLocaleString("en-IN", { minimumFractionDigits: 0 })} <span className="text-slate-500 dark:text-slate-400">({refundMethodBreakdown.creditCount})</span>
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 dark:text-slate-400">Bill Returns:</span>
-                <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                  {returnStats.billReturns}
-                </span>
-              </div>
+              {refundMethodBreakdown.bankTransferRefunds > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 dark:text-slate-400">🏦 Bank:</span>
+                  <span className="font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                    Rs. {refundMethodBreakdown.bankTransferRefunds.toLocaleString("en-IN", { minimumFractionDigits: 0 })} <span className="text-slate-500 dark:text-slate-400">({refundMethodBreakdown.bankTransferCount})</span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1022,7 +1135,7 @@ export default function Reports() {
                       <div>
                         <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Refunds</div>
                         <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          -{Math.round(filteredReturnsTotal).toLocaleString("en-IN")}
+                          -Rs. {Math.round(filteredReturnsTotal).toLocaleString("en-IN")}
                         </div>
                       </div>
                     </div>
@@ -1489,10 +1602,13 @@ export default function Reports() {
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Return ID</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Customer</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Phone</TableHead>
-                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Type</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Return Method</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Refund Method</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Reason</TableHead>
                       <TableHead className="py-3 text-right text-xs text-slate-600 dark:text-slate-400">Refund Amount</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Items</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Status</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1503,8 +1619,12 @@ export default function Reports() {
                         <TableCell className="py-2.5 text-sm font-medium">{ret.customerName}</TableCell>
                         <TableCell className="py-2.5 text-xs text-slate-600 dark:text-slate-400">{ret.customerPhone}</TableCell>
                         <TableCell className="py-2.5">{getReturnTypeBadge(ret.returnType)}</TableCell>
+                        <TableCell className="py-2.5">{getRefundMethodBadge(ret.refundMethod)}</TableCell>
+                        <TableCell className="py-2.5 text-xs text-slate-600 dark:text-slate-400 max-w-xs truncate" title={ret.reason || "No reason provided"}>
+                          {ret.reason || <span className="text-slate-400 italic">No reason</span>}
+                        </TableCell>
                         <TableCell className="py-2.5 text-right text-sm font-medium text-rose-600 dark:text-rose-400 tabular-nums">
-                          {parseFloat(ret.totalRefund || "0").toLocaleString("en-IN")}
+                          Rs. {parseFloat(ret.totalRefund || "0").toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell className="py-2.5">
                           <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 bg-slate-50/70 dark:bg-slate-800/70">
@@ -1515,6 +1635,17 @@ export default function Reports() {
                           <Badge variant={ret.status === "completed" ? "default" : "secondary"} className="text-xs px-1.5 py-0 h-5 capitalize">
                             {ret.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditReturn(ret.id, ret)}
+                            className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          >
+                            <Edit className="h-3.5 w-3.5 mr-1" />
+                            Edit
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1547,6 +1678,165 @@ export default function Reports() {
               </div>
               <TableSummary tab="returns" />
             </Card>
+
+            {/* Edit Return Modal */}
+            {editingReturnId && (
+              <Card className="rounded-xl border border-blue-200/50 dark:border-blue-800/50 bg-blue-50/40 dark:bg-blue-900/10 backdrop-blur-sm overflow-hidden shadow-sm mt-4">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      <h3 className="font-semibold text-slate-800 dark:text-slate-200">Edit Return</h3>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingReturnId(null);
+                        setEditReturnData({});
+                        setEditingError(null);
+                      }}
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {!canEditReturn?.canEdit && editingError && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4 flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm text-red-700 dark:text-red-300 font-medium">{editingError}</p>
+                        {canEditReturn?.hoursLeft !== undefined && (
+                          <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                            This return can only be edited within 12 hours of creation.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {canEditReturn?.canEdit && (
+                    <div className="space-y-4">
+                      {canEditReturn.hoursLeft !== undefined && (
+                        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-start gap-2">
+                          <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                              Edit window: {canEditReturn.hoursLeft.toFixed(1)} hours remaining
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Refund Method
+                          </label>
+                          <Select
+                            value={editReturnData.refundMethod || "cash"}
+                            onValueChange={(value) =>
+                              setEditReturnData({ ...editReturnData, refundMethod: value })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">💵 Cash</SelectItem>
+                              <SelectItem value="credit">💳 Credit</SelectItem>
+                              <SelectItem value="bank_transfer">🏦 Bank Transfer</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Status
+                          </label>
+                          <Select
+                            value={editReturnData.status || "completed"}
+                            onValueChange={(value) =>
+                              setEditReturnData({ ...editReturnData, status: value })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="pending">Pending</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Refund Amount
+                          </label>
+                          <Input
+                            type="number"
+                            value={editReturnData.totalRefund || ""}
+                            onChange={(e) =>
+                              setEditReturnData({ ...editReturnData, totalRefund: e.target.value })
+                            }
+                            placeholder="0.00"
+                            className="h-8 text-xs border-slate-200 dark:border-slate-700"
+                            step="0.01"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Reason
+                          </label>
+                          <Input
+                            value={editReturnData.reason || ""}
+                            onChange={(e) =>
+                              setEditReturnData({ ...editReturnData, reason: e.target.value })
+                            }
+                            placeholder="Enter reason for return"
+                            className="h-8 text-xs border-slate-200 dark:border-slate-700"
+                          />
+                        </div>
+                      </div>
+
+                      {editingError && (
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-red-700 dark:text-red-300">{editingError}</p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 justify-end pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingReturnId(null);
+                            setEditReturnData({});
+                            setEditingError(null);
+                          }}
+                          className="h-8 text-xs border-slate-200 dark:border-slate-700"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleSaveReturn(editingReturnId)}
+                          disabled={isSavingReturn}
+                          className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          <Save className="h-3.5 w-3.5 mr-1" />
+                          {isSavingReturn ? "Saving..." : "Save Changes"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>

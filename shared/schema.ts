@@ -142,6 +142,7 @@ export const returns = sqliteTable("returns", {
   returnType: text("return_type").notNull().default("item"), // "bill" for full bill return, "item" for partial return
   totalRefund: text("total_refund").notNull().default("0"), // Total refund amount
   reason: text("reason"), // Optional reason for return
+  refundMethod: text("refund_method").notNull().default("cash"), // cash, credit, bank_transfer
   status: text("status").notNull().default("completed"), // completed, pending
   createdAt: integer("created_at", { mode: "timestamp" })
     .$defaultFn(() => new Date())

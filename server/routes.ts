@@ -2126,6 +2126,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // Check if return can be edited
+  app.get("/api/returns/:id/can-edit", async (req, res) => {
+    try {
+      const result = await storage.canEditReturn(req.params.id)
+      res.json(result)
+    } catch (error) {
+      console.error("[API] Error checking return edit status:", error)
+      res.status(500).json({ error: "Failed to check return edit status" })
+    }
+  })
+
+  // Update return (reason, refund method, amount, status)
+  app.patch("/api/returns/:id", async (req, res) => {
+    try {
+      const { reason, refundMethod, totalRefund, status } = req.body
+
+      console.log("[API] Updating return:", { id: req.params.id, reason, refundMethod, totalRefund, status })
+
+      const updatedReturn = await storage.updateReturn(req.params.id, {
+        reason,
+        refundMethod,
+        totalRefund,
+        status,
+      })
+
+      if (!updatedReturn) {
+        res.status(404).json({ error: "Return not found" })
+        return
+      }
+
+      // Invalidate returns cache
+      invalidateCache("returns")
+
+      res.json(updatedReturn)
+    } catch (error) {
+      console.error("[API] Error updating return:", error)
+      const message = error instanceof Error ? error.message : "Failed to update return"
+      res.status(400).json({ error: message })
+    }
+  })
+
   // ============ END RETURNS ROUTES ============
 
   // Dashboard Stats

@@ -128,9 +128,6 @@ export default function Audit() {
 	const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle")
 	const [lastExportCounts, setLastExportCounts] = useState<any>(null)
 	const [lastImportCounts, setLastImportCounts] = useState<any>(null)
-	const [autoSyncEnabled, setAutoSyncEnabled] = useState(false)
-	const [syncInterval, setSyncInterval] = useState(5)
-	const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
 	
 	const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
 		queryKey: ["/api/audit/has-pin"],
@@ -317,12 +314,9 @@ export default function Audit() {
 				pinError,
 				isDefaultPin,
 				showPinDialog,
-				autoSyncEnabled,
-				syncInterval,
 				cloudUrl,
 				cloudConnectionStatus,
 				cloudSyncStatus,
-				lastSyncTime: lastSyncTime ? lastSyncTime.toISOString() : null,
 			};
 			try {
 				sessionStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
@@ -330,7 +324,7 @@ export default function Audit() {
 				// ignore storage errors
 			}
 		}, 200) as unknown) as number;
-	}, [settingsTab, pinInput, pinError, isDefaultPin, showPinDialog, autoSyncEnabled, syncInterval, cloudUrl, cloudConnectionStatus, cloudSyncStatus, lastSyncTime]);
+	}, [settingsTab, pinInput, pinError, isDefaultPin, showPinDialog, cloudUrl, cloudConnectionStatus, cloudSyncStatus]);
 
 	const restoreUiState = useCallback(() => {
 		try {
@@ -342,12 +336,9 @@ export default function Audit() {
 			if (parsed.pinError) setPinError(parsed.pinError);
 			if (parsed.isDefaultPin) setIsDefaultPin(parsed.isDefaultPin);
 			if (typeof parsed.showPinDialog === "boolean") setShowPinDialog(parsed.showPinDialog);
-			if (typeof parsed.autoSyncEnabled === "boolean") setAutoSyncEnabled(parsed.autoSyncEnabled);
-			if (parsed.syncInterval) setSyncInterval(parsed.syncInterval);
 			if (parsed.cloudUrl) setCloudUrl(parsed.cloudUrl);
 			if (parsed.cloudConnectionStatus) setCloudConnectionStatus(parsed.cloudConnectionStatus);
 			if (parsed.cloudSyncStatus) setCloudSyncStatus(parsed.cloudSyncStatus);
-			if (parsed.lastSyncTime) setLastSyncTime(new Date(parsed.lastSyncTime));
 		} catch (e) {
 			// ignore JSON parse errors
 		}
@@ -369,48 +360,16 @@ export default function Audit() {
 	}, [restoreUiState]);
 
 	// also save when important UI pieces change
-	useEffect(() => { saveUiState(); }, [settingsTab, pinInput, showPinDialog, autoSyncEnabled, syncInterval, cloudUrl, cloudConnectionStatus, cloudSyncStatus, lastSyncTime]);
-
-	// --- NEW: Observe cloud sync markers in other tabs/windows and show non-intrusive info ---
-	useEffect(() => {
-		const onStorage = (e: StorageEvent) => {
-			if (e.key === "cloudSyncInProgress") {
-				if (e.newValue === "1") {
-					toast({ title: "Cloud sync started", description: "Background sync in progress. UI will not reload." });
-				} else {
-					toast({ title: "Cloud sync finished", description: "Background sync completed." });
-					// selective refresh if needed - do not reload whole app
-					queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-					queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
-					queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
-					queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
-					queryClient.invalidateQueries({ queryKey: ["/api/stock-in-history"] });
-					queryClient.invalidateQueries({ queryKey: ["/api/returns"] });
-					queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] });
-				}
-			}
-		};
-		window.addEventListener("storage", onStorage);
-		return () => window.removeEventListener("storage", onStorage);
-	}, [toast]);
+	useEffect(() => { saveUiState(); }, [settingsTab, pinInput, showPinDialog, cloudUrl, cloudConnectionStatus, cloudSyncStatus]);
 
 	// --- CHANGES: make cloud actions set cloudSyncInProgress flag and only selectively invalidate queries ---
 	const handleExportToCloud = useCallback(async () => {
 		if (!cloudUrl.trim() || cloudSyncStatus !== "idle") return
 		setCloudSyncStatus("exporting")
 		try {
-			localStorage.setItem("cloudSyncInProgress", "1")
-			// notify other windows/tabs
-			localStorage.setItem("cloudSyncInProgress", "1")
 			const response = await authenticatedRequest("/api/cloud/export", { method: "POST" })
 			if (response.ok) {
 				setLastExportCounts(response.counts || {})
-				setLastSyncTime(new Date())
-				// selective invalidation - avoid full app refresh
-				queryClient.invalidateQueries({ queryKey: ["/api/products"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
 				toast({ title: "Export Complete", description: response.message || "Data exported to cloud successfully." })
 			} else {
 				toast({ title: "Export Failed", description: response.error || "Could not export data to cloud.", variant: "destructive" })
@@ -419,7 +378,6 @@ export default function Audit() {
 			toast({ title: "Export Failed", description: error.message || "Could not export data to cloud.", variant: "destructive" })
 		} finally {
 			setCloudSyncStatus("idle")
-			localStorage.removeItem("cloudSyncInProgress")
 		}
 	}, [cloudUrl, cloudSyncStatus, authenticatedRequest, toast])
 
@@ -430,19 +388,9 @@ export default function Audit() {
 		}
 		setCloudSyncStatus("importing")
 		try {
-			localStorage.setItem("cloudSyncInProgress", "1")
 			const response = await authenticatedRequest("/api/cloud/import", { method: "POST" })
 			if (response.ok) {
 				setLastImportCounts(response.counts || {})
-				setLastSyncTime(new Date())
-				// selective invalidation only for affected keys
-				queryClient.invalidateQueries({ queryKey: ["/api/products"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/stock-in-history"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
-				queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] })
 				toast({ title: "Import Complete", description: response.message || "Data imported from cloud successfully." })
 			} else {
 				toast({ title: "Import Failed", description: response.error || "Could not import data from cloud.", variant: "destructive" })
@@ -451,41 +399,9 @@ export default function Audit() {
 			toast({ title: "Import Failed", description: error.message || "Could not import data from cloud.", variant: "destructive" })
 		} finally {
 			setCloudSyncStatus("idle")
-			localStorage.removeItem("cloudSyncInProgress")
 		}
 	}, [cloudUrl, authenticatedRequest, toast])
 
-	const toggleAutoSync = useCallback(async (enabled: boolean) => {
-		try {
-			const response = await authenticatedRequest("/api/cloud/auto-sync", {
-				method: "POST",
-				body: JSON.stringify({ enabled, interval: syncInterval }),
-			})
-			
-			if (response.ok) {
-				setAutoSyncEnabled(enabled)
-				
-				toast({
-					title: enabled ? "Auto-Sync Enabled" : "Auto-Sync Disabled",
-					description: enabled 
-						? `Auto-syncing every ${syncInterval} minutes.` 
-						: "Automatic synchronization has been turned off.",
-				})
-			} else {
-				toast({
-					title: "Failed to Update Auto-Sync",
-					description: response.error || "Could not update auto-sync settings.",
-					variant: "destructive",
-				})
-			}
-		} catch (error: any) {
-			toast({
-				title: "Failed to Update Auto-Sync",
-				description: error.message || "Could not update auto-sync settings.",
-				variant: "destructive",
-			})
-		}
-	}, [syncInterval, authenticatedRequest, toast])
 
 	useEffect(() => {
 		const storedToken = sessionStorage.getItem("auditToken")
@@ -503,11 +419,9 @@ export default function Audit() {
 			setCloudUrl(appSettings.cloudDatabaseUrl)
 			if (appSettings.cloudSyncEnabled) {
 				setCloudConnectionStatus("success")
-				setAutoSyncEnabled(true)
-				setSyncInterval(appSettings.cloudSyncInterval || 5)
 			}
 		}
-	}, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled, appSettings?.cloudSyncInterval])
+	}, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled])
 
 	const handlePinInput = (index: number, value: string) => {
 		if (!/^\d*$/.test(value)) return
@@ -972,55 +886,6 @@ export default function Audit() {
 																? "Connection Failed"
 																: "Test Connection"}
 												</Button>
-
-												<div className="border-t pt-4">
-													<h4 className="font-medium mb-3 flex items-center gap-2">
-														<RefreshCw className="h-4 w-4" />
-														Background Sync Settings
-													</h4>
-
-													<div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-														<div className="space-y-0.5">
-															<Label className="flex items-center gap-2">
-																{autoSyncEnabled ? (
-																	<Wifi className="h-4 w-4 text-green-500" />
-																) : (
-																	<WifiOff className="h-4 w-4 text-gray-500" />
-																)}
-																Background Cloud Sync
-															</Label>
-															<p className="text-xs text-muted-foreground">
-																{autoSyncEnabled
-																	? `Auto-syncing every ${syncInterval} minutes`
-																	: "Manual sync only"}
-															</p>
-														</div>
-														<Switch
-															checked={autoSyncEnabled}
-															onCheckedChange={toggleAutoSync}
-														/>
-													</div>
-													
-													{autoSyncEnabled && (
-														<div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-															<div className="flex items-center justify-between">
-																<Label className="text-sm">Sync Interval (minutes)</Label>
-																<select 
-																	value={syncInterval}
-																	onChange={(e) => setSyncInterval(Number(e.target.value))}
-																	className="w-32 p-2 border rounded-md"
-																>
-																	<option value="1">1 minute</option>
-																	<option value="5">5 minutes</option>
-																	<option value="15">15 minutes</option>
-																	<option value="30">30 minutes</option>
-																	<option value="60">1 hour</option>
-																</select>
-															</div>
-														</div>
-													)}
-												</div>
-
 												<div className="border-t pt-4">
 													<h4 className="font-medium mb-3 flex items-center gap-2">
 														<RefreshCw className="h-4 w-4" />
@@ -1061,30 +926,10 @@ export default function Audit() {
 												<div className="border-t pt-4">
 													<h4 className="font-medium mb-3 flex items-center gap-2">
 														<Activity className="h-4 w-4" />
-														Sync Status
+														Export/Import History
 													</h4>
 
 													<div className="space-y-3">
-														<div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-															<div className="flex items-center gap-2">
-																<Clock className="h-4 w-4 text-muted-foreground" />
-																<span className="text-sm">Last Sync</span>
-															</div>
-															<span className="text-sm font-medium">
-																{lastSyncTime 
-																	? lastSyncTime.toLocaleString('en-PK', { 
-																		day: '2-digit', 
-																		month: 'short', 
-																		hour: '2-digit', 
-																		minute: '2-digit',
-																		hour12: true 
-																	})
-																	: "Never"
-																}
-															</span>
-														</div>
-
-														{lastExportCounts && (
 															<div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
 																<div className="flex items-center gap-2 mb-2">
 																	<Upload className="h-4 w-4 text-blue-500" />
@@ -1157,7 +1002,6 @@ export default function Audit() {
 												System Information
 											</CardTitle>
 										</CardHeader>
-										<CardContent className="space-y-4">
 											<div className="grid grid-cols-2 gap-4">
 												<div className="space-y-2">
 													<Label className="text-sm font-medium">Cloud Status</Label>
@@ -1173,25 +1017,6 @@ export default function Audit() {
 													</div>
 													<p className="text-xs text-muted-foreground">
 														{cloudConnectionStatus === "success" ? "Cloud sync enabled" : "Manual sync only"}
-													</p>
-												</div>
-
-												<div className="space-y-2">
-													<Label className="text-sm font-medium">Auto-Sync</Label>
-													<div className="flex items-center gap-2">
-														{autoSyncEnabled ? (
-															<Check className="h-4 w-4 text-green-500" />
-														) : (
-															<XCircle className="h-4 w-4 text-gray-500" />
-														)}
-														<span className={autoSyncEnabled ? "text-green-600" : "text-gray-600"}>
-															{autoSyncEnabled ? "Enabled" : "Disabled"}
-														</span>
-													</div>
-													<p className="text-xs text-muted-foreground">
-														{autoSyncEnabled 
-															? `Runs every ${syncInterval} minutes` 
-															: "Manual sync only"}
 													</p>
 												</div>
 											</div>

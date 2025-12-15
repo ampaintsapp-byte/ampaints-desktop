@@ -521,11 +521,14 @@ export default function CustomerStatement() {
         subtotal: safeParseFloat(item.subtotal),
       })) || []
 
+      const returnMethod = ret.returnType === "bill" ? "Full Bill Return" : "Item Return"
+      const reasonText = ret.reason ? ` - ${ret.reason}` : ""
+
       return {
         id: `return-${ret.id}`,
         date: safeParseDate(ret.createdAt),
         type: "return" as TransactionType,
-        description: ret.returnType === "full_bill" ? "Full Bill Return" : `Item Return${ret.reason ? ` - ${ret.reason}` : ""}`,
+        description: `${returnMethod}${reasonText}`,
         reference: `RET-${ret.id.slice(0, 6).toUpperCase()}`,
         debit: 0,
         credit: refundAmount,
@@ -1840,7 +1843,7 @@ Thank you for your business!`
                             <div>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="font-semibold text-slate-800 dark:text-white">
-                                  Return {ret.returnType === "full_bill" ? "(Full Bill)" : "(Items)"}
+                                  {ret.returnType === "bill" ? "Full Bill Return" : "Item Return"}
                                 </p>
                                 <Badge variant="outline" className="border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
                                   REFUND

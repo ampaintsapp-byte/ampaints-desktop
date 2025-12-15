@@ -269,6 +269,16 @@ export interface IStorage {
   }): Promise<Return>
   getReturnsByCustomerPhone(customerPhone: string): Promise<ReturnWithItems[]>
   getReturnItems(): Promise<ReturnItem[]>
+  canEditReturn(returnId: string): Promise<{ canEdit: boolean; reason?: string; hoursLeft?: number }>
+  updateReturn(
+    returnId: string,
+    data: {
+      reason?: string
+      refundMethod?: string
+      totalRefund?: string
+      status?: string
+    },
+  ): Promise<ReturnWithItems | null>
   getSaleItems(): Promise<SaleItem[]>
 
   // NEW: Customer Purchase History Tracking
@@ -3187,6 +3197,98 @@ export class DatabaseStorage implements IStorage {
 
     async getReturnItems(): Promise<ReturnItem[]> {
       return await db.select().from(returnItems)
+    }
+
+    async canEditReturn(returnId: string): Promise<{ canEdit: boolean; reason?: string; hoursLeft?: number }> {
+      try {
+        const returnRecord = await db.query.returns.findFirst({
+          where: eq(returns.id, returnId),
+        })
+
+        if (!returnRecord) {
+          return { canEdit: false, reason: "Return not found" }
+        }
+
+        const now = new Date()
+        const createdAt = returnRecord.createdAt instanceof Date ? returnRecord.createdAt : new Date(returnRecord.createdAt)
+        const hoursDifference = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60)
+        const hoursLeft = Math.max(0, 12 - hoursDifference)
+
+        if (hoursDifference > 12) {
+          return { canEdit: false, reason: "Return can only be edited within 12 hours of creation", hoursLeft: 0 }
+        }
+
+        return { canEdit: true, hoursLeft: Math.round(hoursLeft * 10) / 10 }
+      } catch (error) {
+        console.error("[Storage] Error checking if return can be edited:", error)
+        return { canEdit: false, reason: "Error checking return status" }
+      }
+    }
+
+    async updateReturn(
+      returnId: string,
+      data: {
+        reason?: string
+        refundMethod?: string
+        totalRefund?: string
+        status?: string
+      },
+    ): Promise<ReturnWithItems | null> {
+      try {
+        // Check if return can be edited
+        const canEdit = await this.canEditReturn(returnId)
+        if (!canEdit.canEdit) {
+          throw new Error(canEdit.reason || "Cannot edit this return")
+        }
+
+        const returnRecord = await db.query.returns.findFirst({
+          where: eq(returns.id, returnId),
+        })
+
+        if (!returnRecord) {
+          throw new Error("Return not found")
+        }
+
+        // Build update object with only provided fields
+        const updateData: any = {}
+        if (data.reason !== undefined) updateData.reason = data.reason
+        if (data.refundMethod !== undefined) updateData.refundMethod = data.refundMethod
+        if (data.totalRefund !== undefined) updateData.totalRefund = String(data.totalRefund)
+        if (data.status !== undefined) updateData.status = data.status
+
+        await db.update(returns).set(updateData).where(eq(returns.id, returnId))
+
+        console.log("[Storage] Return updated successfully:", returnId)
+
+        // Detect changes for auto-sync
+        this.detectChanges("returns")
+
+        // Fetch and return updated return with items
+        const updatedReturn = await db.query.returns.findFirst({
+          where: eq(returns.id, returnId),
+          with: {
+            sale: true,
+            returnItems: {
+              with: {
+                color: {
+                  with: {
+                    variant: {
+                      with: {
+                        product: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        })
+
+        return (updatedReturn || null) as ReturnWithItems | null
+      } catch (error) {
+        console.error("[Storage] Error updating return:", error)
+        throw new Error(`Failed to update return: ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
     }
 
     // FIXED: Missing getSaleItems implementation
