@@ -25,7 +25,6 @@ const Reports = lazy(() => import("@/pages/reports"));
 const BillPrint = lazy(() => import("@/pages/bill-print"));
 const Returns = lazy(() => import("@/pages/returns"));
 const ReturnsHistory = lazy(() => import("@/pages/returns-history"));
-const Audit = lazy(() => import("@/pages/audit"));
 const Settings = lazy(() => import("@/pages/settings"));
 
 function Router() {
@@ -43,7 +42,6 @@ function Router() {
         <Route path="/reports" component={Reports} />
         <Route path="/returns" component={Returns} />
         <Route path="/returns/history" component={ReturnsHistory} />
-        <Route path="/admin" component={Audit} />
         <Route path="/settings" component={Settings} />
         <Route path="/bill/:id" component={BillPrint} />
         <Route component={NotFound} />
