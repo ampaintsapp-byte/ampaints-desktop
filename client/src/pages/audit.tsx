@@ -103,1103 +103,1179 @@ function useAuditApiRequest() {
 }
 
 export default function Audit() {
-  const { toast } = useToast()
-  const { authenticatedRequest, auditToken, setAuditToken } = useAuditApiRequest()
+	const { toast } = useToast()
+	const { authenticatedRequest, auditToken, setAuditToken } = useAuditApiRequest()
 
-  const [isVerified, setIsVerified] = useState(false)
-  const [pinInput, setPinInput] = useState(["", "", "", ""])
-  const [pinError, setPinError] = useState("")
-  const [isDefaultPin, setIsDefaultPin] = useState(false)
-  const [showPinDialog, setShowPinDialog] = useState(true)
+	const [isVerified, setIsVerified] = useState(false)
+	const [pinInput, setPinInput] = useState(["", "", "", ""])
+	const [pinError, setPinError] = useState("")
+	const [isDefaultPin, setIsDefaultPin] = useState(false)
+	const [showPinDialog, setShowPinDialog] = useState(true)
 
-  // Settings Tabs State
-  const [settingsTab, setSettingsTab] = useState("pin")
-  const [currentPin, setCurrentPin] = useState("")
-  const [newPin, setNewPin] = useState("")
-  const [confirmPin, setConfirmPin] = useState("")
-  const [showCurrentPin, setShowCurrentPin] = useState(false)
-  const [showNewPin, setShowNewPin] = useState(false)
-  const [showConfirmPin, setShowConfirmPin] = useState(false)
+	// Settings Tabs State
+	const [settingsTab, setSettingsTab] = useState("pin")
+	const [currentPin, setCurrentPin] = useState("")
+	const [newPin, setNewPin] = useState("")
+	const [confirmPin, setConfirmPin] = useState("")
+	const [showCurrentPin, setShowCurrentPin] = useState(false)
+	const [showNewPin, setShowNewPin] = useState(false)
+	const [showConfirmPin, setShowConfirmPin] = useState(false)
 
-  // Cloud Sync State - Optimized for silent operation
-  const [cloudUrl, setCloudUrl] = useState("")
-  const [showCloudUrl, setShowCloudUrl] = useState(false)
-  const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle")
-  const [lastExportCounts, setLastExportCounts] = useState<any>(null)
-  const [lastImportCounts, setLastImportCounts] = useState<any>(null)
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false)
-  const [syncInterval, setSyncInterval] = useState(5)
-  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
-  
-  const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
-    queryKey: ["/api/audit/has-pin"],
-    enabled: !isVerified,
-    refetchOnWindowFocus: false
-  })
+	// Cloud Sync State - Optimized for silent operation
+	const [cloudUrl, setCloudUrl] = useState("")
+	const [showCloudUrl, setShowCloudUrl] = useState(false)
+	const [cloudConnectionStatus, setCloudConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
+	const [cloudSyncStatus, setCloudSyncStatus] = useState<"idle" | "exporting" | "importing">("idle")
+	const [lastExportCounts, setLastExportCounts] = useState<any>(null)
+	const [lastImportCounts, setLastImportCounts] = useState<any>(null)
+	const [autoSyncEnabled, setAutoSyncEnabled] = useState(false)
+	const [syncInterval, setSyncInterval] = useState(5)
+	const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+	
+	const { data: hasPin } = useQuery<{ hasPin: boolean; isDefault?: boolean }>({
+		queryKey: ["/api/audit/has-pin"],
+		enabled: !isVerified,
+		refetchOnWindowFocus: false
+	})
 
-  const { data: appSettings } = useQuery<AppSettings>({
-    queryKey: ["/api/settings"],
-    enabled: isVerified,
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    gcTime: 30 * 60 * 1000,
-  })
+	const { data: appSettings } = useQuery<AppSettings>({
+		queryKey: ["/api/settings"],
+		enabled: isVerified,
+		staleTime: 10 * 60 * 1000,
+		refetchOnWindowFocus: false,
+		refetchOnMount: false,
+		gcTime: 30 * 60 * 1000,
+	})
 
-  const updatePermissionsMutation = useMutation({
-    mutationFn: async (permissions: Partial<AppSettings>) => {
-      const response = await authenticatedRequest("/api/settings", {
-        method: "PATCH",
-        body: JSON.stringify(permissions),
-      })
-      return response
-    },
-    onSuccess: () => {
-      queryClient.setQueryData(["/api/settings"], (old: AppSettings) => ({
-        ...old,
-        ...updatePermissionsMutation.variables
-      }))
-      
-      toast({
-        title: "Permissions Updated",
-        description: "Access control settings have been saved.",
-      })
-    },
-    onError: () => {
-      toast({
-        title: "Failed to Update",
-        description: "Could not save permission settings.",
-        variant: "destructive",
-      })
-    },
-  })
+	const updatePermissionsMutation = useMutation({
+		mutationFn: async (permissions: Partial<AppSettings>) => {
+			const response = await authenticatedRequest("/api/settings", {
+				method: "PATCH",
+				body: JSON.stringify(permissions),
+			})
+			return response
+		},
+		onSuccess: () => {
+			queryClient.setQueryData(["/api/settings"], (old: AppSettings) => ({
+				...old,
+				...updatePermissionsMutation.variables
+			}))
+			
+			toast({
+				title: "Permissions Updated",
+				description: "Access control settings have been saved.",
+			})
+		},
+		onError: () => {
+			toast({
+				title: "Failed to Update",
+				description: "Could not save permission settings.",
+				variant: "destructive",
+			})
+		},
+	})
 
-  const handlePermissionChange = useCallback((key: keyof AppSettings, value: boolean) => {
-    updatePermissionsMutation.mutate({ [key]: value })
-  }, [updatePermissionsMutation])
+	const handlePermissionChange = useCallback((key: keyof AppSettings, value: boolean) => {
+		updatePermissionsMutation.mutate({ [key]: value })
+	}, [updatePermissionsMutation])
 
-  const verifyPinMutation = useMutation({
-    mutationFn: async (pin: string) => {
-      const response = await fetch("/api/audit/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
-      })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "PIN verification failed")
-      }
-      return response.json()
-    },
-    onSuccess: (data: { ok: boolean; isDefault?: boolean; auditToken?: string }) => {
-      if (data.ok && data.auditToken) {
-        setIsVerified(true)
-        setAuditToken(data.auditToken)
-        setShowPinDialog(false)
-        setIsDefaultPin(data.isDefault || false)
-        setPinError("")
-        if (data.isDefault) {
-          toast({
-            title: "Default PIN Used",
-            description: "Please change your PIN in the Settings tab for security.",
-            variant: "destructive",
-          })
-        }
-        sessionStorage.setItem("auditVerified", "true")
-        sessionStorage.setItem("auditToken", data.auditToken)
-      }
-    },
-    onError: (error: Error) => {
-      setPinError(error.message || "Invalid PIN. Please try again.")
-      setPinInput(["", "", "", ""])
-    },
-  })
+	const verifyPinMutation = useMutation({
+		mutationFn: async (pin: string) => {
+			const response = await fetch("/api/audit/verify", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ pin }),
+			})
+			if (!response.ok) {
+				const errorData = await response.json()
+				throw new Error(errorData.error || "PIN verification failed")
+			}
+			return response.json()
+		},
+		onSuccess: (data: { ok: boolean; isDefault?: boolean; auditToken?: string }) => {
+			if (data.ok && data.auditToken) {
+				setIsVerified(true)
+				setAuditToken(data.auditToken)
+				setShowPinDialog(false)
+				setIsDefaultPin(data.isDefault || false)
+				setPinError("")
+				if (data.isDefault) {
+					toast({
+						title: "Default PIN Used",
+						description: "Please change your PIN in the Settings tab for security.",
+						variant: "destructive",
+					})
+				}
+				sessionStorage.setItem("auditVerified", "true")
+				sessionStorage.setItem("auditToken", data.auditToken)
+			}
+		},
+		onError: (error: Error) => {
+			setPinError(error.message || "Invalid PIN. Please try again.")
+			setPinInput(["", "", "", ""])
+		},
+	})
 
-  const changePinMutation = useMutation({
-    mutationFn: async ({ currentPin, newPin }: { currentPin: string; newPin: string }) => {
-      const response = await authenticatedRequest("/api/audit/pin", {
-        method: "PATCH",
-        body: JSON.stringify({ currentPin, newPin }),
-      })
-      return response
-    },
-    onSuccess: () => {
-      toast({
-        title: "PIN Changed",
-        description: "Your audit PIN has been successfully updated.",
-      })
-      setCurrentPin("")
-      setNewPin("")
-      setConfirmPin("")
-      setIsDefaultPin(false)
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "PIN Change Failed",
-        description: error.message || "Failed to change PIN. Please check your current PIN.",
-        variant: "destructive",
-      })
-    },
-  })
+	const changePinMutation = useMutation({
+		mutationFn: async ({ currentPin, newPin }: { currentPin: string; newPin: string }) => {
+			const response = await authenticatedRequest("/api/audit/pin", {
+				method: "PATCH",
+				body: JSON.stringify({ currentPin, newPin }),
+			})
+			return response
+		},
+		onSuccess: () => {
+			toast({
+				title: "PIN Changed",
+				description: "Your audit PIN has been successfully updated.",
+			})
+			setCurrentPin("")
+			setNewPin("")
+			setConfirmPin("")
+			setIsDefaultPin(false)
+		},
+		onError: (error: Error) => {
+			toast({
+				title: "PIN Change Failed",
+				description: error.message || "Failed to change PIN. Please check your current PIN.",
+				variant: "destructive",
+			})
+		},
+	})
 
-  // Cloud Sync Functions - Optimized for silent operation
-  const handleTestConnection = useCallback(async () => {
-    if (!cloudUrl.trim()) {
-      toast({
-        title: "Connection URL Required",
-        description: "Please enter a PostgreSQL connection URL.",
-        variant: "destructive",
-      })
-      return
-    }
+	// Cloud Sync Functions - Optimized for silent operation
+	const handleTestConnection = useCallback(async () => {
+		if (!cloudUrl.trim()) {
+			toast({
+				title: "Connection URL Required",
+				description: "Please enter a PostgreSQL connection URL.",
+				variant: "destructive",
+			})
+			return
+		}
 
-    if (!cloudUrl.includes('postgresql://') || !cloudUrl.includes('@')) {
-      setCloudConnectionStatus("error")
-      toast({
-        title: "Invalid Format",
-        description: "URL must be in format: postgresql://user:password@host/database",
-        variant: "destructive",
-      })
-      return
-    }
+		if (!cloudUrl.includes('postgresql://') || !cloudUrl.includes('@')) {
+			setCloudConnectionStatus("error")
+			toast({
+				title: "Invalid Format",
+				description: "URL must be in format: postgresql://user:password@host/database",
+				variant: "destructive",
+			})
+			return
+		}
 
-    setCloudConnectionStatus("testing")
-    try {
-      const response = await authenticatedRequest("/api/cloud/test-connection", {
-        method: "POST",
-        body: JSON.stringify({ connectionUrl: cloudUrl }),
-      })
-      
-      if (response.ok) {
-        setCloudConnectionStatus("success")
-        
-        await authenticatedRequest("/api/cloud/save-settings", {
-          method: "POST",
-          body: JSON.stringify({ connectionUrl: cloudUrl, syncEnabled: true }),
-        })
-        
-        toast({
-          title: "Connection Successful",
-          description: response.message || "Connected to cloud database successfully.",
-        })
-      } else {
-        setCloudConnectionStatus("error")
-        toast({
-          title: "Connection Failed",
-          description: response.error || response.details || "Could not connect to cloud database.",
-          variant: "destructive",
-        })
-      }
-    } catch (error: any) {
-      setCloudConnectionStatus("error")
-      toast({
-        title: "Connection Failed",
-        description: error.message || "Could not connect to cloud database.",
-        variant: "destructive",
-      })
-    }
-  }, [cloudUrl, authenticatedRequest, toast])
+		setCloudConnectionStatus("testing")
+		try {
+			const response = await authenticatedRequest("/api/cloud/test-connection", {
+				method: "POST",
+				body: JSON.stringify({ connectionUrl: cloudUrl }),
+			})
+			
+			if (response.ok) {
+				setCloudConnectionStatus("success")
+				
+				await authenticatedRequest("/api/cloud/save-settings", {
+					method: "POST",
+					body: JSON.stringify({ connectionUrl: cloudUrl, syncEnabled: true }),
+				})
+				
+				toast({
+					title: "Connection Successful",
+					description: response.message || "Connected to cloud database successfully.",
+				})
+			} else {
+				setCloudConnectionStatus("error")
+				toast({
+					title: "Connection Failed",
+					description: response.error || response.details || "Could not connect to cloud database.",
+					variant: "destructive",
+				})
+			}
+		} catch (error: any) {
+			setCloudConnectionStatus("error")
+			toast({
+				title: "Connection Failed",
+				description: error.message || "Could not connect to cloud database.",
+				variant: "destructive",
+			})
+		}
+	}, [cloudUrl, authenticatedRequest, toast])
 
-  const handleExportToCloud = useCallback(async () => {
-    if (!cloudUrl.trim() || cloudSyncStatus !== "idle") return
+	// --- NEW: Persist UI state to survive reloads ---
+	const UI_STATE_KEY = "audit:uiState";
+	const saveUiStateDebounceRef = useRef<number | null>(null);
 
-    setCloudSyncStatus("exporting")
-    
-    try {
-      const response = await authenticatedRequest("/api/cloud/export", {
-        method: "POST",
-      })
-      
-      if (response.ok) {
-        setLastExportCounts(response.counts || {})
-        setLastSyncTime(new Date())
-        
-        toast({
-          title: "Export Complete",
-          description: response.message || "Data exported to cloud successfully.",
-        })
-      } else {
-        toast({
-          title: "Export Failed",
-          description: response.error || "Could not export data to cloud.",
-          variant: "destructive",
-        })
-      }
-    } catch (error: any) {
-      toast({
-        title: "Export Failed",
-        description: error.message || "Could not export data to cloud.",
-        variant: "destructive",
-      })
-    } finally {
-      setCloudSyncStatus("idle")
-    }
-  }, [cloudUrl, cloudSyncStatus, authenticatedRequest, toast])
+	const saveUiState = useCallback(() => {
+		if (saveUiStateDebounceRef.current) {
+			clearTimeout(saveUiStateDebounceRef.current);
+		}
+		// debounce small changes to avoid frequent writes
+		saveUiStateDebounceRef.current = (window.setTimeout(() => {
+			const state = {
+				settingsTab,
+				pinInput,
+				pinError,
+				isDefaultPin,
+				showPinDialog,
+				autoSyncEnabled,
+				syncInterval,
+				cloudUrl,
+				cloudConnectionStatus,
+				cloudSyncStatus,
+				lastSyncTime: lastSyncTime ? lastSyncTime.toISOString() : null,
+			};
+			try {
+				sessionStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
+			} catch (e) {
+				// ignore storage errors
+			}
+		}, 200) as unknown) as number;
+	}, [settingsTab, pinInput, pinError, isDefaultPin, showPinDialog, autoSyncEnabled, syncInterval, cloudUrl, cloudConnectionStatus, cloudSyncStatus, lastSyncTime]);
 
-  const handleImportFromCloud = useCallback(async () => {
-    if (!cloudUrl.trim()) {
-      toast({
-        title: "Connection URL Required",
-        description: "Please enter and save a PostgreSQL connection URL first.",
-        variant: "destructive",
-      })
-      return
-    }
+	const restoreUiState = useCallback(() => {
+		try {
+			const raw = sessionStorage.getItem(UI_STATE_KEY);
+			if (!raw) return;
+			const parsed = JSON.parse(raw);
+			if (parsed.settingsTab) setSettingsTab(parsed.settingsTab);
+			if (Array.isArray(parsed.pinInput)) setPinInput(parsed.pinInput);
+			if (parsed.pinError) setPinError(parsed.pinError);
+			if (parsed.isDefaultPin) setIsDefaultPin(parsed.isDefaultPin);
+			if (typeof parsed.showPinDialog === "boolean") setShowPinDialog(parsed.showPinDialog);
+			if (typeof parsed.autoSyncEnabled === "boolean") setAutoSyncEnabled(parsed.autoSyncEnabled);
+			if (parsed.syncInterval) setSyncInterval(parsed.syncInterval);
+			if (parsed.cloudUrl) setCloudUrl(parsed.cloudUrl);
+			if (parsed.cloudConnectionStatus) setCloudConnectionStatus(parsed.cloudConnectionStatus);
+			if (parsed.cloudSyncStatus) setCloudSyncStatus(parsed.cloudSyncStatus);
+			if (parsed.lastSyncTime) setLastSyncTime(new Date(parsed.lastSyncTime));
+		} catch (e) {
+			// ignore JSON parse errors
+		}
+	}, []);
 
-    setCloudSyncStatus("importing")
-    try {
-      const response = await authenticatedRequest("/api/cloud/import", {
-        method: "POST",
-      })
-      
-      if (response.ok) {
-        setLastImportCounts(response.counts || {})
-        setLastSyncTime(new Date())
-        
-        toast({
-          title: "Import Complete",
-          description: response.message || "Data imported from cloud successfully.",
-        })
-      } else {
-        toast({
-          title: "Import Failed",
-          description: response.error || "Could not import data from cloud.",
-          variant: "destructive",
-        })
-      }
-    } catch (error: any) {
-      toast({
-        title: "Import Failed",
-        description: error.message || "Could not import data from cloud.",
-        variant: "destructive",
-      })
-    } finally {
-      setCloudSyncStatus("idle")
-    }
-  }, [cloudUrl, authenticatedRequest, toast])
+	useEffect(() => {
+		restoreUiState();
+		// save on state changes
+		saveUiState();
+		return () => {
+			// persist before unmount
+			saveUiState();
+			if (saveUiStateDebounceRef.current) {
+				clearTimeout(saveUiStateDebounceRef.current);
+			}
+		};
+		// intentionally omit saveUiState from deps to avoid frequent rebinds
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [restoreUiState]);
 
-  const toggleAutoSync = useCallback(async (enabled: boolean) => {
-    try {
-      const response = await authenticatedRequest("/api/cloud/auto-sync", {
-        method: "POST",
-        body: JSON.stringify({ enabled, interval: syncInterval }),
-      })
-      
-      if (response.ok) {
-        setAutoSyncEnabled(enabled)
-        
-        toast({
-          title: enabled ? "Auto-Sync Enabled" : "Auto-Sync Disabled",
-          description: enabled 
-            ? `Auto-syncing every ${syncInterval} minutes.` 
-            : "Automatic synchronization has been turned off.",
-        })
-      } else {
-        toast({
-          title: "Failed to Update Auto-Sync",
-          description: response.error || "Could not update auto-sync settings.",
-          variant: "destructive",
-        })
-      }
-    } catch (error: any) {
-      toast({
-        title: "Failed to Update Auto-Sync",
-        description: error.message || "Could not update auto-sync settings.",
-        variant: "destructive",
-      })
-    }
-  }, [syncInterval, authenticatedRequest, toast])
+	// also save when important UI pieces change
+	useEffect(() => { saveUiState(); }, [settingsTab, pinInput, showPinDialog, autoSyncEnabled, syncInterval, cloudUrl, cloudConnectionStatus, cloudSyncStatus, lastSyncTime]);
 
-  useEffect(() => {
-    const storedToken = sessionStorage.getItem("auditToken")
-    const storedVerified = sessionStorage.getItem("auditVerified")
+	// --- NEW: Observe cloud sync markers in other tabs/windows and show non-intrusive info ---
+	useEffect(() => {
+		const onStorage = (e: StorageEvent) => {
+			if (e.key === "cloudSyncInProgress") {
+				if (e.newValue === "1") {
+					toast({ title: "Cloud sync started", description: "Background sync in progress. UI will not reload." });
+				} else {
+					toast({ title: "Cloud sync finished", description: "Background sync completed." });
+					// selective refresh if needed - do not reload whole app
+					queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+					queryClient.invalidateQueries({ queryKey: ["/api/colors"] });
+					queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+					queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+					queryClient.invalidateQueries({ queryKey: ["/api/stock-in-history"] });
+					queryClient.invalidateQueries({ queryKey: ["/api/returns"] });
+					queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] });
+				}
+			}
+		};
+		window.addEventListener("storage", onStorage);
+		return () => window.removeEventListener("storage", onStorage);
+	}, [toast]);
 
-    if (storedVerified === "true" && storedToken) {
-      setIsVerified(true)
-      setAuditToken(storedToken)
-      setShowPinDialog(false)
-    }
-  }, [])
+	// --- CHANGES: make cloud actions set cloudSyncInProgress flag and only selectively invalidate queries ---
+	const handleExportToCloud = useCallback(async () => {
+		if (!cloudUrl.trim() || cloudSyncStatus !== "idle") return
+		setCloudSyncStatus("exporting")
+		try {
+			localStorage.setItem("cloudSyncInProgress", "1")
+			// notify other windows/tabs
+			localStorage.setItem("cloudSyncInProgress", "1")
+			const response = await authenticatedRequest("/api/cloud/export", { method: "POST" })
+			if (response.ok) {
+				setLastExportCounts(response.counts || {})
+				setLastSyncTime(new Date())
+				// selective invalidation - avoid full app refresh
+				queryClient.invalidateQueries({ queryKey: ["/api/products"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+				toast({ title: "Export Complete", description: response.message || "Data exported to cloud successfully." })
+			} else {
+				toast({ title: "Export Failed", description: response.error || "Could not export data to cloud.", variant: "destructive" })
+			}
+		} catch (error: any) {
+			toast({ title: "Export Failed", description: error.message || "Could not export data to cloud.", variant: "destructive" })
+		} finally {
+			setCloudSyncStatus("idle")
+			localStorage.removeItem("cloudSyncInProgress")
+		}
+	}, [cloudUrl, cloudSyncStatus, authenticatedRequest, toast])
 
-  useEffect(() => {
-    if (appSettings?.cloudDatabaseUrl && !cloudUrl) {
-      setCloudUrl(appSettings.cloudDatabaseUrl)
-      if (appSettings.cloudSyncEnabled) {
-        setCloudConnectionStatus("success")
-        setAutoSyncEnabled(true)
-        setSyncInterval(appSettings.cloudSyncInterval || 5)
-      }
-    }
-  }, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled, appSettings?.cloudSyncInterval])
+	const handleImportFromCloud = useCallback(async () => {
+		if (!cloudUrl.trim()) {
+			toast({ title: "Connection URL Required", description: "Please enter and save a PostgreSQL connection URL first.", variant: "destructive" })
+			return
+		}
+		setCloudSyncStatus("importing")
+		try {
+			localStorage.setItem("cloudSyncInProgress", "1")
+			const response = await authenticatedRequest("/api/cloud/import", { method: "POST" })
+			if (response.ok) {
+				setLastImportCounts(response.counts || {})
+				setLastSyncTime(new Date())
+				// selective invalidation only for affected keys
+				queryClient.invalidateQueries({ queryKey: ["/api/products"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/colors"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/sales"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/settings"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/stock-in-history"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/returns"] })
+				queryClient.invalidateQueries({ queryKey: ["/api/payment-history"] })
+				toast({ title: "Import Complete", description: response.message || "Data imported from cloud successfully." })
+			} else {
+				toast({ title: "Import Failed", description: response.error || "Could not import data from cloud.", variant: "destructive" })
+			}
+		} catch (error: any) {
+			toast({ title: "Import Failed", description: error.message || "Could not import data from cloud.", variant: "destructive" })
+		} finally {
+			setCloudSyncStatus("idle")
+			localStorage.removeItem("cloudSyncInProgress")
+		}
+	}, [cloudUrl, authenticatedRequest, toast])
 
-  const handlePinInput = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return
+	const toggleAutoSync = useCallback(async (enabled: boolean) => {
+		try {
+			const response = await authenticatedRequest("/api/cloud/auto-sync", {
+				method: "POST",
+				body: JSON.stringify({ enabled, interval: syncInterval }),
+			})
+			
+			if (response.ok) {
+				setAutoSyncEnabled(enabled)
+				
+				toast({
+					title: enabled ? "Auto-Sync Enabled" : "Auto-Sync Disabled",
+					description: enabled 
+						? `Auto-syncing every ${syncInterval} minutes.` 
+						: "Automatic synchronization has been turned off.",
+				})
+			} else {
+				toast({
+					title: "Failed to Update Auto-Sync",
+					description: response.error || "Could not update auto-sync settings.",
+					variant: "destructive",
+				})
+			}
+		} catch (error: any) {
+			toast({
+				title: "Failed to Update Auto-Sync",
+				description: error.message || "Could not update auto-sync settings.",
+				variant: "destructive",
+			})
+		}
+	}, [syncInterval, authenticatedRequest, toast])
 
-    const newPinInput = [...pinInput]
-    newPinInput[index] = value.slice(-1)
-    setPinInput(newPinInput)
-    setPinError("")
+	useEffect(() => {
+		const storedToken = sessionStorage.getItem("auditToken")
+		const storedVerified = sessionStorage.getItem("auditVerified")
 
-    if (value && index < 3) {
-      const nextInput = document.getElementById(`pin-${index + 1}`)
-      nextInput?.focus()
-    }
+		if (storedVerified === "true" && storedToken) {
+			setIsVerified(true)
+			setAuditToken(storedToken)
+			setShowPinDialog(false)
+		}
+	}, [])
 
-    if (index === 3 && value) {
-      const fullPin = newPinInput.join("")
-      if (fullPin.length === 4) {
-        verifyPinMutation.mutate(fullPin)
-      }
-    }
-  }
+	useEffect(() => {
+		if (appSettings?.cloudDatabaseUrl && !cloudUrl) {
+			setCloudUrl(appSettings.cloudDatabaseUrl)
+			if (appSettings.cloudSyncEnabled) {
+				setCloudConnectionStatus("success")
+				setAutoSyncEnabled(true)
+				setSyncInterval(appSettings.cloudSyncInterval || 5)
+			}
+		}
+	}, [appSettings?.cloudDatabaseUrl, appSettings?.cloudSyncEnabled, appSettings?.cloudSyncInterval])
 
-  const handlePinKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !pinInput[index] && index > 0) {
-      const prevInput = document.getElementById(`pin-${index - 1}`)
-      prevInput?.focus()
-    }
-  }
+	const handlePinInput = (index: number, value: string) => {
+		if (!/^\d*$/.test(value)) return
 
-  const handlePinChange = () => {
-    if (newPin !== confirmPin) {
-      toast({
-        title: "PIN Mismatch",
-        description: "New PIN and confirmation do not match.",
-        variant: "destructive",
-      })
-      return
-    }
+		const newPinInput = [...pinInput]
+		newPinInput[index] = value.slice(-1)
+		setPinInput(newPinInput)
+		setPinError("")
 
-    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
-      toast({
-        title: "Invalid PIN",
-        description: "PIN must be exactly 4 digits.",
-        variant: "destructive",
-      })
-      return
-    }
+		if (value && index < 3) {
+			const nextInput = document.getElementById(`pin-${index + 1}`)
+			nextInput?.focus()
+		}
 
-    changePinMutation.mutate({
-      currentPin: currentPin || "0000",
-      newPin: newPin,
-    })
-  }
+		if (index === 3 && value) {
+			const fullPin = newPinInput.join("")
+			if (fullPin.length === 4) {
+				verifyPinMutation.mutate(fullPin)
+			}
+		}
+	}
 
-  if (showPinDialog) {
-    return (
-      <Dialog open={showPinDialog} onOpenChange={() => {}}>
-        <DialogContent
-          className="sm:max-w-md"
-          onPointerDownOutside={(e) => e.preventDefault()}
-        >
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 justify-center text-xl">
-              <ShieldCheck className="h-6 w-6 text-primary" />
-              Audit PIN Verification
-            </DialogTitle>
-            <DialogDescription className="text-center">
-              Enter your 4-digit PIN to access Audit Reports
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            {hasPin && !hasPin.hasPin && (
-              <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
-                <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  Default PIN is <strong>0000</strong>. Please change it after login.
-                </p>
-              </div>
-            )}
+	const handlePinKeyDown = (index: number, e: React.KeyboardEvent) => {
+		if (e.key === "Backspace" && !pinInput[index] && index > 0) {
+			const prevInput = document.getElementById(`pin-${index - 1}`)
+			prevInput?.focus()
+		}
+	}
 
-            <div className="flex justify-center gap-3">
-              {[0, 1, 2, 3].map((index) => (
-                <input
-                  key={index}
-                  id={`pin-${index}`}
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={1}
-                  value={pinInput[index]}
-                  onChange={(e) => handlePinInput(index, e.target.value)}
-                  onKeyDown={(e) => handlePinKeyDown(index, e)}
-                  className="w-14 h-14 text-center text-2xl font-bold border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                  autoFocus={index === 0}
-                  autoComplete="off"
-                />
-              ))}
-            </div>
+	const handlePinChange = () => {
+		if (newPin !== confirmPin) {
+			toast({
+				title: "PIN Mismatch",
+				description: "New PIN and confirmation do not match.",
+				variant: "destructive",
+			})
+			return
+		}
 
-            {pinError && <p className="text-center text-sm text-destructive">{pinError}</p>}
+		if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) {
+			toast({
+				title: "Invalid PIN",
+				description: "PIN must be exactly 4 digits.",
+				variant: "destructive",
+			})
+			return
+		}
 
-            {verifyPinMutation.isPending && (
-              <div className="flex justify-center">
-                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
+		changePinMutation.mutate({
+			currentPin: currentPin || "0000",
+			newPin: newPin,
+		})
+	}
 
-  return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="m-4 mb-0 p-4">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-bold">Audit Settings</h1>
-          </div>
-        </div>
+	if (showPinDialog) {
+		return (
+			<Dialog open={showPinDialog} onOpenChange={() => {}}>
+				<DialogContent
+					className="sm:max-w-md"
+					onPointerDownOutside={(e) => e.preventDefault()}
+				>
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2 justify-center text-xl">
+							<ShieldCheck className="h-6 w-6 text-primary" />
+							Audit PIN Verification
+						</DialogTitle>
+						<DialogDescription className="text-center">
+							Enter your 4-digit PIN to access Audit Reports
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-6 py-4">
+						{hasPin && !hasPin.hasPin && (
+							<div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
+								<AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+								<p className="text-sm text-yellow-700 dark:text-yellow-300">
+									Default PIN is <strong>0000</strong>. Please change it after login.
+								</p>
+							</div>
+						)}
 
-        <div className="mt-4 border-t pt-4">
-          <div className="flex items-center gap-2">
-            <Settings className="h-5 w-5 text-muted-foreground" />
-            <span className="text-sm font-medium">Audit Settings & Cloud Sync</span>
-          </div>
-        </div>
-      </div>
+						<div className="flex justify-center gap-3">
+							{[0, 1, 2, 3].map((index) => (
+								<input
+									key={index}
+									id={`pin-${index}`}
+									type="text"
+									inputMode="numeric"
+									pattern="[0-9]*"
+									maxLength={1}
+									value={pinInput[index]}
+									onChange={(e) => handlePinInput(index, e.target.value)}
+									onKeyDown={(e) => handlePinKeyDown(index, e)}
+									className="w-14 h-14 text-center text-2xl font-bold border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+									autoFocus={index === 0}
+									autoComplete="off"
+								/>
+							))}
+						</div>
 
-      <div className="flex-1 overflow-hidden mt-4">
-        <div className="h-full overflow-hidden">
-          <div className="h-full overflow-auto p-4">
-            <div className="max-w-4xl mx-auto">
-              <Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
-                <TabsList className="grid grid-cols-4 mb-6">
-                  <TabsTrigger value="pin" className="flex items-center gap-2">
-                    <Key className="h-4 w-4" />
-                    PIN
-                  </TabsTrigger>
-                  <TabsTrigger value="permissions" className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Permissions
-                  </TabsTrigger>
-                  <TabsTrigger value="cloud" className="flex items-center gap-2">
-                    <Cloud className="h-4 w-4" />
-                    Cloud Sync
-                  </TabsTrigger>
-                  <TabsTrigger value="system" className="flex items-center gap-2">
-                    <Cpu className="h-4 w-4" />
-                    System
-                  </TabsTrigger>
-                </TabsList>
+						{pinError && <p className="text-center text-sm text-destructive">{pinError}</p>}
 
-                {/* PIN SETTINGS TAB */}
-                <TabsContent value="pin" className="space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Lock className="h-5 w-5" />
-                        Change Audit PIN
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {isDefaultPin && (
-                        <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
-                          <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                          <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                            You are using the default PIN. Please change it for security.
-                          </p>
-                        </div>
-                      )}
+						{verifyPinMutation.isPending && (
+							<div className="flex justify-center">
+								<RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+							</div>
+						)}
+					</div>
+				</DialogContent>
+			</Dialog>
+		)
+	}
 
-                      <div className="space-y-2">
-                        <Label htmlFor="currentPin">Current PIN</Label>
-                        <div className="relative">
-                          <Input
-                            id="currentPin"
-                            type={showCurrentPin ? "text" : "password"}
-                            value={currentPin}
-                            onChange={(e) => setCurrentPin(e.target.value)}
-                            placeholder={isDefaultPin ? "Default: 0000" : "Enter current PIN"}
-                            maxLength={4}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="absolute right-0 top-0"
-                            onClick={() => setShowCurrentPin(!showCurrentPin)}
-                          >
-                            {showCurrentPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </div>
+	return (
+		<div className="flex flex-col h-full overflow-hidden">
+			<div className="m-4 mb-0 p-4">
+				<div className="flex items-center justify-between gap-4 flex-wrap">
+					<div className="flex items-center gap-2">
+						<ShieldCheck className="h-6 w-6 text-primary" />
+						<h1 className="text-2xl font-bold">Audit Settings</h1>
+					</div>
+				</div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="newPin">New PIN</Label>
-                        <div className="relative">
-                          <Input
-                            id="newPin"
-                            type={showNewPin ? "text" : "password"}
-                            value={newPin}
-                            onChange={(e) => setNewPin(e.target.value)}
-                            placeholder="Enter new 4-digit PIN"
-                            maxLength={4}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="absolute right-0 top-0"
-                            onClick={() => setShowNewPin(!showNewPin)}
-                          >
-                            {showNewPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </div>
+				<div className="mt-4 border-t pt-4">
+					<div className="flex items-center gap-2">
+						<Settings className="h-5 w-5 text-muted-foreground" />
+						<span className="text-sm font-medium">Audit Settings & Cloud Sync</span>
+					</div>
+				</div>
+			</div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="confirmPin">Confirm New PIN</Label>
-                        <div className="relative">
-                          <Input
-                            id="confirmPin"
-                            type={showConfirmPin ? "text" : "password"}
-                            value={confirmPin}
-                            onChange={(e) => setConfirmPin(e.target.value)}
-                            placeholder="Confirm new PIN"
-                            maxLength={4}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="absolute right-0 top-0"
-                            onClick={() => setShowConfirmPin(!showConfirmPin)}
-                          >
-                            {showConfirmPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </div>
+			<div className="flex-1 overflow-hidden mt-4">
+				<div className="h-full overflow-hidden">
+					<div className="h-full overflow-auto p-4">
+						<div className="max-w-4xl mx-auto">
+							<Tabs value={settingsTab} onValueChange={setSettingsTab} className="w-full">
+								<TabsList className="grid grid-cols-4 mb-6">
+									<TabsTrigger value="pin" className="flex items-center gap-2">
+										<Key className="h-4 w-4" />
+										PIN
+									</TabsTrigger>
+									<TabsTrigger value="permissions" className="flex items-center gap-2">
+										<Users className="h-4 w-4" />
+										Permissions
+									</TabsTrigger>
+									<TabsTrigger value="cloud" className="flex items-center gap-2">
+										<Cloud className="h-4 w-4" />
+										Cloud Sync
+									</TabsTrigger>
+									<TabsTrigger value="system" className="flex items-center gap-2">
+										<Cpu className="h-4 w-4" />
+										System
+									</TabsTrigger>
+								</TabsList>
 
-                      <Button
-                        onClick={handlePinChange}
-                        className="w-full"
-                        disabled={changePinMutation.isPending}
-                      >
-                        {changePinMutation.isPending ? (
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Lock className="h-4 w-4 mr-2" />
-                        )}
-                        Change PIN
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
+								{/* PIN SETTINGS TAB */}
+								<TabsContent value="pin" className="space-y-6">
+									<Card>
+										<CardHeader>
+											<CardTitle className="flex items-center gap-2">
+												<Lock className="h-5 w-5" />
+												Change Audit PIN
+											</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-4">
+											{isDefaultPin && (
+												<div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md">
+													<AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+													<p className="text-sm text-yellow-700 dark:text-yellow-300">
+														You are using the default PIN. Please change it for security.
+													</p>
+												</div>
+											)}
 
-                {/* PERMISSIONS TAB */}
-                <TabsContent value="permissions" className="space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <ShieldCheck className="h-5 w-5" />
-                        Access Control Permissions
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <p className="text-sm text-muted-foreground">
-                        Control which actions are allowed in the application. Disabled actions will be hidden throughout
-                        the software.
-                      </p>
+											<div className="space-y-2">
+												<Label htmlFor="currentPin">Current PIN</Label>
+												<div className="relative">
+													<Input
+														id="currentPin"
+														type={showCurrentPin ? "text" : "password"}
+														value={currentPin}
+														onChange={(e) => setCurrentPin(e.target.value)}
+														placeholder={isDefaultPin ? "Default: 0000" : "Enter current PIN"}
+														maxLength={4}
+													/>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon"
+														className="absolute right-0 top-0"
+														onClick={() => setShowCurrentPin(!showCurrentPin)}
+													>
+														{showCurrentPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+													</Button>
+												</div>
+											</div>
 
-                      <div className="space-y-4">
-                        <div className="border-b pb-3">
-                          <h4 className="font-medium flex items-center gap-2 mb-3">
-                            <Package className="h-4 w-4" />
-                            Stock Management
-                          </h4>
-                          <div className="space-y-3 pl-6">
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-0.5">
-                                <Label className="flex items-center gap-2">
-                                  <Edit className="h-4 w-4 text-blue-500" />
-                                  Edit Products/Variants/Colors
-                                </Label>
-                                <p className="text-xs text-muted-foreground">Allow editing stock items</p>
-                              </div>
-                              <Switch
-                                checked={appSettings?.permStockEdit ?? true}
-                                onCheckedChange={(checked) => handlePermissionChange("permStockEdit", checked)}
-                              />
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-0.5">
-                                <Label className="flex items-center gap-2">
-                                  <Trash2 className="h-4 w-4 text-red-500" />
-                                  Delete Products/Variants/Colors
-                                </Label>
-                                <p className="text-xs text-muted-foreground">Allow deleting stock items</p>
-                              </div>
-                              <Switch
-                                checked={appSettings?.permStockDelete ?? true}
-                                onCheckedChange={(checked) => handlePermissionChange("permStockDelete", checked)}
-                              />
-                            </div>
-                          </div>
-                        </div>
+											<div className="space-y-2">
+												<Label htmlFor="newPin">New PIN</Label>
+												<div className="relative">
+													<Input
+														id="newPin"
+														type={showNewPin ? "text" : "password"}
+														value={newPin}
+														onChange={(e) => setNewPin(e.target.value)}
+														placeholder="Enter new 4-digit PIN"
+														maxLength={4}
+													/>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon"
+														className="absolute right-0 top-0"
+														onClick={() => setShowNewPin(!showNewPin)}
+													>
+														{showNewPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+													</Button>
+												</div>
+											</div>
 
-                        <div className="border-b pb-3">
-                          <h4 className="font-medium flex items-center gap-2 mb-3">
-                            <Receipt className="h-4 w-4" />
-                            Sales / Bills
-                          </h4>
-                          <div className="space-y-3 pl-6">
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-0.5">
-                                <Label className="flex items-center gap-2">
-                                  <Edit className="h-4 w-4 text-blue-500" />
-                                  Edit Bills
-                                </Label>
-                                <p className="text-xs text-muted-foreground">Allow editing sales bills</p>
-                              </div>
-                              <Switch
-                                checked={appSettings?.permSalesEdit ?? true}
-                                onCheckedChange={(checked) => handlePermissionChange("permSalesEdit", checked)}
-                              />
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-0.5">
-                                <Label className="flex items-center gap-2">
-                                  <Trash2 className="h-4 w-4 text-red-500" />
-                                  Delete Bills
-                                </Label>
-                                <p className="text-xs text-muted-foreground">Allow deleting sales bills</p>
-                              </div>
-                              <Switch
-                                checked={appSettings?.permSalesDelete ?? true}
-                                onCheckedChange={(checked) => handlePermissionChange("permSalesDelete", checked)}
-                              />
-                            </div>
-                          </div>
-                        </div>
+											<div className="space-y-2">
+												<Label htmlFor="confirmPin">Confirm New PIN</Label>
+												<div className="relative">
+													<Input
+														id="confirmPin"
+														type={showConfirmPin ? "text" : "password"}
+														value={confirmPin}
+														onChange={(e) => setConfirmPin(e.target.value)}
+														placeholder="Confirm new PIN"
+														maxLength={4}
+													/>
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon"
+														className="absolute right-0 top-0"
+														onClick={() => setShowConfirmPin(!showConfirmPin)}
+													>
+														{showConfirmPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+													</Button>
+												</div>
+											</div>
 
-                        <div className="border-b pb-3">
-                          <h4 className="font-medium flex items-center gap-2 mb-3">
-                            <CreditCard className="h-4 w-4" />
-                            Payments
-                          </h4>
-                          <div className="space-y-3 pl-6">
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-0.5">
-                                <Label className="flex items-center gap-2">
-                                  <Edit className="h-4 w-4 text-blue-500" />
-                                  Edit Payments
-                                </Label>
-                                <p className="text-xs text-muted-foreground">Allow editing payment records</p>
-                              </div>
-                              <Switch
-                                checked={appSettings?.permPaymentEdit ?? true}
-                                onCheckedChange={(checked) => handlePermissionChange("permPaymentEdit", checked)}
-                              />
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="space-y-0.5">
-                                <Label className="flex items-center gap-2">
-                                  <Trash2 className="h-4 w-4 text-red-500" />
-                                  Delete Payments
-                                </Label>
-                                <p className="text-xs text-muted-foreground">Allow deleting payment records</p>
-                              </div>
-                              <Switch
-                                checked={appSettings?.permPaymentDelete ?? true}
-                                onCheckedChange={(checked) => handlePermissionChange("permPaymentDelete", checked)}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
+											<Button
+												onClick={handlePinChange}
+												className="w-full"
+												disabled={changePinMutation.isPending}
+											>
+												{changePinMutation.isPending ? (
+													<RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+												) : (
+													<Lock className="h-4 w-4 mr-2" />
+												)}
+												Change PIN
+											</Button>
+										</CardContent>
+									</Card>
+								</TabsContent>
 
-                {/* CLOUD SYNC TAB */}
-                <TabsContent value="cloud" className="space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Cloud className="h-5 w-5 text-blue-500" />
-                        Cloud Database Sync
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <div className="text-sm text-muted-foreground">
-                        Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
-                      </div>
+								{/* PERMISSIONS TAB */}
+								<TabsContent value="permissions" className="space-y-6">
+									<Card>
+										<CardHeader>
+											<CardTitle className="flex items-center gap-2">
+												<ShieldCheck className="h-5 w-5" />
+												Access Control Permissions
+											</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-6">
+											<p className="text-sm text-muted-foreground">
+												Control which actions are allowed in the application. Disabled actions will be hidden throughout
+												the software.
+											</p>
 
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="cloudUrl" className="flex items-center gap-2">
-                            <Database className="h-4 w-4" />
-                            PostgreSQL Connection URL
-                          </Label>
-                          <div className="relative">
-                            <Input
-                              id="cloudUrl"
-                              type={showCloudUrl ? "text" : "password"}
-                              value={cloudUrl}
-                              onChange={(e) => {
-                                setCloudUrl(e.target.value)
-                                setCloudConnectionStatus("idle")
-                              }}
-                              placeholder="postgresql://user:password@host/database"
-                              className="pr-20"
-                            />
-                            <div className="absolute right-0 top-0 flex">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setShowCloudUrl(!showCloudUrl)}
-                              >
-                                {showCloudUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                              </Button>
-                              {cloudConnectionStatus === "success" && (
-                                <div className="flex items-center text-green-500 pr-2">
-                                  <Check className="h-4 w-4" />
-                                </div>
-                              )}
-                              {cloudConnectionStatus === "error" && (
-                                <div className="flex items-center text-red-500 pr-2">
-                                  <XCircle className="h-4 w-4" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Example: postgresql://username:password@hostname/database
-                          </p>
-                        </div>
+											<div className="space-y-4">
+												<div className="border-b pb-3">
+													<h4 className="font-medium flex items-center gap-2 mb-3">
+														<Package className="h-4 w-4" />
+														Stock Management
+													</h4>
+													<div className="space-y-3 pl-6">
+														<div className="flex items-center justify-between">
+															<div className="space-y-0.5">
+																<Label className="flex items-center gap-2">
+																	<Edit className="h-4 w-4 text-blue-500" />
+																	Edit Products/Variants/Colors
+																</Label>
+																<p className="text-xs text-muted-foreground">Allow editing stock items</p>
+															</div>
+															<Switch
+																checked={appSettings?.permStockEdit ?? true}
+																onCheckedChange={(checked) => handlePermissionChange("permStockEdit", checked)}
+															/>
+														</div>
+														<div className="flex items-center justify-between">
+															<div className="space-y-0.5">
+																<Label className="flex items-center gap-2">
+																	<Trash2 className="h-4 w-4 text-red-500" />
+																	Delete Products/Variants/Colors
+																</Label>
+																<p className="text-xs text-muted-foreground">Allow deleting stock items</p>
+															</div>
+															<Switch
+																checked={appSettings?.permStockDelete ?? true}
+																onCheckedChange={(checked) => handlePermissionChange("permStockDelete", checked)}
+															/>
+														</div>
+													</div>
+												</div>
 
-                        <Button
-                          onClick={handleTestConnection}
-                          variant="outline"
-                          className="w-full bg-transparent"
-                          disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
-                        >
-                          {cloudConnectionStatus === "testing" ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : cloudConnectionStatus === "success" ? (
-                            <Check className="h-4 w-4 mr-2 text-green-500" />
-                          ) : cloudConnectionStatus === "error" ? (
-                            <XCircle className="h-4 w-4 mr-2 text-red-500" />
-                          ) : (
-                            <Database className="h-4 w-4 mr-2" />
-                          )}
-                          {cloudConnectionStatus === "testing"
-                            ? "Testing..."
-                            : cloudConnectionStatus === "success"
-                              ? "Connected"
-                              : cloudConnectionStatus === "error"
-                                ? "Connection Failed"
-                                : "Test Connection"}
-                        </Button>
+												<div className="border-b pb-3">
+													<h4 className="font-medium flex items-center gap-2 mb-3">
+														<Receipt className="h-4 w-4" />
+														Sales / Bills
+													</h4>
+													<div className="space-y-3 pl-6">
+														<div className="flex items-center justify-between">
+															<div className="space-y-0.5">
+																<Label className="flex items-center gap-2">
+																	<Edit className="h-4 w-4 text-blue-500" />
+																	Edit Bills
+																</Label>
+																<p className="text-xs text-muted-foreground">Allow editing sales bills</p>
+															</div>
+															<Switch
+																checked={appSettings?.permSalesEdit ?? true}
+																onCheckedChange={(checked) => handlePermissionChange("permSalesEdit", checked)}
+															/>
+														</div>
+														<div className="flex items-center justify-between">
+															<div className="space-y-0.5">
+																<Label className="flex items-center gap-2">
+																	<Trash2 className="h-4 w-4 text-red-500" />
+																	Delete Bills
+																</Label>
+																<p className="text-xs text-muted-foreground">Allow deleting sales bills</p>
+															</div>
+															<Switch
+																checked={appSettings?.permSalesDelete ?? true}
+																onCheckedChange={(checked) => handlePermissionChange("permSalesDelete", checked)}
+															/>
+														</div>
+													</div>
+												</div>
 
-                        <div className="border-t pt-4">
-                          <h4 className="font-medium mb-3 flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4" />
-                            Background Sync Settings
-                          </h4>
+												<div className="border-b pb-3">
+													<h4 className="font-medium flex items-center gap-2 mb-3">
+														<CreditCard className="h-4 w-4" />
+														Payments
+													</h4>
+													<div className="space-y-3 pl-6">
+														<div className="flex items-center justify-between">
+															<div className="space-y-0.5">
+																<Label className="flex items-center gap-2">
+																	<Edit className="h-4 w-4 text-blue-500" />
+																	Edit Payments
+																</Label>
+																<p className="text-xs text-muted-foreground">Allow editing payment records</p>
+															</div>
+															<Switch
+																checked={appSettings?.permPaymentEdit ?? true}
+																onCheckedChange={(checked) => handlePermissionChange("permPaymentEdit", checked)}
+															/>
+														</div>
+														<div className="flex items-center justify-between">
+															<div className="space-y-0.5">
+																<Label className="flex items-center gap-2">
+																	<Trash2 className="h-4 w-4 text-red-500" />
+																	Delete Payments
+																</Label>
+																<p className="text-xs text-muted-foreground">Allow deleting payment records</p>
+															</div>
+															<Switch
+																checked={appSettings?.permPaymentDelete ?? true}
+																onCheckedChange={(checked) => handlePermissionChange("permPaymentDelete", checked)}
+															/>
+														</div>
+													</div>
+												</div>
+											</div>
+										</CardContent>
+									</Card>
+								</TabsContent>
 
-                          <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                            <div className="space-y-0.5">
-                              <Label className="flex items-center gap-2">
-                                {autoSyncEnabled ? (
-                                  <Wifi className="h-4 w-4 text-green-500" />
-                                ) : (
-                                  <WifiOff className="h-4 w-4 text-gray-500" />
-                                )}
-                                Background Cloud Sync
-                              </Label>
-                              <p className="text-xs text-muted-foreground">
-                                {autoSyncEnabled
-                                  ? `Auto-syncing every ${syncInterval} minutes`
-                                  : "Manual sync only"}
-                              </p>
-                            </div>
-                            <Switch
-                              checked={autoSyncEnabled}
-                              onCheckedChange={toggleAutoSync}
-                            />
-                          </div>
-                          
-                          {autoSyncEnabled && (
-                            <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                              <div className="flex items-center justify-between">
-                                <Label className="text-sm">Sync Interval (minutes)</Label>
-                                <select 
-                                  value={syncInterval}
-                                  onChange={(e) => setSyncInterval(Number(e.target.value))}
-                                  className="w-32 p-2 border rounded-md"
-                                >
-                                  <option value="1">1 minute</option>
-                                  <option value="5">5 minutes</option>
-                                  <option value="15">15 minutes</option>
-                                  <option value="30">30 minutes</option>
-                                  <option value="60">1 hour</option>
-                                </select>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+								{/* CLOUD SYNC TAB */}
+								<TabsContent value="cloud" className="space-y-6">
+									<Card>
+										<CardHeader>
+											<CardTitle className="flex items-center gap-2">
+												<Cloud className="h-5 w-5 text-blue-500" />
+												Cloud Database Sync
+											</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-6">
+											<div className="text-sm text-muted-foreground">
+												Connect to a cloud PostgreSQL database (Neon, Supabase) to sync your data across multiple devices.
+											</div>
 
-                        <div className="border-t pt-4">
-                          <h4 className="font-medium mb-3 flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4" />
-                            Manual Sync Actions
-                          </h4>
+											<div className="space-y-4">
+												<div className="space-y-2">
+													<Label htmlFor="cloudUrl" className="flex items-center gap-2">
+														<Database className="h-4 w-4" />
+														PostgreSQL Connection URL
+													</Label>
+													<div className="relative">
+														<Input
+															id="cloudUrl"
+															type={showCloudUrl ? "text" : "password"}
+															value={cloudUrl}
+															onChange={(e) => {
+																setCloudUrl(e.target.value)
+																setCloudConnectionStatus("idle")
+															}}
+															placeholder="postgresql://user:password@host/database"
+															className="pr-20"
+														/>
+														<div className="absolute right-0 top-0 flex">
+															<Button
+																type="button"
+																variant="ghost"
+																size="icon"
+																onClick={() => setShowCloudUrl(!showCloudUrl)}
+															>
+																{showCloudUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+															</Button>
+															{cloudConnectionStatus === "success" && (
+																<div className="flex items-center text-green-500 pr-2">
+																	<Check className="h-4 w-4" />
+																</div>
+															)}
+															{cloudConnectionStatus === "error" && (
+																<div className="flex items-center text-red-500 pr-2">
+																	<XCircle className="h-4 w-4" />
+																</div>
+															)}
+														</div>
+													</div>
+													<p className="text-xs text-muted-foreground">
+														Example: postgresql://username:password@hostname/database
+													</p>
+												</div>
 
-                          <div className="grid grid-cols-2 gap-3">
-                            <Button
-                              onClick={handleExportToCloud}
-                              variant="default"
-                              disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
-                              className="flex items-center gap-2"
-                            >
-                              {cloudSyncStatus === "exporting" ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Upload className="h-4 w-4" />
-                              )}
-                              {cloudSyncStatus === "exporting" ? "Exporting..." : "Export to Cloud"}
-                            </Button>
+												<Button
+													onClick={handleTestConnection}
+													variant="outline"
+													className="w-full bg-transparent"
+													disabled={cloudConnectionStatus === "testing" || !cloudUrl.trim()}
+												>
+													{cloudConnectionStatus === "testing" ? (
+														<Loader2 className="h-4 w-4 mr-2 animate-spin" />
+													) : cloudConnectionStatus === "success" ? (
+														<Check className="h-4 w-4 mr-2 text-green-500" />
+													) : cloudConnectionStatus === "error" ? (
+														<XCircle className="h-4 w-4 mr-2 text-red-500" />
+													) : (
+														<Database className="h-4 w-4 mr-2" />
+													)}
+													{cloudConnectionStatus === "testing"
+														? "Testing..."
+														: cloudConnectionStatus === "success"
+															? "Connected"
+															: cloudConnectionStatus === "error"
+																? "Connection Failed"
+																: "Test Connection"}
+												</Button>
 
-                            <Button
-                              onClick={handleImportFromCloud}
-                              variant="outline"
-                              disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
-                              className="flex items-center gap-2 bg-transparent"
-                            >
-                              {cloudSyncStatus === "importing" ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Download className="h-4 w-4" />
-                              )}
-                              {cloudSyncStatus === "importing" ? "Importing..." : "Import from Cloud"}
-                            </Button>
-                          </div>
-                        </div>
+												<div className="border-t pt-4">
+													<h4 className="font-medium mb-3 flex items-center gap-2">
+														<RefreshCw className="h-4 w-4" />
+														Background Sync Settings
+													</h4>
 
-                        <div className="border-t pt-4">
-                          <h4 className="font-medium mb-3 flex items-center gap-2">
-                            <Activity className="h-4 w-4" />
-                            Sync Status
-                          </h4>
+													<div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+														<div className="space-y-0.5">
+															<Label className="flex items-center gap-2">
+																{autoSyncEnabled ? (
+																	<Wifi className="h-4 w-4 text-green-500" />
+																) : (
+																	<WifiOff className="h-4 w-4 text-gray-500" />
+																)}
+																Background Cloud Sync
+															</Label>
+															<p className="text-xs text-muted-foreground">
+																{autoSyncEnabled
+																	? `Auto-syncing every ${syncInterval} minutes`
+																	: "Manual sync only"}
+															</p>
+														</div>
+														<Switch
+															checked={autoSyncEnabled}
+															onCheckedChange={toggleAutoSync}
+														/>
+													</div>
+													
+													{autoSyncEnabled && (
+														<div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+															<div className="flex items-center justify-between">
+																<Label className="text-sm">Sync Interval (minutes)</Label>
+																<select 
+																	value={syncInterval}
+																	onChange={(e) => setSyncInterval(Number(e.target.value))}
+																	className="w-32 p-2 border rounded-md"
+																>
+																	<option value="1">1 minute</option>
+																	<option value="5">5 minutes</option>
+																	<option value="15">15 minutes</option>
+																	<option value="30">30 minutes</option>
+																	<option value="60">1 hour</option>
+																</select>
+															</div>
+														</div>
+													)}
+												</div>
 
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm">Last Sync</span>
-                              </div>
-                              <span className="text-sm font-medium">
-                                {lastSyncTime 
-                                  ? lastSyncTime.toLocaleString('en-PK', { 
-                                      day: '2-digit', 
-                                      month: 'short', 
-                                      hour: '2-digit', 
-                                      minute: '2-digit',
-                                      hour12: true 
-                                    })
-                                  : "Never"
-                                }
-                              </span>
-                            </div>
+												<div className="border-t pt-4">
+													<h4 className="font-medium mb-3 flex items-center gap-2">
+														<RefreshCw className="h-4 w-4" />
+														Manual Sync Actions
+													</h4>
 
-                            {lastExportCounts && (
-                              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <Upload className="h-4 w-4 text-blue-500" />
-                                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Last Export</span>
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                  {lastExportCounts.products !== undefined && (
-                                    <div className="text-center">
-                                      <div className="font-bold text-blue-600">{lastExportCounts.products}</div>
-                                      <div className="text-muted-foreground">Products</div>
-                                    </div>
-                                  )}
-                                  {lastExportCounts.colors !== undefined && (
-                                    <div className="text-center">
-                                      <div className="font-bold text-blue-600">{lastExportCounts.colors}</div>
-                                      <div className="text-muted-foreground">Colors</div>
-                                    </div>
-                                  )}
-                                  {lastExportCounts.sales !== undefined && (
-                                    <div className="text-center">
-                                      <div className="font-bold text-blue-600">{lastExportCounts.sales}</div>
-                                      <div className="text-muted-foreground">Sales</div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
+													<div className="grid grid-cols-2 gap-3">
+														<Button
+															onClick={handleExportToCloud}
+															variant="default"
+															disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
+															className="flex items-center gap-2"
+														>
+															{cloudSyncStatus === "exporting" ? (
+																<Loader2 className="h-4 w-4 animate-spin" />
+															) : (
+																<Upload className="h-4 w-4" />
+															)}
+															{cloudSyncStatus === "exporting" ? "Exporting..." : "Export to Cloud"}
+														</Button>
 
-                            {lastImportCounts && (
-                              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <Download className="h-4 w-4 text-purple-500" />
-                                  <span className="text-sm font-medium text-purple-700 dark:text-purple-300">Last Import</span>
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                  {lastImportCounts.products !== undefined && (
-                                    <div className="text-center">
-                                      <div className="font-bold text-purple-600">{lastImportCounts.products}</div>
-                                      <div className="text-muted-foreground">Products</div>
-                                    </div>
-                                  )}
-                                  {lastImportCounts.colors !== undefined && (
-                                    <div className="text-center">
-                                      <div className="font-bold text-purple-600">{lastImportCounts.colors}</div>
-                                      <div className="text-muted-foreground">Colors</div>
-                                    </div>
-                                  )}
-                                  {lastImportCounts.sales !== undefined && (
-                                    <div className="text-center">
-                                      <div className="font-bold text-purple-600">{lastImportCounts.sales}</div>
-                                      <div className="text-muted-foreground">Sales</div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
+														<Button
+															onClick={handleImportFromCloud}
+															variant="outline"
+															disabled={cloudSyncStatus !== "idle" || !cloudUrl.trim()}
+															className="flex items-center gap-2 bg-transparent"
+														>
+															{cloudSyncStatus === "importing" ? (
+																<Loader2 className="h-4 w-4 animate-spin" />
+															) : (
+																<Download className="h-4 w-4" />
+															)}
+															{cloudSyncStatus === "importing" ? "Importing..." : "Import from Cloud"}
+														</Button>
+													</div>
+												</div>
 
-                {/* SYSTEM TAB */}
-                <TabsContent value="system" className="space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Cpu className="h-5 w-5" />
-                        System Information
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium">Cloud Status</Label>
-                          <div className="flex items-center gap-2">
-                            {cloudConnectionStatus === "success" ? (
-                              <Check className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-red-500" />
-                            )}
-                            <span className={cloudConnectionStatus === "success" ? "text-green-600" : "text-red-600"}>
-                              {cloudConnectionStatus === "success" ? "Connected" : "Not Connected"}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {cloudConnectionStatus === "success" ? "Cloud sync enabled" : "Manual sync only"}
-                          </p>
-                        </div>
+												<div className="border-t pt-4">
+													<h4 className="font-medium mb-3 flex items-center gap-2">
+														<Activity className="h-4 w-4" />
+														Sync Status
+													</h4>
 
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium">Auto-Sync</Label>
-                          <div className="flex items-center gap-2">
-                            {autoSyncEnabled ? (
-                              <Check className="h-4 w-4 text-green-500" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-gray-500" />
-                            )}
-                            <span className={autoSyncEnabled ? "text-green-600" : "text-gray-600"}>
-                              {autoSyncEnabled ? "Enabled" : "Disabled"}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {autoSyncEnabled 
-                              ? `Runs every ${syncInterval} minutes` 
-                              : "Manual sync only"}
-                          </p>
-                        </div>
-                      </div>
+													<div className="space-y-3">
+														<div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+															<div className="flex items-center gap-2">
+																<Clock className="h-4 w-4 text-muted-foreground" />
+																<span className="text-sm">Last Sync</span>
+															</div>
+															<span className="text-sm font-medium">
+																{lastSyncTime 
+																	? lastSyncTime.toLocaleString('en-PK', { 
+																		day: '2-digit', 
+																		month: 'short', 
+																		hour: '2-digit', 
+																		minute: '2-digit',
+																		hour12: true 
+																	})
+																	: "Never"
+																}
+															</span>
+														</div>
 
-                      <div className="border-t pt-4">
-                        <h4 className="font-medium mb-3">Quick Actions</h4>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Button
-                            variant="outline"
-                            className="flex items-center gap-2 bg-transparent"
-                            onClick={() => {
-                              queryClient.invalidateQueries()
-                              toast({
-                                title: "Data Refreshed",
-                                description: "Data has been refreshed from server.",
-                              })
-                            }}
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                            Refresh Data
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="flex items-center gap-2 bg-transparent"
-                            onClick={async () => {
-                              try {
-                                const response = await fetch("/api/database/export")
-                                if (response.ok) {
-                                  const blob = await response.blob()
-                                  const url = window.URL.createObjectURL(blob)
-                                  const a = document.createElement("a")
-                                  a.href = url
-                                  a.download = `paintpulse-backup-${new Date().toISOString().split("T")[0]}.db`
-                                  document.body.appendChild(a)
-                                  a.click()
-                                  document.body.removeChild(a)
-                                  window.URL.revokeObjectURL(url)
-                                  toast({
-                                    title: "Backup Complete",
-                                    description: "Database backup has been downloaded.",
-                                  })
-                                }
-                              } catch (error) {
-                                toast({
-                                  title: "Backup Failed", 
-                                  description: "Could not create database backup.",
-                                  variant: "destructive",
-                                })
-                              }
-                            }}
-                          >
-                            <Database className="h-4 w-4" />
-                            Backup Database
-                          </Button>
-                        </div>
-                      </div>
+														{lastExportCounts && (
+															<div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+																<div className="flex items-center gap-2 mb-2">
+																	<Upload className="h-4 w-4 text-blue-500" />
+																	<span className="text-sm font-medium text-blue-700 dark:text-blue-300">Last Export</span>
+																</div>
+																<div className="grid grid-cols-3 gap-2 text-xs">
+																	{lastExportCounts.products !== undefined && (
+																		<div className="text-center">
+																			<div className="font-bold text-blue-600">{lastExportCounts.products}</div>
+																			<div className="text-muted-foreground">Products</div>
+																		</div>
+																	)}
+																	{lastExportCounts.colors !== undefined && (
+																		<div className="text-center">
+																			<div className="font-bold text-blue-600">{lastExportCounts.colors}</div>
+																			<div className="text-muted-foreground">Colors</div>
+																		</div>
+																	)}
+																	{lastExportCounts.sales !== undefined && (
+																		<div className="text-center">
+																			<div className="font-bold text-blue-600">{lastExportCounts.sales}</div>
+																			<div className="text-muted-foreground">Sales</div>
+																		</div>
+																	)}
+																</div>
+															</div>
+														)}
 
-                      <div className="border-t pt-4">
-                        <div className="bg-gradient-to-r from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 rounded-lg p-4 border border-primary/20">
-                          <div className="text-center space-y-3">
-                            <div>
-                              <h3 className="text-lg font-bold text-foreground">
-                                PaintPulse POS System
-                              </h3>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                Point of Sale & Inventory Management
-                              </p>
-                            </div>
-                            <div className="border-t border-primary/20 pt-3">
-                              <p className="text-xs text-muted-foreground">
-                                Version 1.0.0 • Cloud Sync Enabled
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+														{lastImportCounts && (
+															<div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+																<div className="flex items-center gap-2 mb-2">
+																	<Download className="h-4 w-4 text-purple-500" />
+																	<span className="text-sm font-medium text-purple-700 dark:text-purple-300">Last Import</span>
+																</div>
+																<div className="grid grid-cols-3 gap-2 text-xs">
+																	{lastImportCounts.products !== undefined && (
+																		<div className="text-center">
+																			<div className="font-bold text-purple-600">{lastImportCounts.products}</div>
+																			<div className="text-muted-foreground">Products</div>
+																		</div>
+																	)}
+																	{lastImportCounts.colors !== undefined && (
+																		<div className="text-center">
+																			<div className="font-bold text-purple-600">{lastImportCounts.colors}</div>
+																			<div className="text-muted-foreground">Colors</div>
+																		</div>
+																	)}
+																	{lastImportCounts.sales !== undefined && (
+																		<div className="text-center">
+																			<div className="font-bold text-purple-600">{lastImportCounts.sales}</div>
+																			<div className="text-muted-foreground">Sales</div>
+																		</div>
+																	)}
+																</div>
+															</div>
+														)}
+													</div>
+												</div>
+											</div>
+										</CardContent>
+									</Card>
+								</TabsContent>
+
+								{/* SYSTEM TAB */}
+								<TabsContent value="system" className="space-y-6">
+									<Card>
+										<CardHeader>
+											<CardTitle className="flex items-center gap-2">
+												<Cpu className="h-5 w-5" />
+												System Information
+											</CardTitle>
+										</CardHeader>
+										<CardContent className="space-y-4">
+											<div className="grid grid-cols-2 gap-4">
+												<div className="space-y-2">
+													<Label className="text-sm font-medium">Cloud Status</Label>
+													<div className="flex items-center gap-2">
+														{cloudConnectionStatus === "success" ? (
+															<Check className="h-4 w-4 text-green-500" />
+														) : (
+															<XCircle className="h-4 w-4 text-red-500" />
+														)}
+														<span className={cloudConnectionStatus === "success" ? "text-green-600" : "text-red-600"}>
+															{cloudConnectionStatus === "success" ? "Connected" : "Not Connected"}
+														</span>
+													</div>
+													<p className="text-xs text-muted-foreground">
+														{cloudConnectionStatus === "success" ? "Cloud sync enabled" : "Manual sync only"}
+													</p>
+												</div>
+
+												<div className="space-y-2">
+													<Label className="text-sm font-medium">Auto-Sync</Label>
+													<div className="flex items-center gap-2">
+														{autoSyncEnabled ? (
+															<Check className="h-4 w-4 text-green-500" />
+														) : (
+															<XCircle className="h-4 w-4 text-gray-500" />
+														)}
+														<span className={autoSyncEnabled ? "text-green-600" : "text-gray-600"}>
+															{autoSyncEnabled ? "Enabled" : "Disabled"}
+														</span>
+													</div>
+													<p className="text-xs text-muted-foreground">
+														{autoSyncEnabled 
+															? `Runs every ${syncInterval} minutes` 
+															: "Manual sync only"}
+													</p>
+												</div>
+											</div>
+
+											<div className="border-t pt-4">
+												<h4 className="font-medium mb-3">Quick Actions</h4>
+												<div className="grid grid-cols-2 gap-3">
+													<Button
+														variant="outline"
+														className="flex items-center gap-2 bg-transparent"
+														onClick={() => {
+															queryClient.invalidateQueries()
+															toast({
+																title: "Data Refreshed",
+																description: "Data has been refreshed from server.",
+															})
+														}}
+													>
+														<RefreshCw className="h-4 w-4" />
+														Refresh Data
+													</Button>
+													<Button 
+														variant="outline" 
+														className="flex items-center gap-2 bg-transparent"
+														onClick={async () => {
+															try {
+																const response = await fetch("/api/database/export")
+																if (response.ok) {
+																	const blob = await response.blob()
+																	const url = window.URL.createObjectURL(blob)
+																	const a = document.createElement("a")
+																	a.href = url
+																	a.download = `paintpulse-backup-${new Date().toISOString().split("T")[0]}.db`
+																	document.body.appendChild(a)
+																	a.click()
+																	document.body.removeChild(a)
+																	window.URL.revokeObjectURL(url)
+																	toast({
+																		title: "Backup Complete",
+																		description: "Database backup has been downloaded.",
+																	})
+																}
+															} catch (error) {
+																toast({
+																	title: "Backup Failed", 
+																	description: "Could not create database backup.",
+																	variant: "destructive",
+																})
+															}
+														}}
+													>
+														<Database className="h-4 w-4" />
+														Backup Database
+													</Button>
+												</div>
+											</div>
+
+											<div className="border-t pt-4">
+												<div className="bg-gradient-to-r from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 rounded-lg p-4 border border-primary/20">
+													<div className="text-center space-y-3">
+														<div>
+															<h3 className="text-lg font-bold text-foreground">
+																PaintPulse POS System
+															</h3>
+															<p className="text-sm text-muted-foreground mt-1">
+																Point of Sale & Inventory Management
+															</p>
+														</div>
+														<div className="border-t border-primary/20 pt-3">
+															<p className="text-xs text-muted-foreground">
+																Version 1.0.0 • Cloud Sync Enabled
+															</p>
+														</div>
+													</div>
+												</div>
+											</div>
+										</CardContent>
+									</Card>
+								</TabsContent>
+							</Tabs>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	)
 }
