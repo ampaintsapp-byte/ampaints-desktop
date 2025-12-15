@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Tabs,
   TabsList,
@@ -18,13 +17,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap, CalendarDays } from "lucide-react";
+import { Key, Download, ShieldCheck, Lock, Eye, EyeOff, Calendar, Zap } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Admin() {
   const queryClient = useQueryClient();
-  const [, navigate] = useNavigate();
   const { toast } = useToast();
 
   // Admin PIN gating
