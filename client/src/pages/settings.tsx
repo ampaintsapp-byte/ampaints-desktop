@@ -419,28 +419,6 @@ export default function Settings() {
             variant: "destructive",
           });
         }
-
-        const handleTestCloudConnection = async () => {
-          if (!cloudConn) return
-          setIsTesting(true)
-          setTestResult(null)
-          try {
-            const res = await apiRequest("POST", "/api/cloud-sync/test-connection", { connectionString: cloudConn })
-            const json = await res.json()
-            if (res.ok && json.ok) {
-              setTestResult({ ok: true })
-              toast({ title: "Connection Successful", description: "Remote Postgres connection validated." })
-            } else {
-              setTestResult({ ok: false, error: json.error || "Connection failed" })
-              toast({ title: "Connection Failed", description: json.error || "Unable to connect", variant: "destructive" })
-            }
-          } catch (err: any) {
-            setTestResult({ ok: false, error: err.message || String(err) })
-            toast({ title: "Connection Error", description: err.message || String(err), variant: "destructive" })
-          } finally {
-            setIsTesting(false)
-          }
-        }
       } catch (error) {
         toast({
           title: "Error",
@@ -676,6 +654,28 @@ export default function Settings() {
       });
     } finally {
       setIsSettingLicense(false);
+    }
+  };
+
+  const handleTestCloudConnection = async () => {
+    if (!cloudConn) return;
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      const res = await apiRequest("POST", "/api/cloud-sync/test-connection", { connectionString: cloudConn });
+      const json = await res.json();
+      if (res.ok && json.ok) {
+        setTestResult({ ok: true });
+        toast({ title: "Connection Successful", description: "Remote Postgres connection validated." });
+      } else {
+        setTestResult({ ok: false, error: json.error || "Connection failed" });
+        toast({ title: "Connection Failed", description: json.error || "Unable to connect", variant: "destructive" });
+      }
+    } catch (err: any) {
+      setTestResult({ ok: false, error: err.message || String(err) });
+      toast({ title: "Connection Error", description: err.message || String(err), variant: "destructive" });
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -1001,8 +1001,6 @@ export default function Settings() {
             </Button>
           </div>
         </TabsContent>
-
-        {/* Cloud Sync moved to Admin (admin page) */}
 
         {/* Display Settings - Theme Controls */}
         <TabsContent value="display" className="space-y-4">
@@ -1365,35 +1363,6 @@ export default function Settings() {
           </div>
         </TabsContent>
         
-        {/* License management moved to Admin (admin page) */}
-
-                    <Button
-                      onClick={handleActivateLicense}
-                      disabled={isSettingLicense || !secretKeyInput.trim()}
-                      className="w-full bg-amber-600 hover:bg-amber-700"
-                      data-testid="button-activate-license"
-                    >
-                      {isSettingLicense ? "Activating..." : "Activate License"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Security Notes */}
-              <div className="p-4 bg-muted/50 rounded-lg border border-border/50">
-                <h4 className="text-sm font-medium mb-2">🔐 Security Information</h4>
-                <ul className="text-xs text-muted-foreground space-y-1">
-                  <li>✓ Secret key is never transmitted to any external server</li>
-                  <li>✓ Activation is verified locally using cryptographic hashing</li>
-                  <li>✓ Your database cannot be modified directly to bypass licensing</li>
-                  <li>✓ All license changes are logged for audit purposes</li>
-                  <li>✓ License status is checked on every application startup</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-        
         {/* Database Settings */}
         <TabsContent value="database" className="space-y-4">
           {!isDatabaseUnlocked ? (
@@ -1417,71 +1386,71 @@ export default function Settings() {
               </div>
             </div>
           ) : (
-          <div className="glass-card p-5" data-testid="card-database-settings">
-            <div className="flex items-center gap-2 mb-1">
-              <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              <h3 className="font-semibold">Database Management</h3>
-              <Badge variant="secondary" className="ml-2">Unlocked</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">Manage your database backups and restore data</p>
-            <div className="space-y-4">
-              {isElectron && (
-                <>
-                  <div className="space-y-2">
-                    <Label>Current Database Location</Label>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-muted/50 rounded-lg text-sm font-mono" data-testid="text-database-path">
-                        {databasePath || "Loading..."}
-                      </code>
-                    </div>
-                  </div>
-                  <Separator className="opacity-50" />
-                </>
-              )}
-
-              <div className="flex flex-wrap gap-3">
+            <div className="glass-card p-5" data-testid="card-database-settings">
+              <div className="flex items-center gap-2 mb-1">
+                <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-semibold">Database Management</h3>
+                <Badge variant="secondary" className="ml-2">Unlocked</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">Manage your database backups and restore data</p>
+              <div className="space-y-4">
                 {isElectron && (
-                  <Button 
-                    onClick={handleChangeDatabaseLocation}
-                    variant="outline"
-                    data-testid="button-change-location"
-                  >
-                    <FolderOpen className="h-4 w-4 mr-2" />
-                    Change Location
-                  </Button>
+                  <>
+                    <div className="space-y-2">
+                      <Label>Current Database Location</Label>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 p-2 bg-muted/50 rounded-lg text-sm font-mono" data-testid="text-database-path">
+                          {databasePath || "Loading..."}
+                        </code>
+                      </div>
+                    </div>
+                    <Separator className="opacity-50" />
+                  </>
                 )}
-                <Button 
-                  onClick={handleExportDatabase}
-                  variant="outline"
-                  data-testid="button-export"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Backup
-                </Button>
-                <Button 
-                  onClick={handleImportDatabase}
-                  variant="outline"
-                  data-testid="button-import"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import Database
-                </Button>
-              </div>
 
-              <Separator className="opacity-50" />
+                <div className="flex flex-wrap gap-3">
+                  {isElectron && (
+                    <Button 
+                      onClick={handleChangeDatabaseLocation}
+                      variant="outline"
+                      data-testid="button-change-location"
+                    >
+                      <FolderOpen className="h-4 w-4 mr-2" />
+                      Change Location
+                    </Button>
+                  )}
+                  <Button 
+                    onClick={handleExportDatabase}
+                    variant="outline"
+                    data-testid="button-export"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Backup
+                  </Button>
+                  <Button 
+                    onClick={handleImportDatabase}
+                    variant="outline"
+                    data-testid="button-import"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Database
+                  </Button>
+                </div>
 
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
-                <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                  {isElectron && <li>Changing database location will restart the application</li>}
-                  <li>Export your database regularly to prevent data loss</li>
-                  <li>Importing a database will replace your current data</li>
-                  <li>Keep your database backups in a safe location</li>
-                  <li>Export creates a .db file you can download and save</li>
-                </ul>
+                <Separator className="opacity-50" />
+
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    {isElectron && <li>Changing database location will restart the application</li>}
+                    <li>Export your database regularly to prevent data loss</li>
+                    <li>Importing a database will replace your current data</li>
+                    <li>Keep your database backups in a safe location</li>
+                    <li>Export creates a .db file you can download and save</li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </div>
           )}
         </TabsContent>
       </Tabs>
