@@ -15,9 +15,31 @@ import {
   Download, Upload, TrendingUp, AlertCircle, Activity, Eye, EyeOff, Filter, ChevronDown,
   Calendar, Clock, User, FileText, CheckCircle2, XCircle, HelpCircle, BarChart3, PieChart as PieChartIcon
 } from 'lucide-react';
-import type { AuditLog, ExportLog, ImportLog } from '@/api/audit';
-import { auditApi } from '@/api/audit';
 import { cn } from '@/lib/utils';
+
+// Placeholder types for audit logs
+interface AuditLog {
+  id: string;
+  timestamp: Date | string;
+  type: string;
+  action: string;
+  userId: string;
+  details?: string;
+}
+
+interface ExportLog {
+  id: string;
+  timestamp: Date | string;
+  format: string;
+  recordCount: number;
+}
+
+interface ImportLog {
+  id: string;
+  timestamp: Date | string;
+  format: string;
+  recordCount: number;
+}
 
 interface AuditFilters {
   dateRange: 'all' | '7days' | '30days' | '90days';
@@ -61,14 +83,11 @@ const AuditPage: React.FC = () => {
     const fetchLogs = async () => {
       try {
         setLoading(true);
-        const [auditData, exportData, importData] = await Promise.all([
-          auditApi.getLogs({}),
-          auditApi.getExportLogs({}),
-          auditApi.getImportLogs({})
-        ]);
-        setLogs(auditData);
-        setExportLogs(exportData);
-        setImportLogs(importData);
+        // TODO: Implement audit API endpoints when needed
+        // For now, initialize with empty arrays
+        setLogs([]);
+        setExportLogs([]);
+        setImportLogs([]);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch audit logs');
       } finally {
