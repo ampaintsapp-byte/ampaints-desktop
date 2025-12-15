@@ -43,6 +43,7 @@ function Router() {
         <Route path="/returns" component={Returns} />
         <Route path="/returns/history" component={ReturnsHistory} />
         <Route path="/settings" component={Settings} />
+        <Route path="/admin" component={Admin} />
         <Route path="/bill/:id" component={BillPrint} />
         <Route component={NotFound} />
       </Switch>

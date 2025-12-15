@@ -49,6 +49,12 @@ const dateFormats: { value: DateFormatType; label: string; description: string; 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [cloudConn, setCloudConn] = useState("")
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [connections, setConnections] = useState<any[]>([])
+  const [connectionsLoading, setConnectionsLoading] = useState(false)
   
   // License settings state
   const [licenseExpiryDate, setLicenseExpiryDate] = useState<string>("");
@@ -89,6 +95,116 @@ export default function Settings() {
         showStockBadgeBorder: uiSettings.showStockBadgeBorder,
         dateFormat: uiSettings.dateFormat || "DD-MM-YYYY",
       });
+    }
+
+    const handleSaveCloudConnection = async () => {
+      if (!cloudConn) return
+      setIsSaving(true)
+      try {
+        const res = await apiRequest("POST", "/api/cloud-sync/connections", { provider: "neon", label: "Neon", connectionString: cloudConn })
+        const json = await res.json()
+        if (res.ok && json.ok) {
+          toast({ title: "Saved", description: "Connection saved securely on server." })
+          setCloudConn("")
+          loadCloudConnections()
+        } else {
+          toast({ title: "Save failed", description: json.error || "Unable to save", variant: "destructive" })
+        }
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
+      } finally {
+        setIsSaving(false)
+      }
+    }
+
+    const loadCloudConnections = async () => {
+      setConnectionsLoading(true)
+      try {
+        const res = await apiRequest("GET", "/api/cloud-sync/connections")
+        const json = await res.json()
+        if (res.ok && json.ok) {
+          setConnections(json.connections || [])
+        }
+      } catch (err) {
+        console.error("Error loading connections", err)
+      } finally {
+        setConnectionsLoading(false)
+      }
+    }
+
+    useEffect(() => {
+      loadCloudConnections()
+    }, [])
+
+    const [jobs, setJobs] = useState<any[]>([])
+    const [jobsLoading, setJobsLoading] = useState(false)
+
+    const loadJobs = async () => {
+      setJobsLoading(true)
+      try {
+        const res = await apiRequest("GET", "/api/cloud-sync/jobs")
+        const json = await res.json()
+        if (res.ok && json.ok) setJobs(json.jobs || [])
+      } catch (err) {
+        console.error("Error loading jobs", err)
+      } finally {
+        setJobsLoading(false)
+      }
+    }
+
+    const processNextJob = async () => {
+      try {
+        const res = await apiRequest("POST", "/api/cloud-sync/process-next")
+        const json = await res.json()
+        if (res.ok && json.ok) {
+          toast({ title: "Job processed", description: json.result?.status || "Processed" })
+          loadJobs()
+        } else {
+          toast({ title: "Error", description: json.error || "Failed to process job", variant: "destructive" })
+        }
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
+      }
+    }
+
+    const deleteConnection = async (id: string) => {
+      if (!confirm("Delete this connection?")) return
+      try {
+        const res = await apiRequest("DELETE", `/api/cloud-sync/connections/${id}`)
+        const json = await res.json()
+        if (res.ok && json.ok) {
+          toast({ title: "Deleted", description: "Connection removed" })
+          loadCloudConnections()
+        } else {
+          toast({ title: "Error", description: json.error || "Failed to delete", variant: "destructive" })
+        }
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
+      }
+    }
+
+    const enqueueJob = async (connectionId: string, jobType: "export" | "import") => {
+      try {
+        let details = undefined
+        if (jobType === 'import') {
+          const strategy = prompt("Import strategy (skip, overwrite, merge). Default: merge", "merge") || "merge"
+          if (!["skip","overwrite","merge"].includes(strategy)) {
+            toast({ title: "Cancelled", description: "Invalid strategy selected", variant: "destructive" })
+            return
+          }
+          details = { strategy }
+        }
+
+        const res = await apiRequest("POST", "/api/cloud-sync/jobs", { connectionId, jobType, dryRun: true, details })
+        const json = await res.json()
+        if (res.ok && json.ok) {
+          toast({ title: "Job Enqueued", description: `Job ${json.jobId} created (dry-run)` })
+        } else {
+          toast({ title: "Error", description: json.error || "Failed to enqueue", variant: "destructive" })
+        }
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message || String(err), variant: "destructive" })
+      }
     }
   }, [uiSettings]);
 
@@ -302,6 +418,28 @@ export default function Settings() {
             description: result.error || "Unknown error occurred",
             variant: "destructive",
           });
+        }
+
+        const handleTestCloudConnection = async () => {
+          if (!cloudConn) return
+          setIsTesting(true)
+          setTestResult(null)
+          try {
+            const res = await apiRequest("POST", "/api/cloud-sync/test-connection", { connectionString: cloudConn })
+            const json = await res.json()
+            if (res.ok && json.ok) {
+              setTestResult({ ok: true })
+              toast({ title: "Connection Successful", description: "Remote Postgres connection validated." })
+            } else {
+              setTestResult({ ok: false, error: json.error || "Connection failed" })
+              toast({ title: "Connection Failed", description: json.error || "Unable to connect", variant: "destructive" })
+            }
+          } catch (err: any) {
+            setTestResult({ ok: false, error: err.message || String(err) })
+            toast({ title: "Connection Error", description: err.message || String(err), variant: "destructive" })
+          } finally {
+            setIsTesting(false)
+          }
         }
       } catch (error) {
         toast({
@@ -571,6 +709,10 @@ export default function Settings() {
           <TabsTrigger value="license" className="glass-tab" data-testid="tab-license-settings">
             <Key className="h-4 w-4 mr-2" />
             License
+          </TabsTrigger>
+          <TabsTrigger value="cloud" className="glass-tab" data-testid="tab-cloud-settings">
+            <Download className="h-4 w-4 mr-2" />
+            Cloud Sync
           </TabsTrigger>
           <TabsTrigger 
             value="database" 
@@ -864,6 +1006,94 @@ export default function Settings() {
             <Button onClick={() => updateUiMutation.mutate(uiFormData)} disabled={updateUiMutation.isPending}>
               {updateUiMutation.isPending ? "Saving..." : "Save Settings"}
             </Button>
+          </div>
+        </TabsContent>
+
+        {/* Cloud Sync Settings */}
+        <TabsContent value="cloud" className="space-y-4">
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Download className="h-5 w-5 text-green-600" />
+              <h3 className="font-semibold">Cloud Sync (Neon / Supabase)</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Connect your remote Postgres (Neon or Supabase) to perform opt-in exports and imports. This is an admin-only, explicit operation. Credentials are stored on the server only.</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+              <div className="sm:col-span-2">
+                <Label htmlFor="cloudConnection">Postgres Connection String</Label>
+                <Input id="cloudConnection" placeholder="postgresql://user:pass@host:5432/dbname?sslmode=require" value={cloudConn} onChange={(e) => setCloudConn(e.target.value)} className="mt-1" />
+                <p className="text-xs text-muted-foreground mt-1">Tip: Use SSL mode=require for Neon/Supabase. Do NOT paste secrets in public chat. Rotate exposed keys immediately.</p>
+              </div>
+
+              <div className="flex gap-2">
+                <Button onClick={handleTestCloudConnection} disabled={!cloudConn || isTesting} variant="outline">{isTesting ? "Testing..." : "Test Connection"}</Button>
+              </div>
+            </div>
+
+            {testResult && (
+              <div className={`mt-4 p-3 rounded ${testResult.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                <p className="text-sm">{testResult.ok ? 'Connection successful' : `Connection failed: ${testResult.error}`}</p>
+              </div>
+            )}
+            <div className="mt-4">
+              <div className="flex gap-2">
+                <Button onClick={handleSaveCloudConnection} disabled={!cloudConn || isSaving}>{isSaving ? 'Saving...' : 'Save Connection'}</Button>
+                <Button variant="outline" onClick={loadCloudConnections}>Refresh</Button>
+              </div>
+
+              <div className="mt-4">
+                <h4 className="font-semibold">Saved Connections</h4>
+                {connectionsLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading...</p>
+                ) : (
+                  <div className="space-y-2 mt-2">
+                    {connections.length === 0 && <p className="text-sm text-muted-foreground">No connections saved</p>}
+                    {connections.map((c: any) => (
+                      <div key={c.id} className="p-3 border rounded flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{c.label || c.provider}</div>
+                          <div className="text-xs text-muted-foreground">{c.provider} • Created: {new Date(c.created_at).toLocaleString()}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export')}>Run Export (dry-run)</Button>
+                          <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import')}>Run Import (dry-run)</Button>
+                          <Button size="sm" variant="ghost" onClick={() => deleteConnection(c.id)}>Delete</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold">Job History</h4>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={loadJobs}>Refresh</Button>
+                    <Button size="sm" onClick={processNextJob}>Process Next Job</Button>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  {jobsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading jobs...</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs</p>}
+                      {jobs.map((j: any) => (
+                        <div key={j.id} className="p-3 border rounded flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{j.job_type} • {j.provider}</div>
+                            <div className="text-xs text-muted-foreground">Status: {j.status} • Attempts: {j.attempts} • {new Date(j.created_at).toLocaleString()}</div>
+                          </div>
+                          <div className="text-sm text-muted-foreground">{j.last_error ? `Error: ${j.last_error}` : ''}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </TabsContent>
 

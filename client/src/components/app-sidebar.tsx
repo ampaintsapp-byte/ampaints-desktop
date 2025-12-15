@@ -72,6 +72,13 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { triggerRefresh } = useNavigationRefresh();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
+    try { return sessionStorage.getItem('admin_unlocked') === '1' } catch { return false }
+  })
+  const [showAdminPinDialog, setShowAdminPinDialog] = useState(false)
+  const [adminPinInput, setAdminPinInput] = useState(["", "", "", ""])
+  const [adminPinError, setAdminPinError] = useState("")
+  const [isVerifyingAdminPin, setIsVerifyingAdminPin] = useState(false)
 
   const { data: settings } = useQuery<UISettings>({
     queryKey: ["/api/settings"],
@@ -81,6 +88,13 @@ export function AppSidebar() {
   const storeInitial = storeName.charAt(0).toUpperCase();
 
   const handleNavClick = (url: string, e: React.MouseEvent) => {
+    if (url === '/admin') {
+      if (!isAdminUnlocked) {
+        e.preventDefault()
+        setShowAdminPinDialog(true)
+        return
+      }
+    }
     if (location === url) {
       e.preventDefault();
       startTransition(() => {
@@ -92,6 +106,45 @@ export function AppSidebar() {
   const handleMouseEnter = (url: string) => {
     prefetchPageData(url);
   };
+
+  const handleAdminPinInput = (index: number, value: string) => {
+    if (value.length > 1) return;
+    if (value && !/^\d$/.test(value)) return;
+    const newPin = [...adminPinInput]
+    newPin[index] = value
+    setAdminPinInput(newPin)
+    setAdminPinError("")
+    if (value && index < 3) {
+      const next = document.querySelector(`[data-testid=\"input-admin-pin-${index + 1}\"]`) as HTMLInputElement
+      next?.focus()
+    }
+    if (newPin.every(d => d !== "") && index === 3) {
+      verifyAdminPin(newPin.join(''))
+    }
+  }
+
+  const verifyAdminPin = async (pin: string) => {
+    setIsVerifyingAdminPin(true)
+    try {
+      const res = await fetch('/api/license/verify-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ masterPin: pin }) })
+      if (!res.ok) throw new Error('Invalid PIN')
+      setIsAdminUnlocked(true)
+      try { sessionStorage.setItem('admin_unlocked', '1') } catch {}
+      setShowAdminPinDialog(false)
+      setAdminPinInput(["", "", "", ""])
+      // navigate to admin
+      const a = document.createElement('a')
+      a.href = '/admin'
+      a.click()
+    } catch (err: any) {
+      setAdminPinError('Invalid PIN. Please try again.')
+      setAdminPinInput(["", "", "", ""])
+      const first = document.querySelector('[data-testid="input-admin-pin-0"]') as HTMLInputElement
+      first?.focus()
+    } finally {
+      setIsVerifyingAdminPin(false)
+    }
+  }
 
   const isChildActive = (item: MenuItem): boolean => {
     if (item.subItems) {
@@ -265,6 +318,27 @@ export function AppSidebar() {
       
       {/* Menu Content */}
       <SidebarContent className="p-3">
+        {/* Admin PIN dialog */}
+        <div>
+          {/* Simple modal dialog built inline to avoid extra exports */}
+          {showAdminPinDialog && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded shadow-lg w-[420px]">
+                <h3 className="text-lg font-semibold">Enter Admin PIN</h3>
+                <p className="text-sm text-muted-foreground mt-1">Enter the 4-digit master PIN to access Admin tools.</p>
+                <div className="mt-4 flex gap-2">
+                  {adminPinInput.map((v, i) => (
+                    <input key={i} data-testid={`input-admin-pin-${i}`} value={v} onChange={(e) => handleAdminPinInput(i, e.target.value)} className="w-12 h-12 text-center text-xl rounded border" type="password" maxLength={1} />
+                  ))}
+                </div>
+                {adminPinError && <p className="text-sm text-red-600 mt-2">{adminPinError}</p>}
+                <div className="mt-4 flex justify-end gap-2">
+                  <button className="btn" onClick={() => { setShowAdminPinDialog(false); setAdminPinInput(["", "", "", ""]) }}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
         <SidebarMenu className="space-y-1">
           {menuItems.map((item, index) => renderMenuItem(item, index))}
         </SidebarMenu>

@@ -1397,6 +1397,138 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // Cloud Sync: Test Postgres connection (Neon/Supabase)
+  app.post(
+    "/api/cloud-sync/test-connection",
+    requirePerm("payment:edit"),
+    async (req, res) => {
+      try {
+        const { connectionString } = req.body
+        if (!connectionString || typeof connectionString !== "string") {
+          return res.status(400).json({ ok: false, error: "connectionString is required" })
+        }
+
+        // Try to connect using pg
+        const { Client } = await import("pg")
+        const client = new Client({ connectionString, statement_timeout: 5000, connectionTimeoutMillis: 5000 })
+
+        try {
+          await client.connect()
+          const result = await client.query("SELECT 1 as ok")
+          await client.end()
+          if (result && result.rows && result.rows[0] && result.rows[0].ok === 1) {
+            return res.json({ ok: true })
+          }
+          return res.json({ ok: true })
+        } catch (err) {
+          try {
+            await client.end()
+          } catch (_) {
+            // ignore
+          }
+          console.error("[API] Cloud Sync test connection failed:", err)
+          return res.status(400).json({ ok: false, error: (err as Error).message || "Connection failed" })
+        }
+      } catch (error) {
+        console.error("[API] Error testing cloud connection:", error)
+        return res.status(500).json({ ok: false, error: "Internal server error" })
+      }
+    },
+  )
+
+  // Manage cloud connections (encrypted server-side)
+  app.get("/api/cloud-sync/connections", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { listConnections } = await import("./cloudSync")
+      const rows = await listConnections()
+      res.json({ ok: true, connections: rows })
+    } catch (err) {
+      console.error("[API] Error listing cloud connections:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  app.post("/api/cloud-sync/connections", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { provider, label, connectionString } = req.body
+      if (!provider || !connectionString) return res.status(400).json({ ok: false, error: "provider and connectionString required" })
+
+      // Save encrypted connection string
+      const id = crypto.randomUUID()
+      const { saveConnection } = await import("./cloudSync")
+      await saveConnection({ id, provider, label, connectionString })
+      res.json({ ok: true, id })
+    } catch (err: any) {
+      console.error("[API] Error saving cloud connection:", err)
+      res.status(500).json({ ok: false, error: err.message || "Internal error" })
+    }
+  })
+
+  app.delete("/api/cloud-sync/connections/:id", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { id } = req.params
+      const { deleteConnection } = await import("./cloudSync")
+      await deleteConnection(id)
+      res.json({ ok: true })
+    } catch (err) {
+      console.error("[API] Error deleting cloud connection:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  // Enqueue a cloud sync job (export/import)
+  app.post("/api/cloud-sync/jobs", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { connectionId, jobType, dryRun, details } = req.body
+      if (!connectionId || !jobType) return res.status(400).json({ ok: false, error: "connectionId and jobType required" })
+      const jobId = crypto.randomUUID()
+      const { getConnection, enqueueJob } = await import("./cloudSync")
+      const conn = await getConnection(connectionId)
+      if (!conn) return res.status(404).json({ ok: false, error: "connection not found" })
+
+      await enqueueJob({ id: jobId, jobType, provider: conn.provider, connectionId, dryRun: !!dryRun, initiatedBy: req.ip, details: details ? JSON.stringify(details) : undefined })
+      res.json({ ok: true, jobId })
+    } catch (err) {
+      console.error("[API] Error enqueuing cloud sync job:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  app.get("/api/cloud-sync/jobs", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return res.json({ ok: true, jobs: [] })
+      const jobs = sqliteDb.prepare("SELECT id, job_type, provider, status, dry_run, initiated_by, attempts, last_error, created_at, updated_at FROM cloud_sync_jobs ORDER BY created_at DESC").all()
+      res.json({ ok: true, jobs })
+    } catch (err) {
+      console.error("[API] Error listing jobs:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  // Manual trigger to process one pending job (admin only)
+  app.post("/api/cloud-sync/jobs/:id/process", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { processNextJob } = await import("./cloudSyncWorker")
+      const result = await processNextJob()
+      res.json({ ok: true, result })
+    } catch (err) {
+      console.error("[API] Error processing job:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  app.post("/api/cloud-sync/process-next", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { processNextJob } = await import("./cloudSyncWorker")
+      const result = await processNextJob()
+      res.json({ ok: true, result })
+    } catch (err) {
+      console.error("[API] Error processing next job:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
   // Get return by ID
   app.get("/api/returns/:id", async (req, res) => {
     try {
@@ -1805,7 +1937,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/license/verify-pin", async (req, res) => {
     try {
       const { masterPin } = req.body
-      
+      if (!masterPin) return res.status(400).json({ valid: false, error: "masterPin required" })
+
+      // Check settings-stored master pin first
+      const s = await storage.getSettings()
+      if (s.masterPinHash && s.masterPinSalt) {
+        try {
+          const derived = crypto.scryptSync(masterPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
+          if (derived.toString('hex') !== s.masterPinHash) {
+            res.status(403).json({ valid: false, error: "Invalid master PIN" })
+            return
+          }
+          res.json({ valid: true, message: "Master PIN verified" })
+          return
+        } catch (err) {
+          // fallthrough to env check
+        }
+      }
+
+      // Fallback to env-based master PIN
       if (!verifyMasterPin(masterPin)) {
         res.status(403).json({ valid: false, error: "Invalid master PIN" })
         return
@@ -1815,6 +1965,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error verifying PIN:", error)
       res.status(500).json({ error: "Failed to verify PIN" })
+    }
+  })
+
+  // Set or change master PIN (admin)
+  app.post("/api/license/set-master-pin", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { currentPin, newPin } = req.body
+      if (!newPin) return res.status(400).json({ ok: false, error: "newPin required" })
+
+      // Verify current pin: either matches stored hash or env
+      const s = await storage.getSettings()
+      let verified = false
+      if (s.masterPinHash && s.masterPinSalt && currentPin) {
+        try {
+          const derived = crypto.scryptSync(currentPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
+          verified = derived.toString('hex') === s.masterPinHash
+        } catch (err) {
+          verified = false
+        }
+      }
+
+      if (!verified && currentPin) {
+        verified = verifyMasterPin(currentPin)
+      }
+
+      if (!verified && s.masterPinHash) {
+        return res.status(403).json({ ok: false, error: "Invalid current PIN" })
+      }
+
+      // If no master pin was set yet, allow setting without currentPin (first-time setup)
+
+      // Generate salt and store scrypt hash
+      const salt = crypto.randomBytes(16)
+      const derived = crypto.scryptSync(newPin, salt, 64)
+      await storage.updateSettings({ masterPinHash: derived.toString('hex'), masterPinSalt: salt.toString('hex') })
+      invalidateCache("settings")
+      res.json({ ok: true })
+    } catch (err: any) {
+      console.error("Error setting master PIN:", err)
+      res.status(500).json({ ok: false, error: "Failed to set master PIN" })
     }
   })
 
