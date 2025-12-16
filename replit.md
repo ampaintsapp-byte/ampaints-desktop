@@ -24,11 +24,18 @@ None specified yet.
 
 ### Key Features
 - **Inventory Management**: Tracks products, variants, colors, and stock levels with advanced filtering, multi-select, and bulk operations. Includes a unique ID system for duplicate handling.
+  - **Stock Deficit Alert**: When adding stock, if a color has negative stock (deficit from prior sales), the system clearly shows: red "(Deficit)" badge on color selection, stock calculation preview (Previous + Adding = New Stock), and an amber warning explaining how the addition will cover or reduce the deficit.
 - **POS Sales**: Streamlined transaction processing with real-time inventory updates, optimized color code matching, and enhanced product card displays.
 - **Rate Management**: Manages product pricing and packing sizes, supporting per-color rate overrides.
-- **Unpaid Bills & Customer Statements**: Tracks partial payments, due dates, manual balance additions (Manual Balance), and generates detailed PDF statements. Features a premium bank-style customer statement with transaction ledger, running balance, and various transaction type displays.
+- **Unpaid Bills & Customer Statements**: Tracks partial payments, due dates, manual balance additions (Manual Balance), and generates detailed PDF statements. Features a premium bank-style customer statement with transaction ledger, running balance, and various transaction type displays. Transaction History uses consolidated row display where each bill shows DEBIT (bill amount) and CREDIT (initial payment at POS) in the SAME row, so PAID bills immediately show Balance = 0. Recovery payments and returns appear as separate rows. 
+  - **Consistent Balance Formula**: Both Unpaid Bills and Customer Statement use identical formula: `Outstanding = Total Bills - Payments - Return Credits`. Unpaid Bills page fetches returns data and aggregates return credits by customer phone to ensure accurate outstanding calculations that match Customer Statement exactly.
 - **Returns Management**: Supports both full bill returns and individual item returns with automatic stock restoration. Tracks return reasons, refund amounts, and restock quantities. Returns are displayed on sale cards in the Sales page with orange "RETURNED" badges showing return count and total refund amount.
-- **Reporting**: Comprehensive financial reports with summary cards (Total Sales, Paid, Unpaid, Recovery Payments, Total Returns), detailed views (All Sales, Unpaid Bills, Recovery Payments), advanced filtering, and sortable columns. Returns are now integrated into the overview statistics.
+  - **Return Accounting**: All outstanding balance calculations properly subtract return credits using the formula: `Outstanding = Sales - Payments - ReturnCredits`. Full bill returns set sale.amountPaid to "0" and paymentStatus to "full_return". Item returns create separate return records with refund amounts that reduce outstanding balances.
+- **Reporting**: Comprehensive financial reports with simplified Overview tab showing four summary cards (Total Bills, Collected, Unpaid, Returns) for at-a-glance understanding. Detailed tabs for Bills, Payments, Returns, and Unpaid Bills with advanced filtering and sortable columns. Features a unified Transactions tab showing all bills (debits), payments (credits), and returns (credits) in a single timeline with clear type labels.
+  - **Overview Tab Layout**: Simplified four-card summary at top (Total Bills, Collected, Unpaid, Returns), prominent Cash in Hand card with breakdown (New Sales + Recovery - Refunds), and optional Collection Rate progress bar. All overview cards use bill-scoped calculations (returns for filtered sales, not all returns in date range) to match Customer Statement logic.
+  - **Reports Calculation Logic**: Overview cards use bill-scoped metrics: Outstanding = Bills - Paid - Returns (only for those bills). Cash in Hand uses transaction-scoped cash flow (all transactions in date range). This distinction ensures accurate financial views.
+  - **Cash in Hand Calculation**: Uses TRUE CASH FLOW formula: `New Sales + Recovery - Refunds` where New Sales is initial payments on bills created in date range, Recovery is all payment_history entries in date range, avoiding double-counting.
+  - **Pay Full Button**: Quick action in Customer Statement's Unpaid Bills and Scheduled Payments tabs to pre-fill full outstanding amount for fast payment recording.
 - **Audit Reports**: Comprehensive PIN-protected audit section with sidebar navigation menu containing six sections: Stock Audit (IN/OUT/RETURN movements, current inventory), Sales Audit (all sales, payments, outstanding), Unpaid Bills (outstanding balances, due dates), Payment History (unified transaction view combining payments, returns, and manual balances with type badges), Returns (full bill and item returns), and Settings (PIN management, permissions, cloud sync, system info). Features secure 4-digit PIN verification with SHA-256 salted hash storage, session-based token authentication (24-byte random token, 1-hour TTL), downloadable branded PDF reports for each section, and comprehensive filtering options. Default PIN is "0000" with change prompt.
 - **UI Customization**: Settings for store branding (name, logo), product card design (border style, shadow, button/price color), and badge appearance.
 - **Thermal Receipt & Bill Print**: Customizable thermal receipt printing and professional PDF invoice generation with gradient branding and detailed line items.
@@ -46,7 +53,26 @@ None specified yet.
   - **Live Status Display**: Shows last sync time and sync active status indicator
   - **Connection Status**: Automatic online/offline detection with sync on reconnect
   - All cloud operations protected by audit PIN verification. Enables installing software on multiple laptops with shared data access.
-- **Activation System**: Uses a one-time activation code.
+- **Activation System**: Uses a one-time activation code stored locally.
+- **Software Licensing & Remote Blocking**: Two-tier security system for billing control:
+  - **Activation Layer**: One-time activation code stored locally in localStorage (browser) or electron-store (desktop)
+  - **License Layer**: Server-side license management with remote blocking capability
+  - **Master Admin PIN**: Configurable via `MASTER_ADMIN_PIN` environment variable (defaults to 3620192373285 if not set)
+  - **Device Registration**: Each device generates unique client ID stored in localStorage, persisted for consistent blocking/unblocking
+  - **License Status Check**: App checks license status on startup and periodically
+  - **Blocked Screen**: Shows clear message when device is blocked with reason and contact info
+  - **API Endpoints**: 
+    - `POST /api/license/check` - Check/register device license status (also applies scheduled auto-blocks)
+    - `POST /api/license/devices` - Get all registered devices (requires master PIN in body)
+    - `POST /api/license/block` - Block a device (requires master PIN in body)
+    - `POST /api/license/unblock` - Unblock a device (requires master PIN in body)
+    - `POST /api/license/audit` - Get license audit log (requires master PIN in body)
+    - `POST /api/license/set-auto-block` - Schedule auto-block date for a device (requires master PIN in body)
+  - **Scheduled Auto-Block**: Set future date for automatic device blocking. When device connects on or after scheduled date, it is automatically blocked with "Auto-blocked: License expired" reason. UI shows amber "Auto-block on: YYYY-MM-DD" indicator and Schedule/Edit button for each active device.
+  - **Admin UI**: Accessible via Audit page > Settings tab > Licenses sub-tab. Features master PIN verification, device list with status badges, block/unblock controls with reason input, auto-block date scheduling, and action history log.
+  - **Audit Trail**: All block/unblock/set_auto_block/clear_auto_block actions logged with timestamps and reasons
+  - **Use Case**: Block devices with overdue billing until payment is received, or schedule future blocking for contract expirations
+  - **About Section**: Displays company information (RAYOUX INNOVATIONS PRIVATE LIMITED, CEO AHSAN KAMRAN, 0300-1204190) in System tab with branded styling
 - **Desktop Application**: Features include a maximized (not fullscreen) windowed desktop mode with saved size and position, and solutions for Windows SmartScreen warnings.
 
 ### System Design Choices

@@ -97,6 +97,16 @@ app.use((req, res, next) => {
     server.listen(port, "0.0.0.0", () => {
       log(`[Server] serving on port ${port}`);
     });
+
+    // Handle graceful shutdown
+    process.on("SIGINT", () => {
+      log("[Server] Shutting down gracefully...");
+      process.exit(0);
+    });
+    process.on("SIGTERM", () => {
+      log("[Server] Shutting down gracefully...");
+      process.exit(0);
+    });
   } catch (error) {
     console.error("[Server] ❌ FATAL ERROR starting server:", error);
     console.error("[Server] Stack trace:", error instanceof Error ? error.stack : String(error));

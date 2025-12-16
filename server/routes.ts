@@ -1,4 +1,4 @@
-// routes.ts - COMPLETE FIXED VERSION WITH ALL MISSING ROUTES
+// routes.ts - COMPLETE FIXED VERSION WITH SILENT AUTO-EXPORT ENABLED
 import type { Express } from "express"
 import { createServer, type Server } from "http"
 import { storage } from "./storage"
@@ -116,8 +116,6 @@ interface ExtendedSale {
 }
 
 // Audit token storage (in-memory for session management)
-const auditTokens = new Map<string, { createdAt: number }>()
-
 // In-memory cache for frequently accessed data
 interface CacheEntry<T> {
   data: T
@@ -170,753 +168,8 @@ function invalidateInventoryCache(): void {
   cache.variants = null
   cache.colors = null
 }
-
-// Auto-sync state
-let autoSyncEnabled = false
-let syncInterval: NodeJS.Timeout | null = null
-const pendingChanges = {
-  products: false,
-  sales: false,
-  colors: false,
-  payments: false,
-  returns: false,
-}
-
-// Helper function to hash PIN
-function hashPin(pin: string, salt: string): string {
-  return crypto.pbkdf2Sync(pin, salt, 100000, 64, "sha512").toString("hex")
-}
-
-// Helper function to get appropriate SQL client for both Neon and Supabase
-async function getCloudSqlClient(connectionUrl: string) {
-  // Check if it's a Supabase URL
-  if (connectionUrl.includes("supabase.co") || connectionUrl.includes("supabase.com")) {
-    // Supabase PostgreSQL connection
-    const { createClient } = await import("@supabase/supabase-js")
-
-    // Extract connection details from URL
-    const urlObj = new URL(connectionUrl)
-    const host = urlObj.hostname
-    const db = urlObj.pathname.slice(1)
-    const username = urlObj.username
-    const password = urlObj.password
-    const port = urlObj.port || "5432"
-
-    // Use postgres-js for Supabase direct connection
-    const { default: postgres } = await import("postgres")
-    const sql = postgres({
-      hostname: host,
-      port: Number.parseInt(port),
-      database: db,
-      username: username,
-      password: password,
-      ssl: "require",
-    })
-
-    return { sql, type: "supabase" }
-  } else {
-    // Improved Neon connection with SSL handling
-    const { neon } = await import("@neondatabase/serverless")
-
-    // Clean up the connection URL for Neon
-    let cleanUrl = connectionUrl
-    if (cleanUrl.includes("channel_binding=require")) {
-      cleanUrl = cleanUrl.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
-    }
-
-    // Ensure sslmode is set correctly for Neon
-    if (!cleanUrl.includes("sslmode")) {
-      const separator = cleanUrl.includes("?") ? "&" : "?"
-      cleanUrl += `${separator}sslmode=require`
-    }
-
-    const sql = neon(cleanUrl)
-    return { sql, type: "neon" }
-  }
-}
-
-// Middleware to verify audit token
-export function verifyAuditToken(req: any, res: any, next: any) {
-  const token = req.headers["x-audit-token"]
-
-  if (!token) {
-    return res.status(401).json({ error: "Audit token required" })
-  }
-
-  const tokenData = auditTokens.get(token as string)
-  if (!tokenData) {
-    return res.status(401).json({ error: "Invalid or expired audit token" })
-  }
-
-  // Check if token is expired (24 hours)
-  const tokenAge = Date.now() - tokenData.createdAt
-  if (tokenAge > 24 * 60 * 60 * 1000) {
-    auditTokens.delete(token as string)
-    return res.status(401).json({ error: "Audit token expired" })
-  }
-
-  next()
-}
-
-// Clean up expired tokens periodically
-setInterval(
-  () => {
-    const now = Date.now()
-    for (const [token, data] of auditTokens.entries()) {
-      if (now - data.createdAt > 24 * 60 * 60 * 1000) {
-        auditTokens.delete(token)
-      }
-    }
-  },
-  60 * 60 * 1000,
-) // Run every hour
-
-// Real-time query invalidation helper
-function invalidateCustomerQueries(customerPhone: string) {
-  console.log(`[Real-time] Invalidating queries for customer: ${customerPhone}`)
-  // Invalidate React Query cache for this customer
-  // This would be connected to your frontend cache invalidation system
-}
-
-// Global query invalidation helper
-function invalidateGlobalQueries() {
-  console.log("[Real-time] Invalidating global queries")
-  // Invalidate all React Query caches
-  // This would be connected to your frontend cache invalidation system
-}
-
-// Auto-sync functions
-async function triggerAutoSync() {
-  if (!autoSyncEnabled) return
-
-  try {
-    console.log("[Auto-Sync] Starting automatic sync...")
-
-    const settings = await storage.getSettings()
-    if (!settings.cloudDatabaseUrl || !settings.cloudSyncEnabled) {
-      console.log("[Auto-Sync] Cloud sync not configured")
-      return
-    }
-
-    // Import first, then export
-    await importFromCloudData()
-    await exportToCloudData()
-
-    // Reset pending changes
-    Object.keys(pendingChanges).forEach((key) => {
-      pendingChanges[key as keyof typeof pendingChanges] = false
-    })
-
-    // Update sync timestamp
-    await storage.updateSettings({ lastSyncTime: new Date() })
-
-    console.log("[Auto-Sync] Automatic sync completed")
-  } catch (error) {
-    console.error("[Auto-Sync] Failed:", error)
-  }
-}
-
-// Detect changes for auto-sync
-function detectChanges(entity: keyof typeof pendingChanges) {
-  pendingChanges[entity] = true
-
-  // Auto-sync after 30 seconds if changes detected
-  if (Object.values(pendingChanges).some((changed) => changed)) {
-    setTimeout(async () => {
-      if (pendingChanges[entity]) {
-        await triggerAutoSync()
-      }
-    }, 30000)
-  }
-}
-
-async function exportToCloudData() {
-  try {
-    const settings = await storage.getSettings()
-    if (!settings.cloudDatabaseUrl) {
-      throw new Error("Cloud database not configured")
-    }
-
-    const { sql, type } = await getCloudSqlClient(settings.cloudDatabaseUrl)
-
-    console.log(`[Cloud Export] Starting export to ${type}...`)
-
-    // Create tables if they don't exist
-    const createTablesSQL = [
-      `CREATE TABLE IF NOT EXISTS products (
-          id TEXT PRIMARY KEY,
-          company TEXT NOT NULL,
-          product_name TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS variants (
-          id TEXT PRIMARY KEY,
-          product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-          packing_size TEXT NOT NULL,
-          rate TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS colors (
-          id TEXT PRIMARY KEY,
-          variant_id TEXT NOT NULL REFERENCES variants(id) ON DELETE CASCADE,
-          color_name TEXT NOT NULL,
-          color_code TEXT NOT NULL,
-          stock_quantity INTEGER DEFAULT 0,
-          rate_override TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS sales (
-          id TEXT PRIMARY KEY,
-          customer_name TEXT NOT NULL,
-          customer_phone TEXT NOT NULL,
-          total_amount TEXT NOT NULL,
-          amount_paid TEXT DEFAULT '0',
-          payment_status TEXT DEFAULT 'unpaid',
-          due_date TIMESTAMP,
-          is_manual_balance BOOLEAN DEFAULT FALSE,
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS sale_items (
-          id TEXT PRIMARY KEY,
-          sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
-          color_id TEXT NOT NULL,
-          quantity INTEGER NOT NULL,
-          rate TEXT NOT NULL,
-          subtotal TEXT NOT NULL
-        )`,
-      `CREATE TABLE IF NOT EXISTS stock_in_history (
-          id TEXT PRIMARY KEY,
-          color_id TEXT NOT NULL,
-          quantity INTEGER NOT NULL,
-          previous_stock INTEGER NOT NULL,
-          new_stock INTEGER NOT NULL,
-          stock_in_date TEXT NOT NULL,
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS payment_history (
-          id TEXT PRIMARY KEY,
-          sale_id TEXT NOT NULL,
-          customer_phone TEXT NOT NULL,
-          amount TEXT NOT NULL,
-          previous_balance TEXT NOT NULL,
-          new_balance TEXT NOT NULL,
-          payment_method TEXT DEFAULT 'cash',
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS returns (
-          id TEXT PRIMARY KEY,
-          sale_id TEXT,
-          customer_name TEXT NOT NULL,
-          customer_phone TEXT NOT NULL,
-          return_type TEXT DEFAULT 'item',
-          total_refund TEXT DEFAULT '0',
-          reason TEXT,
-          status TEXT DEFAULT 'completed',
-          created_at TIMESTAMP DEFAULT NOW()
-        )`,
-      `CREATE TABLE IF NOT EXISTS return_items (
-          id TEXT PRIMARY KEY,
-          return_id TEXT NOT NULL,
-          color_id TEXT NOT NULL,
-          sale_item_id TEXT,
-          quantity INTEGER NOT NULL,
-          rate TEXT NOT NULL,
-          subtotal TEXT NOT NULL,
-          stock_restored BOOLEAN DEFAULT TRUE
-        )`,
-    ]
-
-    // Execute table creation for both Neon and Supabase
-    for (const createTable of createTablesSQL) {
-      try {
-        if (type === "supabase") {
-          await sql(createTable)
-        } else {
-          await sql.unsafe(createTable)
-        }
-      } catch (err: any) {
-        // Tables might already exist, that's okay
-        console.log(`[Cloud] Table creation info: ${err.message}`)
-      }
-    }
-
-    // Get all data from local storage
-    const products = await storage.getProducts()
-    const variants = await storage.getVariants()
-    const colorsData = await storage.getColors()
-    const sales = await storage.getSales()
-    const saleItems = await storage.getSaleItems()
-    const stockInHistory = await storage.getStockInHistory()
-    const paymentHistory = await storage.getAllPaymentHistory()
-    const returns = await storage.getReturns()
-    const returnItems = await storage.getReturnItems()
-
-    const exportedCounts = {
-      products: 0,
-      variants: 0,
-      colors: 0,
-      sales: 0,
-      saleItems: 0,
-      stockInHistory: 0,
-      paymentHistory: 0,
-      returns: 0,
-      returnItems: 0,
-    }
-
-    // Export all data (code remains the same as before for each entity)
-    for (const p of products) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO products (id, company, product_name, created_at)
-            VALUES (${p.id}, ${p.company}, ${p.productName}, ${p.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              company = EXCLUDED.company,
-              product_name = EXCLUDED.product_name`
-        } else {
-          await sql`
-            INSERT INTO products (id, company, product_name, created_at)
-            VALUES (${p.id}, ${p.company}, ${p.productName}, ${p.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              company = EXCLUDED.company,
-              product_name = EXCLUDED.product_name
-          `
-        }
-        exportedCounts.products++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting product ${p.id}:`, err)
-      }
-    }
-
-    for (const v of variants) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO variants (id, product_id, packing_size, rate, created_at)
-            VALUES (${v.id}, ${v.productId}, ${v.packingSize}, ${v.rate}, ${v.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              product_id = EXCLUDED.product_id,
-              packing_size = EXCLUDED.packing_size,
-              rate = EXCLUDED.rate`
-        } else {
-          await sql`
-            INSERT INTO variants (id, product_id, packing_size, rate, created_at)
-            VALUES (${v.id}, ${v.productId}, ${v.packingSize}, ${v.rate}, ${v.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              product_id = EXCLUDED.product_id,
-              packing_size = EXCLUDED.packing_size,
-              rate = EXCLUDED.rate
-          `
-        }
-        exportedCounts.variants++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting variant ${v.id}:`, err)
-      }
-    }
-
-    for (const c of colorsData) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
-            VALUES (${c.id}, ${c.variantId}, ${c.colorName}, ${c.colorCode}, ${c.stockQuantity}, ${c.rateOverride}, ${c.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              variant_id = EXCLUDED.variant_id,
-              color_name = EXCLUDED.color_name,
-              color_code = EXCLUDED.color_code,
-              stock_quantity = EXCLUDED.stock_quantity,
-              rate_override = EXCLUDED.rate_override`
-        } else {
-          await sql`
-            INSERT INTO colors (id, variant_id, color_name, color_code, stock_quantity, rate_override, created_at)
-            VALUES (${c.id}, ${c.variantId}, ${c.colorName}, ${c.colorCode}, ${c.stockQuantity}, ${c.rateOverride}, ${c.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              variant_id = EXCLUDED.variant_id,
-              color_name = EXCLUDED.color_name,
-              color_code = EXCLUDED.color_code,
-              stock_quantity = EXCLUDED.stock_quantity,
-              rate_override = EXCLUDED.rate_override
-          `
-        }
-        exportedCounts.colors++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting color ${c.id}:`, err)
-      }
-    }
-
-    for (const s of sales) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
-            VALUES (${s.id}, ${s.customerName}, ${s.customerPhone}, ${s.totalAmount}, ${s.amountPaid}, ${s.paymentStatus || "unpaid"}, ${s.dueDate}, ${s.isManualBalance}, ${s.notes}, ${s.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount_paid = EXCLUDED.amount_paid,
-              payment_status = EXCLUDED.payment_status`
-        } else {
-          await sql`
-            INSERT INTO sales (id, customer_name, customer_phone, total_amount, amount_paid, payment_status, due_date, is_manual_balance, notes, created_at)
-            VALUES (${s.id}, ${s.customerName}, ${s.customerPhone}, ${s.totalAmount}, ${s.amountPaid}, ${s.paymentStatus || "unpaid"}, ${s.dueDate}, ${s.isManualBalance}, ${s.notes}, ${s.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount_paid = EXCLUDED.amount_paid,
-              payment_status = EXCLUDED.payment_status
-          `
-        }
-        exportedCounts.sales++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting sale ${s.id}:`, err)
-      }
-    }
-
-    for (const si of saleItems) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
-            VALUES (${si.id}, ${si.saleId}, ${si.colorId}, ${si.quantity}, ${si.rate}, ${si.subtotal})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              rate = EXCLUDED.rate,
-              subtotal = EXCLUDED.subtotal`
-        } else {
-          await sql`
-            INSERT INTO sale_items (id, sale_id, color_id, quantity, rate, subtotal)
-            VALUES (${si.id}, ${si.saleId}, ${si.colorId}, ${si.quantity}, ${si.rate}, ${si.subtotal})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              rate = EXCLUDED.rate,
-              subtotal = EXCLUDED.subtotal
-          `
-        }
-        exportedCounts.saleItems++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting sale item ${si.id}:`, err)
-      }
-    }
-
-    for (const sih of stockInHistory) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
-            VALUES (${sih.id}, ${sih.colorId}, ${sih.quantity}, ${sih.previousStock}, ${sih.newStock}, ${sih.stockInDate}, ${sih.notes}, ${sih.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              new_stock = EXCLUDED.new_stock`
-        } else {
-          await sql`
-            INSERT INTO stock_in_history (id, color_id, quantity, previous_stock, new_stock, stock_in_date, notes, created_at)
-            VALUES (${sih.id}, ${sih.colorId}, ${sih.quantity}, ${sih.previousStock}, ${sih.newStock}, ${sih.stockInDate}, ${sih.notes}, ${sih.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              new_stock = EXCLUDED.new_stock
-          `
-        }
-        exportedCounts.stockInHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting stock history ${sih.id}:`, err)
-      }
-    }
-
-    for (const ph of paymentHistory) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
-            VALUES (${ph.id}, ${ph.saleId}, ${ph.customerPhone}, ${ph.amount}, ${ph.previousBalance}, ${ph.newBalance}, ${ph.paymentMethod}, ${ph.notes}, ${ph.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount = EXCLUDED.amount,
-              new_balance = EXCLUDED.new_balance`
-        } else {
-          await sql`
-            INSERT INTO payment_history (id, sale_id, customer_phone, amount, previous_balance, new_balance, payment_method, notes, created_at)
-            VALUES (${ph.id}, ${ph.saleId}, ${ph.customerPhone}, ${ph.amount}, ${ph.previousBalance}, ${ph.newBalance}, ${ph.paymentMethod}, ${ph.notes}, ${ph.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              amount = EXCLUDED.amount,
-              new_balance = EXCLUDED.new_balance
-          `
-        }
-        exportedCounts.paymentHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting payment history ${ph.id}:`, err)
-      }
-    }
-
-    for (const r of returns) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
-            VALUES (${r.id}, ${r.saleId}, ${r.customerName}, ${r.customerPhone}, ${r.returnType}, ${r.totalRefund}, ${r.reason}, ${r.status}, ${r.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              total_refund = EXCLUDED.total_refund,
-              status = EXCLUDED.status`
-        } else {
-          await sql`
-            INSERT INTO returns (id, sale_id, customer_name, customer_phone, return_type, total_refund, reason, status, created_at)
-            VALUES (${r.id}, ${r.saleId}, ${r.customerName}, ${r.customerPhone}, ${r.returnType}, ${r.totalRefund}, ${r.reason}, ${r.status}, ${r.createdAt})
-            ON CONFLICT (id) DO UPDATE SET
-              total_refund = EXCLUDED.total_refund,
-              status = EXCLUDED.status
-          `
-        }
-        exportedCounts.returns++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting return ${r.id}:`, err)
-      }
-    }
-
-    for (const ri of returnItems) {
-      try {
-        if (type === "supabase") {
-          await sql`INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
-            VALUES (${ri.id}, ${ri.returnId}, ${ri.colorId}, ${ri.saleItemId}, ${ri.quantity}, ${ri.rate}, ${ri.subtotal}, ${ri.stockRestored})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              subtotal = EXCLUDED.subtotal`
-        } else {
-          await sql`
-            INSERT INTO return_items (id, return_id, color_id, sale_item_id, quantity, rate, subtotal, stock_restored)
-            VALUES (${ri.id}, ${ri.returnId}, ${ri.colorId}, ${ri.saleItemId}, ${ri.quantity}, ${ri.rate}, ${ri.subtotal}, ${ri.stockRestored})
-            ON CONFLICT (id) DO UPDATE SET
-              quantity = EXCLUDED.quantity,
-              subtotal = EXCLUDED.subtotal
-          `
-        }
-        exportedCounts.returnItems++
-      } catch (err) {
-        console.error(`[Cloud] Error exporting return item ${ri.id}:`, err)
-      }
-    }
-
-    // Update last sync time
-    await storage.updateSettings({ lastSyncTime: new Date() })
-
-    console.log(`[Cloud Export] Completed successfully. Exported: ${JSON.stringify(exportedCounts)}`)
-
-    return { success: true, counts: exportedCounts }
-  } catch (error: any) {
-    console.error("Cloud export failed:", error)
-    throw error
-  }
-}
-
-async function importFromCloudData() {
-  try {
-    const settings = await storage.getSettings()
-    if (!settings.cloudDatabaseUrl) {
-      throw new Error("Cloud database not configured")
-    }
-
-    const { sql, type } = await getCloudSqlClient(settings.cloudDatabaseUrl)
-
-    console.log(`[Cloud Import] Starting import from ${type}...`)
-
-    // Check if tables exist
-    let tablesCheck
-    if (type === "supabase") {
-      tablesCheck = await sql`
-        SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'products'
-      `
-    } else {
-      tablesCheck = await sql`
-        SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'products'
-      `
-    }
-
-    if (tablesCheck.length === 0) {
-      throw new Error("No data found in cloud database. Please export first.")
-    }
-
-    // Fetch all data from cloud
-    const cloudProducts = await sql`SELECT * FROM products ORDER BY created_at`
-    const cloudVariants = await sql`SELECT * FROM variants ORDER BY created_at`
-    const cloudColors = await sql`SELECT * FROM colors ORDER BY created_at`
-    const cloudSales = await sql`SELECT * FROM sales ORDER BY created_at`
-    const cloudSaleItems = await sql`SELECT * FROM sale_items`
-    const cloudStockInHistory = await sql`SELECT * FROM stock_in_history ORDER BY created_at`
-    const cloudPaymentHistory = await sql`SELECT * FROM payment_history ORDER BY created_at`
-    const cloudReturns = await sql`SELECT * FROM returns ORDER BY created_at`
-    const cloudReturnItems = await sql`SELECT * FROM return_items`
-
-    const importedCounts = {
-      products: 0,
-      variants: 0,
-      colors: 0,
-      sales: 0,
-      saleItems: 0,
-      stockInHistory: 0,
-      paymentHistory: 0,
-      returns: 0,
-      returnItems: 0,
-    }
-
-    for (const p of cloudProducts) {
-      try {
-        await storage.upsertProduct({
-          id: p.id,
-          company: p.company,
-          productName: p.product_name,
-          createdAt: new Date(p.created_at),
-        } as Product)
-        importedCounts.products++
-      } catch (err) {
-        console.error(`[Cloud] Error importing product ${p.id}:`, err)
-      }
-    }
-
-    for (const v of cloudVariants) {
-      try {
-        await storage.upsertVariant({
-          id: v.id,
-          productId: v.product_id,
-          packingSize: v.packing_size,
-          rate: v.rate,
-          createdAt: new Date(v.created_at),
-        } as Variant)
-        importedCounts.variants++
-      } catch (err) {
-        console.error(`[Cloud] Error importing variant ${v.id}:`, err)
-      }
-    }
-
-    for (const c of cloudColors) {
-      try {
-        await storage.upsertColor({
-          id: c.id,
-          variantId: c.variant_id,
-          colorName: c.color_name,
-          colorCode: c.color_code,
-          stockQuantity: c.stock_quantity,
-          rateOverride: c.rate_override,
-          createdAt: new Date(c.created_at),
-        } as Color)
-        importedCounts.colors++
-      } catch (err) {
-        console.error(`[Cloud] Error importing color ${c.id}:`, err)
-      }
-    }
-
-    for (const s of cloudSales) {
-      try {
-        await storage.upsertSale({
-          id: s.id,
-          customerName: s.customer_name,
-          customerPhone: s.customer_phone,
-          totalAmount: s.total_amount,
-          amountPaid: s.amount_paid,
-          paymentStatus: s.payment_status,
-          dueDate: s.due_date ? new Date(s.due_date) : null,
-          isManualBalance: s.is_manual_balance,
-          notes: s.notes,
-          createdAt: new Date(s.created_at),
-        } as ExtendedSale)
-        importedCounts.sales++
-      } catch (err) {
-        console.error(`[Cloud] Error importing sale ${s.id}:`, err)
-      }
-    }
-
-    for (const si of cloudSaleItems) {
-      try {
-        await storage.upsertSaleItem({
-          id: si.id,
-          saleId: si.sale_id,
-          colorId: si.color_id,
-          quantity: si.quantity,
-          rate: si.rate,
-          subtotal: si.subtotal,
-        } as SaleItem)
-        importedCounts.saleItems++
-      } catch (err) {
-        console.error(`[Cloud] Error importing sale item ${si.id}:`, err)
-      }
-    }
-
-    for (const sih of cloudStockInHistory) {
-      try {
-        await storage.upsertStockInHistory({
-          id: sih.id,
-          colorId: sih.color_id,
-          quantity: sih.quantity,
-          previousStock: sih.previous_stock,
-          newStock: sih.new_stock,
-          stockInDate: sih.stock_in_date,
-          notes: sih.notes,
-          createdAt: new Date(sih.created_at),
-        } as StockInHistory)
-        importedCounts.stockInHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error importing stock history ${sih.id}:`, err)
-      }
-    }
-
-    for (const ph of cloudPaymentHistory) {
-      try {
-        await storage.upsertPaymentHistory({
-          id: ph.id,
-          saleId: ph.sale_id,
-          customerPhone: ph.customer_phone,
-          amount: ph.amount,
-          previousBalance: ph.previous_balance,
-          newBalance: ph.new_balance,
-          paymentMethod: ph.payment_method,
-          notes: ph.notes,
-          createdAt: new Date(ph.created_at),
-        } as PaymentHistory)
-        importedCounts.paymentHistory++
-      } catch (err) {
-        console.error(`[Cloud] Error importing payment history ${ph.id}:`, err)
-      }
-    }
-
-    for (const r of cloudReturns) {
-      try {
-        await storage.upsertReturn({
-          id: r.id,
-          saleId: r.sale_id,
-          customerName: r.customer_name,
-          customerPhone: r.customer_phone,
-          returnType: r.return_type,
-          totalRefund: r.total_refund,
-          reason: r.reason,
-          status: r.status,
-          createdAt: new Date(r.created_at),
-        } as Return)
-        importedCounts.returns++
-      } catch (err) {
-        console.error(`[Cloud] Error importing return ${r.id}:`, err)
-      }
-    }
-
-    for (const ri of cloudReturnItems) {
-      try {
-        await storage.upsertReturnItem({
-          id: ri.id,
-          returnId: ri.return_id,
-          colorId: ri.color_id,
-          saleItemId: ri.sale_item_id,
-          quantity: ri.quantity,
-          rate: ri.rate,
-          subtotal: ri.subtotal,
-          stockRestored: ri.stock_restored,
-        } as ReturnItem)
-        importedCounts.returnItems++
-      } catch (err) {
-        console.error(`[Cloud] Error importing return item ${ri.id}:`, err)
-      }
-    }
-
-    // Update last sync time
-    await storage.updateSettings({ lastSyncTime: new Date() })
-
-    console.log(`[Cloud Import] Completed successfully. Imported: ${JSON.stringify(importedCounts)}`)
-
-    return { success: true, counts: importedCounts }
-  } catch (error) {
-    console.error("[Cloud Import] Failed:", error)
-    throw error
-  }
-}
-
 export async function registerRoutes(app: Express): Promise<Server> {
+
   // Products - with caching
   app.get("/api/products", async (_req, res) => {
     try {
@@ -938,8 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertProductSchema.parse(req.body)
       const product = await storage.createProduct(validated)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(product)
@@ -962,8 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const product = await storage.updateProduct(req.params.id, { company, productName })
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(product)
@@ -977,8 +228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteProduct(req.params.id)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json({ success: true })
@@ -1009,8 +259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertVariantSchema.parse(req.body)
       const variant = await storage.createVariant(validated)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(variant)
@@ -1037,8 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rate: Number.parseFloat(rate),
       })
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(variant)
@@ -1057,8 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const variant = await storage.updateVariantRate(req.params.id, rate)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json(variant)
@@ -1072,8 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteVariant(req.params.id)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("products")
+      // Cache invalidation only - no auto sync
       invalidateInventoryCache()
 
       res.json({ success: true })
@@ -1105,8 +351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       validated.colorCode = validated.colorCode.trim().toUpperCase()
       const color = await storage.createColor(validated)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1134,8 +379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stockQuantity: Number.parseInt(stockQuantity),
       })
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1154,8 +398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const color = await storage.updateColorStock(req.params.id, stockQuantity)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1174,8 +417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const color = await storage.updateColorRateOverride(req.params.id, rateOverride)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json(color)
@@ -1237,9 +479,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`[API] Stock in successful: ${color.colorName} - New stock: ${color.stockQuantity}`)
 
-      // Auto-sync trigger
-      detectChanges("colors")
-
       res.json({
         ...color,
         message: `Successfully added ${quantity} units to ${color.colorName}`,
@@ -1269,8 +508,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteColor(req.params.id)
 
-      // Auto-sync trigger & cache invalidation
-      detectChanges("colors")
+      // Cache invalidation only - no auto sync
       invalidateCache("colors")
 
       res.json({ success: true })
@@ -1397,9 +635,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use the fixed updateStockInHistory function that recalculates newStock
       const updatedRecord = await storage.updateStockInHistory(id, { quantity, notes, stockInDate })
 
-      // Auto-sync trigger
-      detectChanges("colors")
-
       res.json(updatedRecord)
     } catch (error) {
       console.error("[API] Error updating stock history:", error)
@@ -1514,9 +749,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: validated.notes ?? undefined,
       })
 
-      // Auto-sync trigger
-      detectChanges("payments")
-
       res.json(paymentHistory)
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1545,9 +777,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      // Auto-sync trigger
-      detectChanges("payments")
-
       res.json(updated)
     } catch (error) {
       console.error("Error updating payment history:", error)
@@ -1565,9 +794,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(404).json({ error: "Payment record not found" })
         return
       }
-
-      // Auto-sync trigger
-      detectChanges("payments")
 
       res.json({ success: true })
     } catch (error) {
@@ -1600,7 +826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Add customer note - UPDATED WITH REAL-TIME INVALIDATION
+  // Add customer note
   app.post("/api/customer/:phone/notes", async (req, res) => {
     try {
       const { phone } = req.params
@@ -1624,13 +850,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dueDate: null,
         notes: note,
       })
-
-      // Invalidate real-time queries
-      invalidateCustomerQueries(phone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
 
       res.json({
         success: true,
@@ -1768,7 +987,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   })
 
   // OPTIMIZED: Combined customer statement endpoint - fetches all data in one request
-  // AUTO-FIX: Sanitizes old/corrupted data to prevent statement loading failures
   app.get("/api/customer/:phone/statement", async (req, res) => {
     try {
       const { phone } = req.params
@@ -1786,181 +1004,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getReturnsByCustomerPhone(phone)
       ])
 
-      // AUTO-FIX: Sanitize sales data to handle old/corrupted database entries
-      const sanitizeSale = (sale: any) => {
-        if (!sale) return null
-        try {
-          return {
-            ...sale,
-            id: sale.id || `sale-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            customerName: sale.customerName || "Unknown Customer",
-            customerPhone: sale.customerPhone || phone,
-            totalAmount: sanitizeNumber(sale.totalAmount),
-            amountPaid: sanitizeNumber(sale.amountPaid),
-            discountAmount: sanitizeNumber(sale.discountAmount),
-            discountPercentage: sanitizeNumber(sale.discountPercentage),
-            paymentStatus: sale.paymentStatus || "unpaid",
-            isManualBalance: Boolean(sale.isManualBalance),
-            notes: sale.notes || null,
-            dueDate: sanitizeDate(sale.dueDate),
-            createdAt: sanitizeDate(sale.createdAt) || new Date().toISOString(),
-            saleItems: Array.isArray(sale.saleItems) 
-              ? sale.saleItems.map(sanitizeSaleItem).filter(Boolean)
-              : []
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize sale ${sale?.id}:`, err)
-          return null
-        }
-      }
-
-      // AUTO-FIX: Sanitize sale items
-      const sanitizeSaleItem = (item: any) => {
-        if (!item) return null
-        try {
-          return {
-            ...item,
-            id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            quantity: sanitizeNumber(item.quantity) || 1,
-            rate: sanitizeNumber(item.rate),
-            subtotal: sanitizeNumber(item.subtotal),
-            quantityReturned: sanitizeNumber(item.quantityReturned),
-            color: item.color ? sanitizeColor(item.color) : null
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize sale item:`, err)
-          return null
-        }
-      }
-
-      // AUTO-FIX: Sanitize color data
-      const sanitizeColor = (color: any) => {
-        if (!color) return null
-        return {
-          ...color,
-          id: color.id || "unknown",
-          colorName: color.colorName || "Unknown Color",
-          colorCode: color.colorCode || "N/A",
-          stockQuantity: sanitizeNumber(color.stockQuantity),
-          variant: color.variant ? {
-            ...color.variant,
-            packingSize: color.variant.packingSize || "N/A",
-            rate: sanitizeNumber(color.variant.rate),
-            product: color.variant.product ? {
-              ...color.variant.product,
-              productName: color.variant.product.productName || "Unknown Product",
-              companyName: color.variant.product.companyName || "Unknown Company"
-            } : { productName: "Unknown Product", companyName: "Unknown Company" }
-          } : null
-        }
-      }
-
-      // AUTO-FIX: Sanitize payment history
-      const sanitizePayment = (payment: any) => {
-        if (!payment) return null
-        try {
-          return {
-            ...payment,
-            id: payment.id || `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            amount: sanitizeNumber(payment.amount),
-            paymentMethod: payment.paymentMethod || "cash",
-            notes: payment.notes || null,
-            createdAt: sanitizeDate(payment.createdAt) || new Date().toISOString(),
-            saleId: payment.saleId || null
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize payment:`, err)
-          return null
-        }
-      }
-
-      // AUTO-FIX: Sanitize returns
-      const sanitizeReturn = (ret: any) => {
-        if (!ret) return null
-        try {
-          return {
-            ...ret,
-            id: ret.id || `return-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            totalRefund: sanitizeNumber(ret.totalRefund),
-            reason: ret.reason || "No reason provided",
-            createdAt: sanitizeDate(ret.createdAt) || new Date().toISOString(),
-            returnItems: Array.isArray(ret.returnItems) 
-              ? ret.returnItems.map((item: any) => ({
-                  ...item,
-                  quantityReturned: sanitizeNumber(item.quantityReturned) || sanitizeNumber(item.quantity),
-                  refundAmount: sanitizeNumber(item.refundAmount),
-                  color: item.color ? sanitizeColor(item.color) : null
-                }))
-              : []
-          }
-        } catch (err) {
-          console.error(`[AUTO-FIX] Failed to sanitize return:`, err)
-          return null
-        }
-      }
-
-      // Helper: Sanitize number values
-      const sanitizeNumber = (value: any): number => {
-        if (value === null || value === undefined || value === "") return 0
-        const num = typeof value === "string" ? parseFloat(value) : Number(value)
-        return isNaN(num) || !isFinite(num) ? 0 : num
-      }
-
-      // Helper: Sanitize date values
-      const sanitizeDate = (value: any): string | null => {
-        if (!value) return null
-        try {
-          const date = new Date(value)
-          return isNaN(date.getTime()) ? null : date.toISOString()
-        } catch {
-          return null
-        }
-      }
-
-      // Apply sanitization to all data
-      const rawSales = purchaseHistory?.adjustedSales || []
-      const sanitizedSales = rawSales.map(sanitizeSale).filter(Boolean)
-      
-      const rawPayments = paymentHistory || []
-      const sanitizedPayments = rawPayments.map(sanitizePayment).filter(Boolean)
-      
-      const rawReturns = returns || []
-      const sanitizedReturns = rawReturns.map(sanitizeReturn).filter(Boolean)
-
-      // Log any data that was filtered out due to corruption
-      const salesFixed = rawSales.length - sanitizedSales.length
-      const paymentsFixed = rawPayments.length - sanitizedPayments.length
-      const returnsFixed = rawReturns.length - sanitizedReturns.length
-      
-      if (salesFixed > 0 || paymentsFixed > 0 || returnsFixed > 0) {
-        console.log(`[AUTO-FIX] Customer ${phone}: Fixed/filtered ${salesFixed} sales, ${paymentsFixed} payments, ${returnsFixed} returns`)
-      }
-
       const response = {
-        sales: sanitizedSales,
-        payments: sanitizedPayments,
-        returns: sanitizedReturns,
+        sales: purchaseHistory?.originalSales || [],
+        payments: paymentHistory || [],
+        returns: returns || [],
         summary: {
-          totalSales: sanitizedSales.length,
-          totalPayments: sanitizedPayments.length,
-          totalReturns: sanitizedReturns.length
+          totalSales: (purchaseHistory?.originalSales || []).length,
+          totalPayments: paymentHistory?.length || 0,
+          totalReturns: returns?.length || 0
         }
       }
 
       res.json(response)
     } catch (error) {
       console.error("Error fetching customer statement:", error)
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      
-      // AUTO-FIX: Return empty data instead of error to prevent UI crash
-      console.log(`[AUTO-FIX] Returning empty statement due to error for customer: ${req.params.phone}`)
       res.json({
         sales: [],
         payments: [],
         returns: [],
-        summary: { totalSales: 0, totalPayments: 0, totalReturns: 0 },
-        _autoFixed: true,
-        _error: errorMessage
+        summary: { totalSales: 0, totalPayments: 0, totalReturns: 0 }
       })
     }
   })
@@ -2002,7 +1064,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create sale - UPDATED WITH REAL-TIME INVALIDATION
+  // Create sale
   app.post("/api/sales", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { items, ...saleData } = req.body
@@ -2024,13 +1086,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log("Sale created successfully:", JSON.stringify(sale, null, 2))
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(sale)
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -2043,15 +1098,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // FIXED: Record payment - UPDATED WITH BETTER ERROR HANDLING
+  // Record payment with strict validation
   app.post("/api/sales/:id/payment", requirePerm("payment:edit"), async (req, res) => {
     try {
       const { amount, paymentMethod, notes } = req.body
 
-      if (typeof amount !== "number" || amount <= 0) {
-        res.status(400).json({ error: "Invalid payment amount: must be greater than 0" })
+      // Strict validation: must be a positive number, not NaN
+      if (typeof amount !== "number" || isNaN(amount) || amount <= 0) {
+        res.status(400).json({ error: "Invalid payment amount: must be a positive number" })
         return
       }
+
+      // Round to 2 decimal places to avoid floating point issues
+      const roundedAmount = Math.round(amount * 100) / 100
 
       // Get sale details before update
       const sale = await storage.getSale(req.params.id)
@@ -2060,35 +1119,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return
       }
 
-      const totalAmount = Number.parseFloat(sale.totalAmount || "0")
-      const amountPaid = Number.parseFloat(sale.amountPaid || "0")
-      const outstanding = Math.max(0, totalAmount - amountPaid)
+      const totalAmount = Math.round(Number.parseFloat(sale.totalAmount || "0") * 100) / 100
+      const amountPaid = Math.round(Number.parseFloat(sale.amountPaid || "0") * 100) / 100
+      const outstanding = Math.round(Math.max(0, totalAmount - amountPaid) * 100) / 100
 
-      console.log("[Payment Debug API]", {
-        saleId: req.params.id,
-        totalAmount,
-        amountPaid,
-        outstanding,
-        paymentAmount: amount,
-      })
-
-      if (amount > outstanding) {
+      if (roundedAmount > outstanding) {
         res.status(400).json({
-          error: `Payment amount (Rs. ${amount}) exceeds outstanding balance (Rs. ${outstanding})`,
+          error: `Payment amount (Rs. ${roundedAmount}) exceeds outstanding balance (Rs. ${outstanding})`,
         })
         return
       }
 
       try {
-        // Record payment with proper balance tracking
-        const updatedSale = await storage.updateSalePayment(req.params.id, amount, paymentMethod, notes)
-
-        // Invalidate real-time queries
-        invalidateCustomerQueries(sale.customerPhone)
-        invalidateGlobalQueries()
-
-        // Auto-sync trigger
-        detectChanges("payments")
+        // Record payment with proper balance tracking (use rounded amount)
+        const updatedSale = await storage.updateSalePayment(req.params.id, roundedAmount, paymentMethod, notes)
 
         res.json(updatedSale)
       } catch (storageError) {
@@ -2105,13 +1149,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
+  // Update paid amount directly (for bill editing)
+  app.patch("/api/sales/:id/paid-amount", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { amountPaid } = req.body
+
+      if (typeof amountPaid !== "number" || isNaN(amountPaid) || amountPaid < 0) {
+        res.status(400).json({ error: "Invalid amount: must be a non-negative number" })
+        return
+      }
+
+      const sale = await storage.getSale(req.params.id)
+      if (!sale) {
+        res.status(404).json({ error: "Sale not found" })
+        return
+      }
+
+      // Round to 2 decimal places
+      const roundedAmount = Math.round(amountPaid * 100) / 100
+      const totalAmount = Math.round(Number.parseFloat(sale.totalAmount || "0") * 100) / 100
+
+      // Calculate new payment status
+      let paymentStatus = "unpaid"
+      if (roundedAmount >= totalAmount) {
+        paymentStatus = "paid"
+      } else if (roundedAmount > 0) {
+        paymentStatus = "partial"
+      }
+
+      // Update the sale's paid amount and status directly
+      const updatedSale = await storage.updateSalePaidAmount(req.params.id, roundedAmount, paymentStatus)
+
+      res.json(updatedSale)
+    } catch (error) {
+      console.error("Error updating paid amount:", error)
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : "Failed to update paid amount" 
+      })
+    }
+  })
+
   app.post("/api/sales/:id/items", requirePerm("sales:edit"), async (req, res) => {
     try {
       const validated = insertSaleItemSchema.parse(req.body)
       const saleItem = await storage.addSaleItem(req.params.id, validated)
-
-      // Auto-sync trigger
-      detectChanges("sales")
 
       res.json(saleItem)
     } catch (error) {
@@ -2124,7 +1205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // UPDATE SALE ITEM ENDPOINT - UPDATED WITH REAL-TIME INVALIDATION
+  // UPDATE SALE ITEM ENDPOINT
   app.patch("/api/sale-items/:id", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { quantity, rate, subtotal } = req.body
@@ -2159,13 +1240,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subtotal: rate * quantity,
       })
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(saleItem)
     } catch (error) {
       console.error("Error updating sale item:", error)
@@ -2173,7 +1247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // DELETE SALE ITEM - UPDATED WITH REAL-TIME INVALIDATION
+  // DELETE SALE ITEM
   app.delete("/api/sale-items/:id", requirePerm("sales:delete"), async (req, res) => {
     try {
       // Get sale item details to find customer phone
@@ -2192,13 +1266,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.deleteSaleItem(req.params.id)
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json({ success: true })
     } catch (error) {
       console.error("Error deleting sale item:", error)
@@ -2206,7 +1273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create manual pending balance (no items, just a balance record) - UPDATED WITH REAL-TIME INVALIDATION
+  // Create manual pending balance (no items, just a balance record)
   app.post("/api/sales/manual-balance", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { customerName, customerPhone, totalAmount, dueDate, notes } = req.body
@@ -2229,13 +1296,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes,
       })
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(sale)
     } catch (error) {
       console.error("Error creating manual balance:", error)
@@ -2243,7 +1303,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Update due date for a sale - UPDATED WITH REAL-TIME INVALIDATION
+  // Update due date for a sale
   app.patch("/api/sales/:id/due-date", requirePerm("sales:edit"), async (req, res) => {
     try {
       const { dueDate, notes } = req.body
@@ -2260,13 +1320,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes,
       })
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(sale.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
-
       res.json(updatedSale)
     } catch (error) {
       console.error("Error updating due date:", error)
@@ -2274,7 +1327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Delete entire sale - UPDATED WITH REAL-TIME INVALIDATION
+  // Delete entire sale
   app.delete("/api/sales/:id", requirePerm("sales:delete"), async (req, res) => {
     try {
       // Get sale details before deletion to know customer phone
@@ -2287,13 +1340,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerPhone = sale.customerPhone
 
       await storage.deleteSale(req.params.id)
-
-      // Invalidate real-time queries
-      invalidateCustomerQueries(customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger
-      detectChanges("sales")
 
       res.json({ success: true, message: "Sale deleted successfully" })
     } catch (error) {
@@ -2317,7 +1363,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Create return - UPDATED WITH REAL-TIME INVALIDATION
+  // Create return
   app.post("/api/returns", async (req, res) => {
     try {
       const { returnData, items } = req.body
@@ -2325,15 +1371,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const returnRecord = await storage.createReturn(returnData, items || [])
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(returnData.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger & cache invalidation
-      detectChanges("returns")
-      detectChanges("sales")
-      detectChanges("colors")
-      invalidateCache("colors") // Stock updated by return
+      // Invalidate colors cache only
+      invalidateCache("colors")
 
       res.json(returnRecord)
     } catch (error) {
@@ -2342,25 +1381,151 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // Quick return - UPDATED WITH REAL-TIME INVALIDATION
+  // Quick return
   app.post("/api/returns/quick", async (req, res) => {
     try {
       console.log("[API] Creating quick return:", req.body)
       const returnRecord = await storage.createQuickReturn(req.body)
 
-      // Invalidate real-time queries
-      invalidateCustomerQueries(req.body.customerPhone)
-      invalidateGlobalQueries()
-
-      // Auto-sync trigger & cache invalidation
-      detectChanges("returns")
-      detectChanges("colors")
-      invalidateCache("colors") // Stock updated by return
+      // Invalidate colors cache only
+      invalidateCache("colors")
 
       res.json(returnRecord)
     } catch (error) {
       console.error("[API] Error creating quick return:", error)
       res.status(500).json({ error: "Failed to create quick return" })
+    }
+  })
+
+  // Cloud Sync: Test Postgres connection (Neon/Supabase)
+  app.post(
+    "/api/cloud-sync/test-connection",
+    requirePerm("payment:edit"),
+    async (req, res) => {
+      try {
+        const { connectionString } = req.body
+        if (!connectionString || typeof connectionString !== "string") {
+          return res.status(400).json({ ok: false, error: "connectionString is required" })
+        }
+
+        // Try to connect using pg
+        const { Client } = await import("pg")
+        const client = new Client({ connectionString, statement_timeout: 5000, connectionTimeoutMillis: 5000 })
+
+        try {
+          await client.connect()
+          const result = await client.query("SELECT 1 as ok")
+          await client.end()
+          if (result && result.rows && result.rows[0] && result.rows[0].ok === 1) {
+            return res.json({ ok: true })
+          }
+          return res.json({ ok: true })
+        } catch (err) {
+          try {
+            await client.end()
+          } catch (_) {
+            // ignore
+          }
+          console.error("[API] Cloud Sync test connection failed:", err)
+          return res.status(400).json({ ok: false, error: (err as Error).message || "Connection failed" })
+        }
+      } catch (error) {
+        console.error("[API] Error testing cloud connection:", error)
+        return res.status(500).json({ ok: false, error: "Internal server error" })
+      }
+    },
+  )
+
+  // Manage cloud connections (encrypted server-side)
+  app.get("/api/cloud-sync/connections", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { listConnections } = await import("./cloudSync")
+      const rows = await listConnections()
+      res.json({ ok: true, connections: rows })
+    } catch (err) {
+      console.error("[API] Error listing cloud connections:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  app.post("/api/cloud-sync/connections", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { provider, label, connectionString } = req.body
+      if (!provider || !connectionString) return res.status(400).json({ ok: false, error: "provider and connectionString required" })
+
+      // Save encrypted connection string
+      const id = crypto.randomUUID()
+      const { saveConnection } = await import("./cloudSync")
+      await saveConnection({ id, provider, label, connectionString })
+      res.json({ ok: true, id })
+    } catch (err: any) {
+      console.error("[API] Error saving cloud connection:", err)
+      res.status(500).json({ ok: false, error: err.message || "Internal error" })
+    }
+  })
+
+  app.delete("/api/cloud-sync/connections/:id", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { id } = req.params
+      const { deleteConnection } = await import("./cloudSync")
+      await deleteConnection(id)
+      res.json({ ok: true })
+    } catch (err) {
+      console.error("[API] Error deleting cloud connection:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  // Enqueue a cloud sync job (export/import)
+  app.post("/api/cloud-sync/jobs", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { connectionId, jobType, dryRun, details } = req.body
+      if (!connectionId || !jobType) return res.status(400).json({ ok: false, error: "connectionId and jobType required" })
+      const jobId = crypto.randomUUID()
+      const { getConnection, enqueueJob } = await import("./cloudSync")
+      const conn = await getConnection(connectionId)
+      if (!conn) return res.status(404).json({ ok: false, error: "connection not found" })
+
+      await enqueueJob({ id: jobId, jobType, provider: conn.provider, connectionId, dryRun: !!dryRun, initiatedBy: req.ip, details: details ? JSON.stringify(details) : undefined })
+      res.json({ ok: true, jobId })
+    } catch (err) {
+      console.error("[API] Error enqueuing cloud sync job:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  app.get("/api/cloud-sync/jobs", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { sqliteDb } = await import("./db")
+      if (!sqliteDb) return res.json({ ok: true, jobs: [] })
+      const jobs = sqliteDb.prepare("SELECT id, job_type, provider, status, dry_run, initiated_by, attempts, last_error, created_at, updated_at FROM cloud_sync_jobs ORDER BY created_at DESC").all()
+      res.json({ ok: true, jobs })
+    } catch (err) {
+      console.error("[API] Error listing jobs:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  // Manual trigger to process one pending job (admin only)
+  app.post("/api/cloud-sync/jobs/:id/process", requirePerm("payment:edit"), async (req, res) => {
+    try {
+      const { processNextJob } = await import("./cloudSyncWorker")
+      const result = await processNextJob()
+      res.json({ ok: true, result })
+    } catch (err) {
+      console.error("[API] Error processing job:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
+    }
+  })
+
+  app.post("/api/cloud-sync/process-next", requirePerm("payment:edit"), async (_req, res) => {
+    try {
+      const { processNextJob } = await import("./cloudSyncWorker")
+      const result = await processNextJob()
+      res.json({ ok: true, result })
+    } catch (err) {
+      console.error("[API] Error processing next job:", err)
+      res.status(500).json({ ok: false, error: "Internal error" })
     }
   })
 
@@ -2387,6 +1552,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("[API] Error fetching customer returns:", error)
       res.status(500).json({ error: "Failed to fetch customer returns" })
+    }
+  })
+
+  // Check if return can be edited
+  app.get("/api/returns/:id/can-edit", async (req, res) => {
+    try {
+      const result = await storage.canEditReturn(req.params.id)
+      res.json(result)
+    } catch (error) {
+      console.error("[API] Error checking return edit status:", error)
+      res.status(500).json({ error: "Failed to check return edit status" })
+    }
+  })
+
+  // Update return (reason, refund method, amount, status)
+  app.patch("/api/returns/:id", async (req, res) => {
+    try {
+      const { reason, refundMethod, totalRefund, status } = req.body
+
+      console.log("[API] Updating return:", { id: req.params.id, reason, refundMethod, totalRefund, status })
+
+      const updatedReturn = await storage.updateReturn(req.params.id, {
+        reason,
+        refundMethod,
+        totalRefund,
+        status,
+      })
+
+      if (!updatedReturn) {
+        res.status(404).json({ error: "Return not found" })
+        return
+      }
+
+      // Invalidate returns cache
+      invalidateCache("returns")
+
+      res.json(updatedReturn)
+    } catch (error) {
+      console.error("[API] Error updating return:", error)
+      const message = error instanceof Error ? error.message : "Failed to update return"
+      res.status(400).json({ error: message })
     }
   })
 
@@ -2482,9 +1688,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reinitialize database connection
       setDatabasePath(currentDbPath)
 
-      // Invalidate all queries after import
-      invalidateGlobalQueries()
-
       res.json({
         success: true,
         message: "Database imported successfully. Please refresh the page.",
@@ -2530,484 +1733,538 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   })
 
-  // ============ FIXED AUDIT ROUTES ============
-  app.get("/api/audit/has-pin", async (req, res) => {
+  // ============ SOFTWARE LICENSE MANAGEMENT ============
+  
+  // Master PIN for software blocking
+  const MASTER_ADMIN_PIN = process.env.MASTER_ADMIN_PIN || "3620192373285"
+
+  // Verify master admin PIN
+  function verifyMasterPin(pin: string): boolean {
+    if (!pin || !MASTER_ADMIN_PIN) return false
+    return pin === MASTER_ADMIN_PIN
+  }
+
+  // Check license status
+  app.post("/api/license/check", async (req, res) => {
     try {
-      const settings = await storage.getSettings()
-      // FIXED: Proper default PIN logic
-      const hasPin = !!(settings.auditPinHash && settings.auditPinSalt)
-      const isDefault = !hasPin // Only default if no PIN is set
+      const { deviceId, deviceName, storeName } = req.body
+      
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+      
+      const now = new Date()
+      
+      // Check and apply any auto-blocks first (for all devices)
+      await storage.checkAndApplyAutoBlocks()
+      
+      // Create or update the license record using client-provided deviceId
+      let license = await storage.createOrUpdateSoftwareLicense({
+        deviceId: deviceId,
+        deviceName: deviceName || `Device-${deviceId.substring(0, 6)}`,
+        storeName: storeName || "Unknown Store",
+        lastHeartbeat: now,
+        ipAddress: req.ip || req.socket.remoteAddress || null,
+        userAgent: req.headers["user-agent"] || null,
+      })
+
+      // Re-fetch license to get any auto-block that was just applied
+      const updatedLicense = await storage.getSoftwareLicense(deviceId)
+      if (updatedLicense) {
+        license = updatedLicense
+      }
 
       res.json({
-        hasPin,
-        isDefault,
+        deviceId: license.deviceId,
+        status: license.status,
+        isBlocked: license.status === "blocked",
+        blockedReason: license.blockedReason,
+        blockedAt: license.blockedAt,
+        autoBlockDate: license.autoBlockDate,
+        message: license.status === "blocked" 
+          ? `Software blocked: ${license.blockedReason || "Contact administrator"}` 
+          : "License active",
       })
     } catch (error) {
-      console.error("[API] Error checking PIN:", error)
-      res.status(200).json({ hasPin: false, isDefault: true })
+      console.error("Error checking license:", error)
+      res.status(500).json({ error: "Failed to check license" })
     }
   })
 
-  app.post("/api/audit/verify", async (req, res) => {
+  // Get all registered devices (requires master PIN)
+  app.post("/api/license/devices", async (req, res) => {
     try {
-      const { pin } = req.body
-
-      if (!pin || typeof pin !== "string" || !/^\d{4}$/.test(pin)) {
-        return res.status(400).json({ error: "PIN must be exactly 4 digits" })
+      const { masterPin } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
       }
 
-      const settings = await storage.getSettings()
+      const licenses = await storage.getSoftwareLicenses()
+      res.json({ devices: licenses })
+    } catch (error) {
+      console.error("Error getting devices:", error)
+      res.status(500).json({ error: "Failed to get devices" })
+    }
+  })
 
-      // If no PIN is set, default PIN is "0000"
-      if (!settings.auditPinHash || !settings.auditPinSalt) {
-        if (pin === "0000") {
-          const token = crypto.randomBytes(32).toString("hex")
-          auditTokens.set(token, { createdAt: Date.now() })
-          return res.json({
-            ok: true,
-            isDefault: true,
-            auditToken: token,
-          })
-        } else {
-          return res.status(401).json({ error: "Invalid PIN", ok: false })
+  // Block a device (requires master PIN)
+  app.post("/api/license/block", async (req, res) => {
+    try {
+      const { masterPin, deviceId, reason } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+
+      const license = await storage.blockSoftwareLicense(
+        deviceId, 
+        reason || "Blocked by administrator",
+        "master_admin"
+      )
+
+      if (!license) {
+        res.status(404).json({ error: "Device not found" })
+        return
+      }
+
+      res.json({
+        success: true,
+        message: `Device ${deviceId} has been blocked`,
+        device: license,
+      })
+    } catch (error) {
+      console.error("Error blocking device:", error)
+      res.status(500).json({ error: "Failed to block device" })
+    }
+  })
+
+  // Unblock a device (requires master PIN)
+  app.post("/api/license/unblock", async (req, res) => {
+    try {
+      const { masterPin, deviceId } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+
+      const license = await storage.unblockSoftwareLicense(deviceId)
+
+      if (!license) {
+        res.status(404).json({ error: "Device not found" })
+        return
+      }
+
+      res.json({
+        success: true,
+        message: `Device ${deviceId} has been unblocked`,
+        device: license,
+      })
+    } catch (error) {
+      console.error("Error unblocking device:", error)
+      res.status(500).json({ error: "Failed to unblock device" })
+    }
+  })
+
+  // Set auto-block date for a device (requires master PIN)
+  app.post("/api/license/set-auto-block", async (req, res) => {
+    try {
+      const { masterPin, deviceId, autoBlockDate } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      if (!deviceId) {
+        res.status(400).json({ error: "Device ID is required" })
+        return
+      }
+
+      const license = await storage.setAutoBlockDate(deviceId, autoBlockDate || null)
+
+      if (!license) {
+        res.status(404).json({ error: "Device not found" })
+        return
+      }
+
+      res.json({
+        success: true,
+        message: autoBlockDate 
+          ? `Auto-block date set to ${autoBlockDate}` 
+          : "Auto-block date cleared",
+        device: license,
+      })
+    } catch (error) {
+      console.error("Error setting auto-block date:", error)
+      res.status(500).json({ error: "Failed to set auto-block date" })
+    }
+  })
+
+  // Get license audit log (requires master PIN) - POST version
+  app.post("/api/license/audit", async (req, res) => {
+    try {
+      const { masterPin, deviceId } = req.body
+      
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ error: "Invalid master PIN" })
+        return
+      }
+
+      const auditLog = await storage.getLicenseAuditLog(deviceId)
+      res.json({ auditLog })
+    } catch (error) {
+      console.error("Error getting audit log:", error)
+      res.status(500).json({ error: "Failed to get audit log" })
+    }
+  })
+
+  // Verify master PIN (for admin panel access)
+  app.post("/api/license/verify-pin", async (req, res) => {
+    try {
+      const { masterPin } = req.body
+      if (!masterPin) return res.status(400).json({ valid: false, error: "masterPin required" })
+
+      // Check settings-stored master pin first
+      const s = await storage.getSettings()
+      if (s.masterPinHash && s.masterPinSalt) {
+        try {
+          const derived = crypto.scryptSync(masterPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
+          if (derived.toString('hex') !== s.masterPinHash) {
+            res.status(403).json({ valid: false, error: "Invalid master PIN" })
+            return
+          }
+          res.json({ valid: true, message: "Master PIN verified" })
+          return
+        } catch (err) {
+          // fallthrough to env check
         }
       }
 
-      // Verify against stored hash
-      const hashedInput = hashPin(pin, settings.auditPinSalt)
-      if (hashedInput === settings.auditPinHash) {
-        const token = crypto.randomBytes(32).toString("hex")
-        auditTokens.set(token, { createdAt: Date.now() })
-        return res.json({
-          ok: true,
-          isDefault: false,
-          auditToken: token,
-        })
-      } else {
-        return res.status(401).json({ error: "Invalid PIN", ok: false })
+      // Fallback to env-based master PIN
+      if (!verifyMasterPin(masterPin)) {
+        res.status(403).json({ valid: false, error: "Invalid master PIN" })
+        return
       }
+
+      res.json({ valid: true, message: "Master PIN verified" })
     } catch (error) {
-      console.error("Error verifying audit PIN:", error)
-      res.status(500).json({ error: "Failed to verify audit PIN" })
+      console.error("Error verifying PIN:", error)
+      res.status(500).json({ error: "Failed to verify PIN" })
     }
   })
 
-  app.patch("/api/audit/pin", async (req, res) => {
+  // Set or change master PIN (admin)
+  app.post("/api/license/set-master-pin", requirePerm("payment:edit"), async (req, res) => {
     try {
       const { currentPin, newPin } = req.body
+      if (!newPin) return res.status(400).json({ ok: false, error: "newPin required" })
 
-      if (!newPin || typeof newPin !== "string" || newPin.length !== 4) {
-        return res.status(400).json({ error: "New PIN must be 4 digits" })
+      // Verify current pin: either matches stored hash or env
+      const s = await storage.getSettings()
+      let verified = false
+      if (s.masterPinHash && s.masterPinSalt && currentPin) {
+        try {
+          const derived = crypto.scryptSync(currentPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
+          verified = derived.toString('hex') === s.masterPinHash
+        } catch (err) {
+          verified = false
+        }
+      }
+
+      if (!verified && currentPin) {
+        verified = verifyMasterPin(currentPin)
+      }
+
+      if (!verified && s.masterPinHash) {
+        return res.status(403).json({ ok: false, error: "Invalid current PIN" })
+      }
+
+      // If no master pin was set yet, allow setting without currentPin (first-time setup)
+
+      // Generate salt and store scrypt hash
+      const salt = crypto.randomBytes(16)
+      const derived = crypto.scryptSync(newPin, salt, 64)
+      await storage.updateSettings({ masterPinHash: derived.toString('hex'), masterPinSalt: salt.toString('hex') })
+      invalidateCache("settings")
+      res.json({ ok: true })
+    } catch (err: any) {
+      console.error("Error setting master PIN:", err)
+      res.status(500).json({ ok: false, error: "Failed to set master PIN" })
+    }
+  })
+
+  // ============ ADMIN LICENSE SETTINGS ============
+  
+  // Crypto helper for hashing secret key
+  function hashSecretKey(key: string): string {
+    // use imported `crypto` (ESM-friendly)
+    return crypto.createHash("sha256").update(key).digest("hex")
+  }
+
+  // Get license status for admin panel
+  app.get("/api/license/status", async (req, res) => {
+    try {
+      const settings = await storage.getSettings()
+      res.json({
+        isActive: true,
+        expiryDate: settings?.licenseExpiryDate || null,
+        lastChecked: new Date().toISOString(),
+      })
+    } catch (error) {
+      console.error("Error getting license status:", error)
+      res.status(500).json({ error: "Failed to get license status" })
+    }
+  })
+
+  // Set license expiration date
+  app.post("/api/license/set-expiry", async (req, res) => {
+    try {
+      const { expiryDate } = req.body
+      
+      if (!expiryDate) {
+        res.status(400).json({ error: "Expiration date is required" })
+        return
+      }
+
+      // Validate date format (YYYY-MM-DD)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+        res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD" })
+        return
       }
 
       const settings = await storage.getSettings()
+      if (settings) {
+        await storage.updateSettings({
+          licenseExpiryDate: expiryDate,
+        })
 
-      // Verify current PIN
-      let isValid = false
+        console.log(`License expiry date set to ${expiryDate}`)
 
-      if (!settings.auditPinHash || !settings.auditPinSalt) {
-        // No PIN set yet, check against default
-        isValid = currentPin === "0000"
+        res.json({
+          success: true,
+          message: `License expiration date set to ${expiryDate}`,
+          expiryDate,
+        })
       } else {
-        // Check against stored hash
-        if (!currentPin || typeof currentPin !== "string" || currentPin.length !== 4) {
-          return res.status(400).json({ error: "Current PIN must be 4 digits" })
-        }
-        const hashedCurrent = hashPin(currentPin, settings.auditPinSalt)
-        isValid = hashedCurrent === settings.auditPinHash
+        res.status(404).json({ error: "Settings not found" })
       }
-
-      if (!isValid) {
-        return res.status(401).json({ error: "Current PIN is incorrect" })
-      }
-
-      // Generate new salt and hash
-      const newSalt = crypto.randomBytes(16).toString("hex")
-      const newHash = hashPin(newPin, newSalt)
-
-      // Update settings
-      await storage.updateSettings({
-        auditPinSalt: newSalt,
-        auditPinHash: newHash,
-      })
-
-      // Invalidate all existing audit tokens
-      auditTokens.clear()
-
-      res.json({ success: true, message: "PIN changed successfully" })
     } catch (error) {
-      console.error("Error changing audit PIN:", error)
-      res.status(500).json({ error: "Failed to change audit PIN" })
+      console.error("Error setting license expiry:", error)
+      res.status(500).json({ error: "Failed to set license expiry date" })
     }
   })
 
-  // Stock Out History for Audit (protected)
-  app.get("/api/audit/stock-out", verifyAuditToken, async (_req, res) => {
-    try {
-      const stockOut = await storage.getStockOutHistory()
-      res.json(stockOut)
-    } catch (error) {
-      console.error("Error fetching stock out history:", error)
-      res.status(500).json({ error: "Failed to fetch stock out history" })
-    }
-  })
-
-  // Unpaid Bills for Audit (protected)
-  app.get("/api/audit/unpaid-bills", verifyAuditToken, async (_req, res) => {
-    try {
-      const unpaidSales = await storage.getUnpaidSales()
-      res.json(unpaidSales)
-    } catch (error) {
-      console.error("Error fetching unpaid bills:", error)
-      res.status(500).json({ error: "Failed to fetch unpaid bills" })
-    }
-  })
-
-  // Payment History for Audit (protected)
-  app.get("/api/audit/payments", verifyAuditToken, async (_req, res) => {
-    try {
-      const payments = await storage.getAllPaymentHistory()
-      res.json(payments)
-    } catch (error) {
-      console.error("Error fetching payment history:", error)
-      res.status(500).json({ error: "Failed to fetch payment history" })
-    }
-  })
-
-  // Returns for Audit (protected)
-  app.get("/api/audit/returns", verifyAuditToken, async (_req, res) => {
-    try {
-      const returns = await storage.getReturns()
-      res.json(returns)
-    } catch (error) {
-      console.error("Error fetching returns:", error)
-      res.status(500).json({ error: "Failed to fetch returns" })
-    }
-  })
-
-  // ============ CLOUD DATABASE SYNC ENDPOINTS ============
-
-  // Test cloud database connection
-  app.post("/api/cloud/test-connection", verifyAuditToken, async (req, res) => {
-    try {
-      const { connectionUrl } = req.body
-
-      if (!connectionUrl || typeof connectionUrl !== "string" || !connectionUrl.trim()) {
-        console.log("[v0] Missing or invalid connection URL")
-        res.status(400).json({
-          error: "Connection URL is required and must be a valid string",
-          ok: false,
-        })
-        return
-      }
-
-      try {
-        new URL(connectionUrl)
-      } catch (e) {
-        console.log("[v0] Invalid URL format:", e)
-        res.status(400).json({
-          error: "Invalid connection URL format. Must start with 'postgresql://'",
-          ok: false,
-        })
-        return
-      }
-
-      let cleanUrl = connectionUrl.trim()
-
-      if (cleanUrl.includes("channel_binding=require")) {
-        cleanUrl = cleanUrl.replace(/[?&]channel_binding=require/g, "")
-      }
-
-      console.log("[v0] Testing connection to cloud database...")
-      const { sql, type } = await getCloudSqlClient(cleanUrl)
-
-      // Test with a simple query
-      const result = await sql`SELECT version() as db_version, now() as server_time`
-
-      console.log(`[v0] Cloud connection successful (${type}):`, {
-        version: result[0]?.db_version?.substring(0, 50),
-        time: result[0]?.server_time,
-      })
-
-      res.json({
-        ok: true,
-        message: "Connection successful",
-        details: {
-          provider: type === "supabase" ? "Supabase" : "Neon",
-          version: result[0]?.db_version,
-          serverTime: result[0]?.server_time,
-        },
-      })
-    } catch (error: any) {
-      console.error("[v0] Cloud connection test failed:", {
-        message: error.message,
-        code: error.code,
-        name: error.name,
-      })
-
-      let errorMessage = "Connection failed"
-      if (error.message?.includes("SSL") || error.message?.includes("ssl")) {
-        errorMessage = "SSL connection error. Check that sslmode=require is set and credentials are correct."
-      } else if (
-        error.message?.includes("authentication") ||
-        error.message?.includes("role") ||
-        error.message?.includes("FATAL")
-      ) {
-        errorMessage = "Authentication failed. Check username and password in the connection URL."
-      } else if (error.message?.includes("getaddrinfo") || error.message?.includes("ENOTFOUND")) {
-        errorMessage = "Cannot reach database server. Check the hostname in your connection URL."
-      } else if (error.message?.includes("ECONNREFUSED")) {
-        errorMessage = "Connection refused. Check if the server is running and the port is correct."
-      } else if (error.message?.includes("timeout")) {
-        errorMessage = "Connection timeout. The server is not responding. Check network connectivity."
-      } else if (error.message?.includes("no password")) {
-        errorMessage =
-          "Password not provided in connection URL. Include it in the format: postgresql://user:password@host/db"
-      }
-
-      res.status(400).json({
-        ok: false,
-        error: errorMessage,
-        details: error.message,
-      })
-    }
-  })
-
-  // Save cloud database settings
-  app.post("/api/cloud/save-settings", verifyAuditToken, async (req, res) => {
-    try {
-      const { connectionUrl, syncEnabled } = req.body
-
-      if (connectionUrl) {
-        try {
-          new URL(connectionUrl)
-        } catch {
-          res.status(400).json({ error: "Invalid connection URL format" })
-          return
-        }
-      }
-
-      await storage.updateSettings({
-        cloudDatabaseUrl: connectionUrl || null,
-        cloudSyncEnabled: syncEnabled ?? false,
-      })
-
-      res.json({ ok: true, message: "Cloud settings saved" })
-    } catch (error: any) {
-      console.error("Error saving cloud settings:", error)
-      res.status(500).json({ error: "Failed to save cloud settings" })
-    }
-  })
-
-  // ENHANCED: Get cloud sync status with detailed stats
-  app.get("/api/cloud/status", verifyAuditToken, async (_req, res) => {
+  // Deactivate license
+  app.post("/api/license/deactivate", async (req, res) => {
     try {
       const settings = await storage.getSettings()
-      const syncStatus = storage.getSyncStatus()
+      if (settings) {
+        const today = new Date().toISOString().split('T')[0]
+        
+        await storage.updateSettings({
+          licenseExpiryDate: today,
+          licenseStatus: "deactivated",
+        })
 
-      // Test connection if configured
-      let connectionStatus = "not_configured"
-      const lastSync = settings.lastSyncTime
+        console.log("License deactivated by admin")
 
-      if (settings.cloudDatabaseUrl) {
-        try {
-          const { neon } = await import("@neondatabase/serverless")
-          const sql = neon(settings.cloudDatabaseUrl)
-          await sql`SELECT 1 as test`
-          connectionStatus = "connected"
-          storage.setOnlineStatus(true)
-        } catch (error) {
-          connectionStatus = "connection_failed"
-          storage.setOnlineStatus(false)
-        }
+        res.json({
+          success: true,
+          message: "License has been deactivated. The software will require reactivation.",
+          expiryDate: today,
+        })
+      } else {
+        res.status(404).json({ error: "Settings not found" })
       }
-
-      res.json({
-        hasConnection: !!settings.cloudDatabaseUrl,
-        connectionStatus,
-        syncEnabled: settings.cloudSyncEnabled,
-        lastSyncTime: lastSync,
-        lastSyncFormatted: lastSync ? new Date(lastSync).toLocaleString() : null,
-        autoSyncEnabled: autoSyncEnabled,
-        // Enhanced status info
-        isOnline: syncStatus.isOnline,
-        pendingChanges: syncStatus.pendingChanges,
-        syncInProgress: syncStatus.syncInProgress,
-        lastError: syncStatus.lastError,
-        syncStats: syncStatus.syncStats,
-      })
     } catch (error) {
-      console.error("Error getting cloud status:", error)
-      res.status(500).json({ error: "Failed to get cloud status" })
+      console.error("Error deactivating license:", error)
+      res.status(500).json({ error: "Failed to deactivate license" })
     }
   })
 
-  // ENHANCED: Get pending sync queue
-  app.get("/api/cloud/queue", verifyAuditToken, async (_req, res) => {
+  // Activate/Reactivate license with secret key
+  app.post("/api/license/activate", async (req, res) => {
     try {
-      const queue = await storage.getSyncQueue()
-      res.json({
-        pending: queue.length,
-        queue: queue.map(c => ({
-          id: c.id,
-          action: c.action,
-          entity: c.entity,
-          entityId: c.entityId,
-          timestamp: c.timestamp,
-          retryCount: c.retryCount,
-        })),
-      })
-    } catch (error) {
-      console.error("Error getting sync queue:", error)
-      res.status(500).json({ error: "Failed to get sync queue" })
-    }
-  })
-
-  // ENHANCED: Set online/offline status (for manual override)
-  app.post("/api/cloud/online-status", verifyAuditToken, async (req, res) => {
-    try {
-      const { isOnline } = req.body
-      storage.setOnlineStatus(isOnline)
-      res.json({ ok: true, isOnline })
-    } catch (error) {
-      console.error("Error setting online status:", error)
-      res.status(500).json({ error: "Failed to set online status" })
-    }
-  })
-
-  // Auto-sync control
-  app.post("/api/cloud/auto-sync", verifyAuditToken, async (req, res) => {
-    try {
-      const { enabled, intervalMinutes } = req.body
-
-      autoSyncEnabled = enabled ?? autoSyncEnabled
-
-      // Clear existing interval
-      if (syncInterval) {
-        clearInterval(syncInterval)
-        syncInterval = null
-      }
-
-      // Start new interval if enabled
-      if (autoSyncEnabled && intervalMinutes) {
-        syncInterval = setInterval(triggerAutoSync, intervalMinutes * 60 * 1000)
-        console.log(`[Auto-Sync] Enabled with ${intervalMinutes} minute interval`)
-      }
-
-      res.json({
-        ok: true,
-        autoSyncEnabled,
-        message: autoSyncEnabled ? "Auto-sync enabled" : "Auto-sync disabled",
-      })
-    } catch (error: any) {
-      console.error("Error configuring auto-sync:", error)
-      res.status(500).json({ error: "Failed to configure auto-sync" })
-    }
-  })
-
-  // ENHANCED: Manual sync trigger with stats
-  app.post("/api/cloud/trigger-sync", verifyAuditToken, async (_req, res) => {
-    try {
-      const result = await storage.triggerAutoSync()
-      res.json({
-        ok: result.success,
-        message: result.message,
-        stats: result.stats,
-      })
-    } catch (error: any) {
-      console.error("Error triggering sync:", error)
-      res.status(500).json({ error: "Failed to trigger sync" })
-    }
-  })
-
-  // Export data to cloud PostgreSQL - FIXED: Now uses helper function properly
-  app.post("/api/cloud/export", verifyAuditToken, async (_req, res) => {
-    try {
-      const data = await exportToCloudData()
-      res.json({
-        ok: true,
-        message: "Export successful",
-        counts: data.counts,
-      })
-    } catch (error: any) {
-      console.error("Cloud export failed:", error)
-      res.status(500).json({ error: error.message || "Export failed" })
-    }
-  })
-
-  // Import data from cloud PostgreSQL - FIXED: Now uses helper function properly
-  app.post("/api/cloud/import", verifyAuditToken, async (_req, res) => {
-    try {
-      const data = await importFromCloudData()
-
-      // Invalidate all queries after import
-      invalidateGlobalQueries()
-
-      res.json({
-        ok: true,
-        message: "Import successful",
-        counts: data.counts,
-      })
-    } catch (error: any) {
-      console.error("Cloud import failed:", error)
-      res.status(500).json({ error: error.message || "Import failed" })
-    }
-  })
-
-  // ============ REAL-TIME WEBHOOK ENDPOINTS ============
-
-  // Webhook endpoint for real-time updates (can be called by other services)
-  app.post("/api/webhooks/data-updated", async (req, res) => {
-    try {
-      const { entity, entityId, customerPhone, action } = req.body
-
-      console.log(`[Real-time] Webhook received: ${action} on ${entity} ${entityId}`)
-
-      if (customerPhone) {
-        invalidateCustomerQueries(customerPhone)
-      }
-
-      invalidateGlobalQueries()
-
-      res.json({ success: true, message: "Queries invalidated successfully" })
-    } catch (error) {
-      console.error("Error processing webhook:", error)
-      res.status(500).json({ error: "Failed to process webhook" })
-    }
-  })
-
-  // Force refresh endpoint for clients
-  app.post("/api/refresh-data", async (req, res) => {
-    try {
-      const { customerPhone } = req.body
-
-      if (customerPhone) {
-        invalidateCustomerQueries(customerPhone)
-      }
-
-      invalidateGlobalQueries()
-
-      res.json({ success: true, message: "Data refresh triggered" })
-    } catch (error) {
-      console.error("Error triggering refresh:", error)
-      res.status(500).json({ error: "Failed to trigger refresh" })
-    }
-  })
-
-  app.get("/api/customer/:phone/account", async (req, res) => {
-    try {
-      const customerPhone = req.params.phone
-      const consolidatedAccount = await storage.getConsolidatedCustomerAccount(customerPhone)
-
-      if (!consolidatedAccount) {
-        res.status(404).json({ error: "Customer not found" })
+      const { secretKey } = req.body
+      
+      if (!secretKey) {
+        res.status(400).json({ error: "Secret key is required" })
         return
       }
 
-      res.json(consolidatedAccount)
+      const MASTER_SECRET_KEY = process.env.MASTER_SECRET_KEY || "3620192373285"
+      const hashedInput = hashSecretKey(secretKey.toString())
+      const hashedMaster = hashSecretKey(MASTER_SECRET_KEY)
+
+      if (hashedInput !== hashedMaster) {
+        res.status(403).json({ error: "Invalid secret key" })
+        return
+      }
+
+      const futureDate = new Date()
+      futureDate.setFullYear(futureDate.getFullYear() + 10)
+      const expiryDate = futureDate.toISOString().split('T')[0]
+
+      const settings = await storage.getSettings()
+      if (settings) {
+        await storage.updateSettings({
+          licenseExpiryDate: expiryDate,
+          licenseStatus: "active",
+        })
+
+        console.log("License reactivated with valid secret key")
+
+        res.json({
+          success: true,
+          message: "License successfully reactivated!",
+          expiryDate,
+        })
+      } else {
+        res.status(404).json({ error: "Settings not found" })
+      }
     } catch (error) {
-      console.error("Error fetching customer account:", error)
-      res.status(500).json({ error: "Failed to fetch customer account" })
+      console.error("Error activating license:", error)
+      res.status(500).json({ error: "Failed to activate license" })
+    }
+  })
+
+  // ============ OFFLINE POS SYNC ROUTES ============
+
+  // Store pending offline sales
+  app.post("/api/pos/offline-sales", async (req, res) => {
+    try {
+      const { saleData, items, offlineId, timestamp } = req.body
+      
+      if (!offlineId) {
+        res.status(400).json({ error: "Offline ID is required" })
+        return
+      }
+      
+      // Store in pending sales table
+      const pendingSale = await storage.createPendingSale({
+        offlineId,
+        saleData: JSON.stringify(saleData),
+        items: JSON.stringify(items),
+        timestamp: new Date(timestamp),
+        status: "pending",
+        attempts: 0
+      })
+      
+      res.json({ 
+        success: true, 
+        pendingSale,
+        message: "Sale stored offline, will sync when online"
+      })
+    } catch (error) {
+      console.error("Error storing offline sale:", error)
+      res.status(500).json({ error: "Failed to store offline sale" })
+    }
+  })
+
+  // Sync pending sales when back online
+  app.post("/api/pos/sync-pending", async (req, res) => {
+    try {
+      const { offlineIds } = req.body
+      
+      const pendingSales = await storage.getPendingSales()
+      const results = []
+      
+      for (const pending of pendingSales) {
+        if (offlineIds && !offlineIds.includes(pending.offlineId)) {
+          continue
+        }
+        
+        try {
+          const saleData = JSON.parse(pending.saleData)
+          const items = JSON.parse(pending.items)
+          
+          // Process the sale
+          const sale = await storage.createSale(saleData, items)
+          
+          // Mark as synced
+          await storage.updatePendingSale(pending.id, {
+            status: "synced",
+            syncedAt: new Date(),
+            syncedSaleId: sale.id,
+            attempts: pending.attempts + 1
+          })
+          
+          results.push({
+            offlineId: pending.offlineId,
+            success: true,
+            saleId: sale.id
+          })
+        } catch (error) {
+          // Update attempt count
+          await storage.updatePendingSale(pending.id, {
+            attempts: pending.attempts + 1,
+            lastError: error.message
+          })
+          
+          results.push({
+            offlineId: pending.offlineId,
+            success: false,
+            error: error.message
+          })
+        }
+      }
+      
+      res.json({
+        success: true,
+        results,
+        message: `Processed ${results.length} pending sales`
+      })
+    } catch (error) {
+      console.error("Error syncing pending sales:", error)
+      res.status(500).json({ error: "Failed to sync pending sales" })
+    }
+  })
+
+  // Get pending sales status
+  app.get("/api/pos/pending-sales", async (req, res) => {
+    try {
+      const pendingSales = await storage.getPendingSales()
+      res.json(pendingSales)
+    } catch (error) {
+      console.error("Error fetching pending sales:", error)
+      res.status(500).json({ error: "Failed to fetch pending sales" })
+    }
+  })
+
+  // Clear specific pending sale
+  app.delete("/api/pos/pending-sales/:id", async (req, res) => {
+    try {
+      await storage.deletePendingSale(req.params.id)
+      res.json({ success: true })
+    } catch (error) {
+      console.error("Error deleting pending sale:", error)
+      res.status(500).json({ error: "Failed to delete pending sale" })
+    }
+  })
+
+  // Check connectivity
+  app.get("/api/pos/connectivity", async (_req, res) => {
+    try {
+      // Test database connection
+      await storage.getSettings()
+      res.json({ online: true, timestamp: new Date().toISOString() })
+    } catch (error) {
+      res.json({ online: false, timestamp: new Date().toISOString() })
     }
   })
 

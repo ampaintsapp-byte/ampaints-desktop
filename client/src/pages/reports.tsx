@@ -1,4 +1,4 @@
-import { useState, useMemo, useDeferredValue, useEffect } from "react";
+import { useState, useMemo, useDeferredValue, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -53,6 +53,9 @@ import {
   Download,
   Eye,
   EyeOff,
+  Edit,
+  Save,
+  AlertCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Sale, PaymentHistory, Return, SaleWithItems, ReturnWithItems, ColorWithVariantAndProduct } from "@shared/schema";
@@ -85,6 +88,11 @@ export default function Reports() {
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
   const [showDetailedMetrics, setShowDetailedMetrics] = useState(true);
+  const [editingReturnId, setEditingReturnId] = useState<string | null>(null);
+  const [editReturnData, setEditReturnData] = useState<{ reason?: string; refundMethod?: string; totalRefund?: string; status?: string }>({});
+  const [canEditReturn, setCanEditReturn] = useState<{ canEdit: boolean; hoursLeft?: number } | null>(null);
+  const [editingError, setEditingError] = useState<string | null>(null);
+  const [isSavingReturn, setIsSavingReturn] = useState(false);
   
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
@@ -114,11 +122,11 @@ export default function Reports() {
   const paymentHistory = useDeferredValue(paymentHistoryRaw);
   const returns = useDeferredValue(returnsRaw);
 
-  const parseDate = (dateStr: string | Date | null): Date | null => {
+  const parseDate = useCallback((dateStr: string | Date | null): Date | null => {
     if (!dateStr) return null;
     if (dateStr instanceof Date) return dateStr;
     
-    if (dateStr.includes("-")) {
+    if (typeof dateStr === "string" && dateStr.includes("-")) {
       const parts = dateStr.split("-");
       if (parts[0].length === 4) {
         return parseISO(dateStr);
@@ -128,11 +136,11 @@ export default function Reports() {
       }
     }
     return new Date(dateStr);
-  };
+  }, []);
 
-  const formatDisplayDate = (dateStr: string | Date | null): string => {
+  const formatDisplayDate = useCallback((dateStr: string | Date | null): string => {
     return formatDateShort(dateStr);
-  };
+  }, [formatDateShort]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -142,16 +150,6 @@ export default function Reports() {
   };
 
   const hasActiveFilters = searchQuery || dateFrom || dateTo || paymentStatusFilter !== "all";
-
-  // Format date for date input
-  const formatDateForInput = (date: Date | string): string => {
-    if (!date) return "";
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
 
   const filteredSales = useMemo(() => {
     let filtered = [...allSales];
@@ -324,9 +322,96 @@ export default function Reports() {
     return filteredSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
   }, [filteredSales]);
 
+  const filteredPaymentsTotal = useMemo(() => {
+    return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+  }, [filteredPayments]);
+
+  const filteredReturnsTotal = useMemo(() => {
+    return filteredReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
+  }, [filteredReturns]);
+
+  // Returns specifically tied to filtered sales (for accurate outstanding calculation)
+  // This ensures we only subtract return credits for sales in our filtered range
+  const filteredSalesReturns = useMemo(() => {
+    const filteredSaleIds = new Set(filteredSales.map(s => s.id));
+    return returns.filter(ret => ret.saleId && filteredSaleIds.has(ret.saleId));
+  }, [filteredSales, returns]);
+
+  const filteredSalesReturnCredits = useMemo(() => {
+    return filteredSalesReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
+  }, [filteredSalesReturns]);
+
+  // Store Cash Balance Calculation - TRUE CASH FLOW METHOD
+  // Goal: Calculate actual cash received during the date range
+  // 
+  // For sales CREATED in range:
+  //   - Initial payment at POS = amountPaid - sum(recovery payments for this sale)
+  //   - This gives us the cash received at the time of sale, not later recoveries
+  //
+  // For recovery payments in range:
+  //   - All payment_history records in the date range (for any sale, old or new)
+  //
+  // This avoids double counting and properly attributes cash to when it was received.
+  
+  const filteredSaleIds = useMemo(() => {
+    return new Set(filteredSales.map(s => s.id));
+  }, [filteredSales]);
+
+  // Calculate total recovery payments made for each sale in the filtered range
+  // (These would have been added to amountPaid but represent later cash, not initial)
+  const recoveryForFilteredSales = useMemo(() => {
+    // Get ALL recovery payments for sales in the filtered range (not just filtered payments)
+    return paymentHistory
+      .filter(payment => payment.saleId && filteredSaleIds.has(payment.saleId))
+      .reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+  }, [paymentHistory, filteredSaleIds]);
+
+  // Initial payments at POS for new sales = amountPaid - recovery payments for those sales
+  const initialPaymentsForNewSales = useMemo(() => {
+    return Math.max(0, filteredSalesPaid - recoveryForFilteredSales);
+  }, [filteredSalesPaid, recoveryForFilteredSales]);
+
+  // Recovery payments received during the filter range (for any sale)
+  const recoveryInRange = useMemo(() => {
+    return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+  }, [filteredPayments]);
+
+  const returnStats: ReturnStats = useMemo(() => {
+    return {
+      totalReturns: filteredReturns.length,
+      totalRefunded: filteredReturnsTotal,
+      itemReturns: filteredReturns.filter((ret) => ret.returnType === "item").length,
+      billReturns: filteredReturns.filter((ret) => ret.returnType === "bill").length,
+    };
+  }, [filteredReturns, filteredReturnsTotal]);
+
+  const refundMethodBreakdown = useMemo(() => {
+    return {
+      cashRefunds: filteredReturns.filter((ret) => ret.refundMethod === "cash").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      creditRefunds: filteredReturns.filter((ret) => ret.refundMethod === "credit").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      bankTransferRefunds: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0),
+      cashCount: filteredReturns.filter((ret) => ret.refundMethod === "cash").length,
+      creditCount: filteredReturns.filter((ret) => ret.refundMethod === "credit").length,
+      bankTransferCount: filteredReturns.filter((ret) => ret.refundMethod === "bank_transfer").length,
+    };
+  }, [filteredReturns]);
+
+  // Total amount refunded as credit (customer account or bank transfer)
+  const creditedRefundsTotal = useMemo(() => {
+    return refundMethodBreakdown.creditRefunds + refundMethodBreakdown.bankTransferRefunds;
+  }, [refundMethodBreakdown.creditRefunds, refundMethodBreakdown.bankTransferRefunds]);
+
+  // Store Cash Balance = Initial payments at POS + Recovery in range - ONLY CASH REFUNDS
+  // Credit refunds don't affect cash in hand (they reduce customer balance)
+  const storeCashBalance = useMemo(() => {
+    return initialPaymentsForNewSales + recoveryInRange - refundMethodBreakdown.cashRefunds;
+  }, [initialPaymentsForNewSales, recoveryInRange, refundMethodBreakdown.cashRefunds]);
+
   const filteredSalesOutstanding = useMemo(() => {
-    return filteredSalesTotal - filteredSalesPaid;
-  }, [filteredSalesTotal, filteredSalesPaid]);
+    // Outstanding = Sales Total - Paid - Return Credits (only returns for filtered sales)
+    // This matches Customer Statement logic: Outstanding = Bills - Paid - Returns
+    return Math.max(0, filteredSalesTotal - filteredSalesPaid - filteredSalesReturnCredits);
+  }, [filteredSalesTotal, filteredSalesPaid, filteredSalesReturnCredits]);
 
   const unpaidSalesTotal = useMemo(() => {
     return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
@@ -336,35 +421,29 @@ export default function Reports() {
     return unpaidSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
   }, [unpaidSales]);
 
+  // Calculate returns specifically tied to unpaid sales (use ALL returns, not just filtered)
+  const unpaidSalesReturnCredits = useMemo(() => {
+    const unpaidSaleIds = new Set(unpaidSales.map(s => s.id));
+    return returns
+      .filter(ret => ret.saleId && unpaidSaleIds.has(ret.saleId))
+      .reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
+  }, [unpaidSales, returns]);
+
   const unpaidSalesOutstanding = useMemo(() => {
-    return unpaidSalesTotal - unpaidSalesPaid;
-  }, [unpaidSalesTotal, unpaidSalesPaid]);
-
-  const filteredPaymentsTotal = useMemo(() => {
-    return filteredPayments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
-  }, [filteredPayments]);
-
-  const filteredReturnsTotal = useMemo(() => {
-    return filteredReturns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
-  }, [filteredReturns]);
-
-  const returnStats: ReturnStats = useMemo(() => {
-    return {
-      totalReturns: filteredReturns.length,
-      totalRefunded: filteredReturnsTotal,
-      itemReturns: filteredReturns.filter((ret) => ret.returnType === "item").length,
-      billReturns: filteredReturns.filter((ret) => ret.returnType === "full_bill").length,
-    };
-  }, [filteredReturns, filteredReturnsTotal]);
+    // Subtract only return credits that belong to unpaid sales
+    return Math.max(0, unpaidSalesTotal - unpaidSalesPaid - unpaidSalesReturnCredits);
+  }, [unpaidSalesTotal, unpaidSalesPaid, unpaidSalesReturnCredits]);
 
   const stats = useMemo(() => {
     const totalSalesAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.totalAmount), 0);
     const totalPaidAmount = allSales.reduce((sum, sale) => sum + parseFloat(sale.amountPaid), 0);
-    const totalUnpaidAmount = totalSalesAmount - totalPaidAmount;
     const totalRecoveryPayments = paymentHistory.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
     
     const totalReturnsAmount = returns.reduce((sum, ret) => sum + parseFloat(ret.totalRefund || "0"), 0);
     const returnsCount = returns.length;
+    
+    // totalOutstanding properly accounts for return credits (sales - payments - returns)
+    const totalOutstanding = Math.max(0, totalSalesAmount - totalPaidAmount - totalReturnsAmount);
     
     const unpaidBillsCount = allSales.filter((sale) => sale.paymentStatus !== "paid").length;
     const paidBillsCount = allSales.filter((sale) => sale.paymentStatus === "paid").length;
@@ -375,7 +454,7 @@ export default function Reports() {
     return {
       totalSalesAmount,
       totalPaidAmount,
-      totalUnpaidAmount,
+      totalOutstanding,
       totalRecoveryPayments,
       totalReturnsAmount,
       returnsCount,
@@ -387,9 +466,11 @@ export default function Reports() {
     };
   }, [allSales, paymentHistory, returns]);
 
+  // Total collected for filtered sales = amountPaid (already includes initial + recovery payments)
+  // This matches Customer Statement logic where totalPaid = sum of all sale.amountPaid
   const totalCollectedAmount = useMemo(() => {
-    return filteredSalesPaid + filteredPaymentsTotal;
-  }, [filteredSalesPaid, filteredPaymentsTotal]);
+    return filteredSalesPaid;
+  }, [filteredSalesPaid]);
 
   const collectionRate = useMemo(() => {
     return filteredSalesTotal > 0 ? (totalCollectedAmount / filteredSalesTotal) * 100 : 0;
@@ -398,6 +479,121 @@ export default function Reports() {
   const refundRate = useMemo(() => {
     return filteredSalesTotal > 0 ? (filteredReturnsTotal / filteredSalesTotal) * 100 : 0;
   }, [filteredSalesTotal, filteredReturnsTotal]);
+
+  // UNIFIED TRANSACTIONS - Combines bills, payments, and returns for a single timeline view
+  type UnifiedTransaction = {
+    id: string;
+    date: Date;
+    type: "bill" | "payment" | "return";
+    description: string;
+    customerName: string;
+    customerPhone: string;
+    debit: number; // Amount owed (bills)
+    credit: number; // Amount paid/refunded (payments & returns)
+    reference: string;
+    billReference?: string; // For payments/returns - shows which bill
+    status?: string;
+    notes?: string;
+  };
+
+  const unifiedTransactions = useMemo((): UnifiedTransaction[] => {
+    const transactions: UnifiedTransaction[] = [];
+
+    // Add all bills
+    filteredSales.forEach((sale) => {
+      transactions.push({
+        id: `bill-${sale.id}`,
+        date: parseDate(sale.createdAt) || new Date(),
+        type: "bill",
+        description: sale.isManualBalance ? "Manual Balance" : "Sale Bill",
+        customerName: sale.customerName,
+        customerPhone: sale.customerPhone,
+        debit: parseFloat(sale.totalAmount),
+        credit: 0,
+        reference: sale.id.slice(0, 8).toUpperCase(),
+        status: sale.paymentStatus,
+        notes: sale.notes || undefined,
+      });
+    });
+
+    // Add all payments (as credits) - resolve customer name from sale or lookup from allSales
+    filteredPayments.forEach((payment) => {
+      // Try to get customer name from payment.sale, or look up from allSales by saleId
+      let customerName = payment.sale?.customerName;
+      if (!customerName && payment.saleId) {
+        const matchingSale = allSales.find(s => s.id === payment.saleId);
+        customerName = matchingSale?.customerName;
+      }
+      
+      transactions.push({
+        id: `payment-${payment.id}`,
+        date: parseDate(payment.createdAt) || new Date(),
+        type: "payment",
+        description: `Payment (${payment.paymentMethod?.toUpperCase() || "CASH"})`,
+        customerName: customerName || "Customer",
+        customerPhone: payment.customerPhone,
+        debit: 0,
+        credit: parseFloat(payment.amount),
+        reference: payment.id.slice(0, 8).toUpperCase(),
+        billReference: payment.saleId ? payment.saleId.slice(0, 8).toUpperCase() : undefined,
+        notes: payment.notes || undefined,
+      });
+    });
+
+    // Add all returns (as credits)
+    filteredReturns.forEach((ret) => {
+      const refundMethodLabel = (() => {
+        switch (ret.refundMethod?.toLowerCase()) {
+          case "cash":
+            return "💵 Cash Refund";
+          case "credit":
+            return "💳 Credit Refund";
+          case "bank_transfer":
+            return "🏦 Bank Transfer Refund";
+          default:
+            return "💵 Cash Refund";
+        }
+      })();
+      
+      const returnTypeLabel = ret.returnType === "bill" ? "Full Bill Return" : "Item Return";
+      
+      transactions.push({
+        id: `return-${ret.id}`,
+        date: parseDate(ret.createdAt) || new Date(),
+        type: "return",
+        description: `${returnTypeLabel} (${refundMethodLabel})`,
+        customerName: ret.customerName,
+        customerPhone: ret.customerPhone,
+        debit: 0,
+        credit: parseFloat(ret.totalRefund || "0"),
+        reference: `RET-${ret.id.slice(0, 6).toUpperCase()}`,
+        billReference: ret.saleId ? ret.saleId.slice(0, 8).toUpperCase() : undefined,
+        status: ret.status,
+        notes: ret.reason || undefined,
+      });
+    });
+
+    // Sort by date (newest first)
+    transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    return transactions;
+  }, [filteredSales, filteredPayments, filteredReturns, parseDate, allSales]);
+
+  const visibleTransactions = useMemo(() => {
+    return unifiedTransactions.slice(0, visibleLimit);
+  }, [unifiedTransactions, visibleLimit]);
+
+  // Transaction type badge helper
+  const getTransactionTypeBadge = (type: "bill" | "payment" | "return") => {
+    switch (type) {
+      case "bill":
+        return <Badge className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs px-2 py-0 h-5 border border-blue-200 dark:border-blue-700">Bill</Badge>;
+      case "payment":
+        return <Badge className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-xs px-2 py-0 h-5 border border-emerald-200 dark:border-emerald-700">Payment</Badge>;
+      case "return":
+        return <Badge className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 text-xs px-2 py-0 h-5 border border-rose-200 dark:border-rose-700">Return</Badge>;
+    }
+  };
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -432,12 +628,82 @@ export default function Reports() {
 
   const getReturnTypeBadge = (type: string) => {
     switch (type) {
-      case "full_bill":
-        return <Badge className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 text-xs px-2 py-0 h-5 border border-rose-200 dark:border-rose-700">Full Bill</Badge>;
+      case "bill":
+        return <Badge className="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 text-xs px-2 py-0 h-5 border border-rose-200 dark:border-rose-700">Full Bill Return</Badge>;
       case "item":
-        return <Badge className="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs px-2 py-0 h-5 border border-amber-200 dark:border-amber-700">Item</Badge>;
+        return <Badge className="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs px-2 py-0 h-5 border border-amber-200 dark:border-amber-700">Item Return</Badge>;
       default:
         return <Badge variant="secondary" className="text-xs px-2 py-0 h-5">{type}</Badge>;
+    }
+  };
+
+  const getRefundMethodBadge = (method: string) => {
+    switch (method?.toLowerCase()) {
+      case "cash":
+        return <Badge className="bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 text-xs px-2 py-0 h-5 border border-green-200 dark:border-green-700">💵 Cash</Badge>;
+      case "credit":
+        return <Badge className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-xs px-2 py-0 h-5 border border-blue-200 dark:border-blue-700">💳 Credit</Badge>;
+      case "bank_transfer":
+        return <Badge className="bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 text-xs px-2 py-0 h-5 border border-purple-200 dark:border-purple-700">🏦 Bank Transfer</Badge>;
+      default:
+        return <Badge variant="secondary" className="text-xs px-2 py-0 h-5 capitalize">{method || "cash"}</Badge>;
+    }
+  };
+
+  const handleEditReturn = async (returnId: string, ret: ReturnWithItems) => {
+    try {
+      setEditingError(null);
+      setEditingReturnId(returnId);
+      
+      // Check if return can be edited
+      const response = await fetch(`/api/returns/${returnId}/can-edit`);
+      const result = await response.json();
+      setCanEditReturn(result);
+      
+      if (result.canEdit) {
+        setEditReturnData({
+          reason: ret.reason || "",
+          refundMethod: ret.refundMethod || "cash",
+          totalRefund: ret.totalRefund,
+          status: ret.status,
+        });
+      } else {
+        setEditingError(result.reason || "Cannot edit this return");
+      }
+    } catch (error) {
+      setEditingError("Failed to check return edit status");
+      console.error("Error checking return edit status:", error);
+    }
+  };
+
+  const handleSaveReturn = async (returnId: string) => {
+    try {
+      setIsSavingReturn(true);
+      setEditingError(null);
+      
+      const response = await fetch(`/api/returns/${returnId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editReturnData),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update return");
+      }
+
+      // Invalidate returns query to refresh data
+      await fetch("/api/returns").then(() => {
+        window.location.reload();
+      });
+      
+      setEditingReturnId(null);
+      setEditReturnData({});
+    } catch (error) {
+      setEditingError(error instanceof Error ? error.message : "Failed to update return");
+      console.error("Error saving return:", error);
+    } finally {
+      setIsSavingReturn(false);
     }
   };
 
@@ -524,25 +790,34 @@ export default function Reports() {
             <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Showing <span className="text-slate-800 dark:text-slate-200">{filteredReturns.length}</span> returns
             </div>
-            <div className="flex gap-4 text-xs">
+            <div className="flex gap-3 text-xs flex-wrap">
               <div className="flex items-center gap-2">
                 <span className="text-slate-500 dark:text-slate-400">Total Refunded:</span>
                 <span className="font-semibold text-red-600 dark:text-red-400 tabular-nums">
-                  {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                  Rs. {(refundMethodBreakdown.cashRefunds + refundMethodBreakdown.creditRefunds + refundMethodBreakdown.bankTransferRefunds).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+                </span>
+              </div>
+              <div className="text-slate-300 dark:text-slate-600">|</div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">💵 Cash:</span>
+                <span className="font-semibold text-green-600 dark:text-green-400 tabular-nums">
+                  Rs. {refundMethodBreakdown.cashRefunds.toLocaleString("en-IN", { minimumFractionDigits: 0 })} <span className="text-slate-500 dark:text-slate-400">({refundMethodBreakdown.cashCount})</span>
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-slate-500 dark:text-slate-400">Item Returns:</span>
-                <span className="font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                  {returnStats.itemReturns}
+                <span className="text-slate-500 dark:text-slate-400">💳 Credit:</span>
+                <span className="font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                  Rs. {refundMethodBreakdown.creditRefunds.toLocaleString("en-IN", { minimumFractionDigits: 0 })} <span className="text-slate-500 dark:text-slate-400">({refundMethodBreakdown.creditCount})</span>
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 dark:text-slate-400">Bill Returns:</span>
-                <span className="font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                  {returnStats.billReturns}
-                </span>
-              </div>
+              {refundMethodBreakdown.bankTransferRefunds > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 dark:text-slate-400">🏦 Bank:</span>
+                  <span className="font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                    Rs. {refundMethodBreakdown.bankTransferRefunds.toLocaleString("en-IN", { minimumFractionDigits: 0 })} <span className="text-slate-500 dark:text-slate-400">({refundMethodBreakdown.bankTransferCount})</span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -574,185 +849,93 @@ export default function Reports() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-zinc-950 dark:via-zinc-950 dark:to-zinc-900">
       <div className="p-6 space-y-5">
         {/* Header */}
-        <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-950 p-5 text-white shadow-sm">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10" />
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
-                <BarChart3 className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight" data-testid="text-reports-title">
-                  Financial Reports
-                </h1>
-                <p className="text-white/70 text-xs">Real-time financial overview and analytics</p>
-              </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-blue-500/20">
+              <BarChart3 className="h-6 w-6 text-white" />
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="text-white/80 hover:text-white hover:bg-white/10 text-xs">
-                <Download className="h-3.5 w-3.5 mr-1.5" />
-                Export
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => setShowDetailedMetrics(!showDetailedMetrics)}
-                className="text-white/80 hover:text-white hover:bg-white/10 text-xs"
-              >
-                {showDetailedMetrics ? <EyeOff className="h-3.5 w-3.5 mr-1.5" /> : <Eye className="h-3.5 w-3.5 mr-1.5" />}
-                {showDetailedMetrics ? "Hide Details" : "Show Details"}
-              </Button>
+            <div>
+              <h1 className="text-xl font-bold text-slate-800 dark:text-white" data-testid="text-reports-title">
+                Financial Reports
+              </h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Real-time financial overview and analytics</p>
             </div>
           </div>
-          <div className="absolute -right-6 -bottom-6 h-24 w-24 rounded-full bg-white/5 blur-lg" />
-          <div className="absolute -right-3 -top-3 h-16 w-16 rounded-full bg-white/5 blur-md" />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="border-slate-200 dark:border-slate-700">
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setShowDetailedMetrics(!showDetailedMetrics)}
+              className="border-slate-200 dark:border-slate-700"
+            >
+              {showDetailedMetrics ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+              {showDetailedMetrics ? "Hide" : "Show"}
+            </Button>
+          </div>
         </div>
 
-        {/* Key Metrics - Compact Glass Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Sales</span>
-                <div className="p-1.5 bg-blue-100/50 dark:bg-blue-900/20 rounded-lg">
-                  <Receipt className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-              <div className="text-lg font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                {Math.round(stats.totalSalesAmount).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.totalBillsCount} bills</p>
-                <Badge variant="outline" className="text-xs h-5 px-1.5 bg-white/50 dark:bg-zinc-800/50">
-                  {stats.uniqueCustomers} customers
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Collected</span>
-                <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded-lg">
-                  <TrendingUpIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                </div>
-              </div>
-              <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                {Math.round(stats.totalPaidAmount).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.paidBillsCount} paid bills</p>
-                <div className="text-xs text-emerald-500 dark:text-emerald-400 font-medium">
-                  {stats.totalSalesAmount > 0 ? ((stats.totalPaidAmount / stats.totalSalesAmount) * 100).toFixed(1) : "0.0"}%
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Outstanding</span>
-                <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded-lg">
-                  <TrendingDown className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                </div>
-              </div>
-              <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                {Math.round(stats.totalUnpaidAmount).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.unpaidBillsCount} unpaid bills</p>
-                <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-                  {stats.totalPaymentRecords} payments
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs hover:shadow-sm transition-all duration-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Net Revenue</span>
-                <div className="p-1.5 bg-purple-100/50 dark:bg-purple-900/20 rounded-lg">
-                  <Activity className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                </div>
-              </div>
-              <div className="text-lg font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
-                {Math.round(stats.totalSalesAmount - stats.totalReturnsAmount).toLocaleString("en-IN")}
-              </div>
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-slate-500 dark:text-slate-400">{stats.returnsCount} returns</p>
-                <div className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-                  {stats.totalReturnsAmount.toLocaleString("en-IN")} refunded
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters - Minimal Glass Card */}
-        <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs">
+        {/* Filters Bar - Clean Design */}
+        <Card className="rounded-xl border border-slate-200/50 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/40 backdrop-blur-sm shadow-sm">
           <CardContent className="p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center flex-1">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center flex-1">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   <Input
                     placeholder="Search customers..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
+                    className="pl-10 h-10 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-lg"
                     data-testid="input-search"
                   />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                  <div className="relative">
-                    <Input
-                      type="date"
-                      value={dateFrom}
-                      onChange={(e) => setDateFrom(e.target.value)}
-                      className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                      data-testid="input-date-from"
-                    />
-                  </div>
-                  <span className="text-xs text-slate-400">to</span>
-                  <div className="relative">
-                    <Input
-                      type="date"
-                      value={dateTo}
-                      onChange={(e) => setDateTo(e.target.value)}
-                      className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg"
-                      data-testid="input-date-to"
-                    />
-                  </div>
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-zinc-800/50 border border-slate-200/50 dark:border-slate-700/50">
+                  <Calendar className="h-4 w-4 text-slate-500" />
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
+                    data-testid="input-date-from"
+                  />
+                  <span className="text-xs text-slate-400 font-medium">to</span>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
+                    data-testid="input-date-to"
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                {activeTab !== "recovery-payments" && activeTab !== "returns" && activeTab !== "overview" && (
+              <div className="flex items-center gap-2">
+                {activeTab !== "recovery-payments" && activeTab !== "returns" && activeTab !== "overview" && activeTab !== "transactions" && (
                   <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                    <SelectTrigger className="w-32 text-sm h-9 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50 rounded-lg" data-testid="select-payment-status">
+                    <SelectTrigger className="w-32 h-10 border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 rounded-lg" data-testid="select-payment-status">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent className="bg-white dark:bg-zinc-900 border-slate-200 dark:border-slate-700">
-                      <SelectItem value="all" className="text-sm">All Status</SelectItem>
-                      <SelectItem value="paid" className="text-sm">Paid</SelectItem>
-                      <SelectItem value="partial" className="text-sm">Partial</SelectItem>
-                      <SelectItem value="unpaid" className="text-sm">Unpaid</SelectItem>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="partial">Partial</SelectItem>
+                      <SelectItem value="unpaid">Unpaid</SelectItem>
                     </SelectContent>
                   </Select>
                 )}
                 {hasActiveFilters && (
                   <Button 
-                    variant="ghost" 
+                    variant="outline" 
                     size="sm" 
                     onClick={clearFilters} 
                     data-testid="button-clear-filters"
-                    className="text-xs h-9 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+                    className="h-10"
                   >
-                    <X className="h-3.5 w-3.5 mr-1" />
-                    Clear
+                    <X className="h-4 w-4 mr-1.5" />
+                    Clear Filters
                   </Button>
                 )}
               </div>
@@ -762,358 +945,413 @@ export default function Reports() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm rounded-lg p-0.5 border border-slate-200/50 dark:border-slate-800/50">
+          <TabsList className="grid w-full grid-cols-6 h-auto p-1 bg-slate-100 dark:bg-zinc-800 rounded-xl">
             <TabsTrigger 
               value="overview" 
               data-testid="tab-overview"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
               <PieChart className="h-3.5 w-3.5 mr-1.5" />
               Overview
             </TabsTrigger>
             <TabsTrigger 
-              value="all-sales" 
-              data-testid="tab-all-sales"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              value="transactions" 
+              data-testid="tab-transactions"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <Receipt className="h-3.5 w-3.5 mr-1.5" />
-              Sales ({filteredSales.length})
+              <Activity className="h-3.5 w-3.5 mr-1.5" />
+              All
             </TabsTrigger>
             <TabsTrigger 
-              value="unpaid-bills" 
-              data-testid="tab-unpaid-bills"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              value="all-sales" 
+              data-testid="tab-all-sales"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
-              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
-              Unpaid ({unpaidSales.length})
+              <Receipt className="h-3.5 w-3.5 mr-1.5" />
+              Bills
             </TabsTrigger>
             <TabsTrigger 
               value="recovery-payments" 
               data-testid="tab-recovery-payments"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
               <Wallet className="h-3.5 w-3.5 mr-1.5" />
-              Recovery ({filteredPayments.length})
+              Payments
             </TabsTrigger>
             <TabsTrigger 
               value="returns" 
               data-testid="tab-returns"
-              className="rounded-md text-xs py-2 data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-800 data-[state=active]:shadow-xs"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
             >
               <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              Returns ({filteredReturns.length})
+              Returns
+            </TabsTrigger>
+            <TabsTrigger 
+              value="unpaid-bills" 
+              data-testid="tab-unpaid-bills"
+              className="rounded-lg py-2 text-xs font-medium data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:shadow-sm"
+            >
+              <CreditCard className="h-3.5 w-3.5 mr-1.5" />
+              Unpaid
             </TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
           <TabsContent value="overview">
-            <div className="space-y-4">
-              {/* Financial Summary Card */}
-              <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 rounded-lg">
-                        <Target className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <div className="space-y-5">
+              {/* Summary Cards - Premium Glass Banking Style */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Total Bills */}
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 to-blue-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-blue-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+                          <Receipt className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Total Bills</span>
                       </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Financial Performance</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Based on current filters</p>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesTotal).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {filteredSales.length} bills in this period
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-xs h-6 px-2 bg-white/50 dark:bg-zinc-800/50">
-                      <Filter className="h-3 w-3 mr-1" />
-                      {filteredSales.length} bills
+                  </div>
+                </div>
+
+                {/* Collected (Paid) */}
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-emerald-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
+                          <TrendingUp className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Collected</span>
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesPaid).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {paidSales.length} fully paid bills
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Unpaid */}
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-rose-400/20 to-rose-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-rose-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-rose-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 shadow-lg shadow-rose-500/30">
+                          <CreditCard className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Unpaid</span>
+                      </div>
+                      <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesOutstanding).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {unpaidSales.length} bills pending
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Returns */}
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-amber-400/20 to-amber-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
+                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-amber-500/5 p-5 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-amber-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
+                    <div className="relative">
+                      <div className="flex items-center gap-2.5 mb-4">
+                        <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/30">
+                          <RotateCcw className="h-4 w-4 text-white" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Returns</span>
+                      </div>
+                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums tracking-tight">
+                        Rs. {Math.round(filteredSalesReturnCredits).toLocaleString("en-IN")}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+                        {filteredSalesReturns.length} returns on these bills
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cash Balance Card */}
+              <Card className="rounded-xl border-2 border-emerald-200 dark:border-emerald-800 bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-950/20 dark:to-zinc-900 shadow-md">
+                <CardContent className="p-6">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-emerald-500 rounded-xl shadow-lg">
+                        <Banknote className="h-6 w-6 text-white" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-bold text-slate-800 dark:text-white">Cash in Hand</h2>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          {dateFrom === dateTo ? formatDisplayDate(dateFrom) : `${formatDisplayDate(dateFrom)} - ${formatDisplayDate(dateTo)}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-3xl md:text-4xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        Rs. {Math.round(storeCashBalance).toLocaleString("en-IN")}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Simple Breakdown */}
+                  <div className="mt-4 pt-4 border-t border-emerald-200/50 dark:border-emerald-800/50">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                      <div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">New Sales</div>
+                        <div className="text-lg font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                          +{Math.round(initialPaymentsForNewSales).toLocaleString("en-IN")}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Recovery</div>
+                        <div className="text-lg font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                          +{Math.round(recoveryInRange).toLocaleString("en-IN")}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Cash Refunds</div>
+                        <div className="text-lg font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                          -Rs. {Math.round(refundMethodBreakdown.cashRefunds).toLocaleString("en-IN")}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">{refundMethodBreakdown.cashCount} cash returns</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Credited to Accounts</div>
+                        <div className="text-lg font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
+                          -Rs. {Math.round(creditedRefundsTotal).toLocaleString("en-IN")}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">{refundMethodBreakdown.creditCount + refundMethodBreakdown.bankTransferCount} credited</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Note: "Credited to Accounts" is recorded for customer/account credits and does not reduce cash in hand.
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Recovery Payments Card */}
+              {filteredPayments.length > 0 && (
+                <Card className="rounded-xl border border-purple-200/50 dark:border-purple-800/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                          <Wallet className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-800 dark:text-white">Recovery Payments</span>
+                      </div>
+                      <Badge variant="secondary">{filteredPayments.length} payments</Badge>
+                    </div>
+                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 tabular-nums">
+                      Rs. {Math.round(filteredPaymentsTotal).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Payments received on past due bills
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Collection Progress */}
+              {showDetailedMetrics && (
+                <Card className="rounded-xl border border-slate-200/50 dark:border-slate-700/50 bg-white dark:bg-zinc-900/50">
+                  <CardContent className="p-5">
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Collection Rate</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-slate-600 dark:text-slate-400">
+                          Rs. {Math.round(totalCollectedAmount).toLocaleString("en-IN")} collected of Rs. {Math.round(filteredSalesTotal).toLocaleString("en-IN")}
+                        </span>
+                        <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                          {collectionRate.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(100, collectionRate)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+            </div>
+          </TabsContent>
+
+          {/* Unified Transactions Tab */}
+          <TabsContent value="transactions">
+            <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-100/50 dark:border-slate-800/30 bg-white/50 dark:bg-zinc-900/50">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">All Transactions</h3>
+                    <Badge variant="outline" className="text-xs h-5 px-2 bg-white/50 dark:bg-zinc-800/50">
+                      {unifiedTransactions.length} total
                     </Badge>
                   </div>
-                  
-                  {/* Top Metrics Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-                    {/* Collected Card */}
-                    <Card className="border border-emerald-200/50 dark:border-emerald-900/30 bg-gradient-to-br from-emerald-50/30 to-white/30 dark:from-emerald-900/10 dark:to-zinc-900/20">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded">
-                              <Banknote className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-medium text-slate-700 dark:text-slate-300">Total Collected</h4>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Paid + Recovery</p>
-                            </div>
-                          </div>
-                          <Badge className="bg-emerald-100/80 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] h-5">
-                            {collectionRate.toFixed(1)}%
-                          </Badge>
-                        </div>
-                        <div className="text-xl font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                          {totalCollectedAmount.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                        <div className="flex justify-between mt-3 text-xs">
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Paid</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">
-                              {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Recovery</div>
-                            <div className="font-medium text-purple-600 dark:text-purple-400 tabular-nums">
-                              {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Outstanding Card */}
-                    <Card className="border border-rose-200/50 dark:border-rose-900/30 bg-gradient-to-br from-rose-50/30 to-white/30 dark:from-rose-900/10 dark:to-zinc-900/20">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded">
-                              <Clock className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-medium text-slate-700 dark:text-slate-300">Outstanding</h4>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">Pending collection</p>
-                            </div>
-                          </div>
-                          <Badge className="bg-rose-100/80 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 text-[10px] h-5">
-                            {unpaidSales.length} bills
-                          </Badge>
-                        </div>
-                        <div className="text-xl font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                        <div className="flex justify-between mt-3 text-xs">
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Partial</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200">
-                              {filteredSales.filter(s => s.paymentStatus === "partial").length}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Unpaid</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200">
-                              {filteredSales.filter(s => s.paymentStatus === "unpaid").length}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Net Sales Card */}
-                    <Card className="border border-blue-200/50 dark:border-blue-900/30 bg-gradient-to-br from-blue-50/30 to-white/30 dark:from-blue-900/10 dark:to-zinc-900/20">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-blue-100/50 dark:bg-blue-900/20 rounded">
-                              <Activity className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <div>
-                              <h4 className="text-xs font-medium text-slate-700 dark:text-slate-300">Net Sales</h4>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400">After returns</p>
-                            </div>
-                          </div>
-                          <Badge className="bg-blue-100/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-[10px] h-5">
-                            {returnStats.totalReturns} returns
-                          </Badge>
-                        </div>
-                        <div className="text-xl font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
-                          {(filteredSalesTotal - filteredReturnsTotal).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                        <div className="flex justify-between mt-3 text-xs">
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Gross Sales</div>
-                            <div className="font-medium text-slate-800 dark:text-slate-200 tabular-nums">
-                              {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-slate-500 dark:text-slate-400">Refunds</div>
-                            <div className="font-medium text-rose-600 dark:text-rose-400 tabular-nums">
-                              {filteredReturnsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                  <div className="flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                      <span className="text-slate-600 dark:text-slate-400">Bills (Debit)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                      <span className="text-slate-600 dark:text-slate-400">Payments (Credit)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                      <span className="text-slate-600 dark:text-slate-400">Returns (Credit)</span>
+                    </div>
                   </div>
-
-                  {/* Detailed Metrics - Toggleable */}
-                  {showDetailedMetrics && (
-                    <>
-                      {/* Metrics Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-slate-100/50 dark:bg-slate-800/50 rounded">
-                              <Receipt className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Sales</span>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-white/50 dark:bg-zinc-900/50">
+                      <TableHead className="py-3">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("date")} className="flex items-center text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300">
+                          Date <SortIcon field="date" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Type</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Description</TableHead>
+                      <TableHead className="py-3">
+                        <Button variant="ghost" size="sm" onClick={() => toggleSort("customer")} className="flex items-center text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300">
+                          Customer <SortIcon field="customer" />
+                        </Button>
+                      </TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Reference</TableHead>
+                      <TableHead className="py-3 text-right text-xs text-slate-600 dark:text-slate-400">Debit</TableHead>
+                      <TableHead className="py-3 text-right text-xs text-slate-600 dark:text-slate-400">Credit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleTransactions.map((txn) => (
+                      <TableRow 
+                        key={txn.id} 
+                        data-testid={`row-transaction-${txn.id}`} 
+                        className="hover:bg-white/30 dark:hover:bg-zinc-900/30 border-b border-slate-100/50 dark:border-slate-800/30"
+                      >
+                        <TableCell className="py-2.5 text-xs text-slate-600 dark:text-slate-400">
+                          {formatDisplayDate(txn.date)}
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          {getTransactionTypeBadge(txn.type)}
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <div className="flex flex-col">
+                            <span className="text-sm text-slate-800 dark:text-slate-200">{txn.description}</span>
+                            {txn.billReference && (
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                Bill: #{txn.billReference}
+                              </span>
+                            )}
                           </div>
-                          <div className="text-base font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                            {filteredSalesTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {filteredSales.length} bills
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-emerald-100/50 dark:bg-emerald-900/20 rounded">
-                              <TrendingUp className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Paid</span>
-                          </div>
-                          <div className="text-base font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                            {filteredSalesPaid.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {paidSales.length} paid bills
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded">
-                              <TrendingDown className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Outstanding</span>
-                          </div>
-                          <div className="text-base font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                            {filteredSalesOutstanding.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {unpaidSales.length} unpaid
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-purple-100/50 dark:bg-purple-900/20 rounded">
-                              <Wallet className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                            </div>
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Recovery</span>
-                          </div>
-                          <div className="text-base font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
-                            {filteredPaymentsTotal.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {filteredPayments.length} payments
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Progress Bars */}
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">Collection Rate</span>
-                            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                              {collectionRate.toFixed(1)}%
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Link href={`/customer/${encodeURIComponent(txn.customerPhone)}`} className="text-sm text-blue-600 hover:text-blue-700 hover:underline">
+                            {txn.customerName}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="py-2.5 font-mono text-xs text-slate-500 dark:text-slate-400">
+                          #{txn.reference}
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right">
+                          {txn.debit > 0 ? (
+                            <span className="text-sm font-medium text-blue-600 dark:text-blue-400 tabular-nums">
+                              {txn.debit.toLocaleString("en-IN")}
                             </span>
-                          </div>
-                          <div className="h-1.5 bg-slate-100/50 dark:bg-slate-800/50 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500"
-                              style={{ width: `${Math.min(100, collectionRate)}%` }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            Collected {totalCollectedAmount.toLocaleString("en-IN")} of {filteredSalesTotal.toLocaleString("en-IN")}
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-slate-600 dark:text-slate-400">Refund Rate</span>
-                            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                              {refundRate.toFixed(1)}%
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right">
+                          {txn.credit > 0 ? (
+                            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                              {txn.credit.toLocaleString("en-IN")}
                             </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {unifiedTransactions.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-slate-500 dark:text-slate-400 py-8">
+                          <div className="flex flex-col items-center gap-2">
+                            <Activity className="h-8 w-8 opacity-50" />
+                            <p className="text-sm">No transactions found matching your filters</p>
                           </div>
-                          <div className="h-1.5 bg-slate-100/50 dark:bg-slate-800/50 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-rose-500 to-rose-400 rounded-full transition-all duration-500"
-                              style={{ width: `${Math.min(100, refundRate)}%` }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                            {returnStats.totalReturns} returns totaling {filteredReturnsTotal.toLocaleString("en-IN")}
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Returns Analysis Card */}
-              <Card className="rounded-xl border border-slate-200/50 dark:border-slate-800/50 bg-white/40 dark:bg-zinc-900/30 backdrop-blur-sm shadow-xs">
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-2.5 mb-4">
-                    <div className="p-2 bg-gradient-to-r from-rose-500/10 to-red-500/10 rounded-lg">
-                      <RotateCcw className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Returns Analysis</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Return metrics and impact</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+                
+                {unifiedTransactions.length > visibleLimit && (
+                  <div className="flex justify-center py-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
+                      data-testid="button-load-more-transactions"
+                      className="text-xs h-8 border-slate-200/70 dark:border-slate-700/50 bg-white/60 dark:bg-zinc-900/50"
+                    >
+                      Load More ({unifiedTransactions.length - visibleLimit} remaining)
+                    </Button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Transaction Summary Footer */}
+              <div className="p-4 bg-slate-50/50 dark:bg-zinc-900/50 border-t border-slate-100/50 dark:border-slate-800/30">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Bills (Debit)</div>
+                    <div className="text-sm font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                      Rs. {filteredSalesTotal.toLocaleString("en-IN")}
                     </div>
                   </div>
-                  
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-rose-100/50 dark:bg-rose-900/20 rounded">
-                            <AlertTriangle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
-                          </div>
-                          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Returns</span>
-                        </div>
-                        <div className="text-base font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          {returnStats.totalReturns}
-                        </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          {returnStats.billReturns} bills, {returnStats.itemReturns} items
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 bg-amber-100/50 dark:bg-amber-900/20 rounded">
-                            <DollarSign className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                          </div>
-                          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Refunded</span>
-                        </div>
-                        <div className="text-base font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                          {returnStats.totalRefunded.toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                          Filtered returns
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-white/50 dark:bg-zinc-900/40">
-                      <div>
-                        <span className="text-xs text-slate-600 dark:text-slate-400">Net Sales</span>
-                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
-                          {(filteredSalesTotal - filteredReturnsTotal).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-600 dark:text-slate-400">Refund Impact</span>
-                        <div className="text-sm font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
-                          {refundRate.toFixed(1)}%
-                        </div>
-                      </div>
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Payments (Credit)</div>
+                    <div className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      Rs. {filteredPaymentsTotal.toLocaleString("en-IN")}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                  <div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Returns (Credit)</div>
+                    <div className="text-sm font-semibold text-rose-600 dark:text-rose-400 tabular-nums">
+                      Rs. {filteredReturnsTotal.toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
           </TabsContent>
 
           {/* All Sales Tab */}
@@ -1370,10 +1608,13 @@ export default function Reports() {
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Return ID</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Customer</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Phone</TableHead>
-                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Type</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Return Method</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Refund Method</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Reason</TableHead>
                       <TableHead className="py-3 text-right text-xs text-slate-600 dark:text-slate-400">Refund Amount</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Items</TableHead>
                       <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Status</TableHead>
+                      <TableHead className="py-3 text-xs text-slate-600 dark:text-slate-400">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1384,8 +1625,12 @@ export default function Reports() {
                         <TableCell className="py-2.5 text-sm font-medium">{ret.customerName}</TableCell>
                         <TableCell className="py-2.5 text-xs text-slate-600 dark:text-slate-400">{ret.customerPhone}</TableCell>
                         <TableCell className="py-2.5">{getReturnTypeBadge(ret.returnType)}</TableCell>
+                        <TableCell className="py-2.5">{getRefundMethodBadge(ret.refundMethod)}</TableCell>
+                        <TableCell className="py-2.5 text-xs text-slate-600 dark:text-slate-400 max-w-xs truncate" title={ret.reason || "No reason provided"}>
+                          {ret.reason || <span className="text-slate-400 italic">No reason</span>}
+                        </TableCell>
                         <TableCell className="py-2.5 text-right text-sm font-medium text-rose-600 dark:text-rose-400 tabular-nums">
-                          {parseFloat(ret.totalRefund || "0").toLocaleString("en-IN")}
+                          Rs. {parseFloat(ret.totalRefund || "0").toLocaleString("en-IN")}
                         </TableCell>
                         <TableCell className="py-2.5">
                           <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 bg-slate-50/70 dark:bg-slate-800/70">
@@ -1396,6 +1641,17 @@ export default function Reports() {
                           <Badge variant={ret.status === "completed" ? "default" : "secondary"} className="text-xs px-1.5 py-0 h-5 capitalize">
                             {ret.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditReturn(ret.id, ret)}
+                            className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                          >
+                            <Edit className="h-3.5 w-3.5 mr-1" />
+                            Edit
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1428,6 +1684,165 @@ export default function Reports() {
               </div>
               <TableSummary tab="returns" />
             </Card>
+
+            {/* Edit Return Modal */}
+            {editingReturnId && (
+              <Card className="rounded-xl border border-blue-200/50 dark:border-blue-800/50 bg-blue-50/40 dark:bg-blue-900/10 backdrop-blur-sm overflow-hidden shadow-sm mt-4">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Edit className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      <h3 className="font-semibold text-slate-800 dark:text-slate-200">Edit Return</h3>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingReturnId(null);
+                        setEditReturnData({});
+                        setEditingError(null);
+                      }}
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {!canEditReturn?.canEdit && editingError && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4 flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm text-red-700 dark:text-red-300 font-medium">{editingError}</p>
+                        {canEditReturn?.hoursLeft !== undefined && (
+                          <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                            This return can only be edited within 12 hours of creation.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {canEditReturn?.canEdit && (
+                    <div className="space-y-4">
+                      {canEditReturn.hoursLeft !== undefined && (
+                        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-start gap-2">
+                          <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">
+                              Edit window: {canEditReturn.hoursLeft.toFixed(1)} hours remaining
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Refund Method
+                          </label>
+                          <Select
+                            value={editReturnData.refundMethod || "cash"}
+                            onValueChange={(value) =>
+                              setEditReturnData({ ...editReturnData, refundMethod: value })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">💵 Cash</SelectItem>
+                              <SelectItem value="credit">💳 Credit</SelectItem>
+                              <SelectItem value="bank_transfer">🏦 Bank Transfer</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Status
+                          </label>
+                          <Select
+                            value={editReturnData.status || "completed"}
+                            onValueChange={(value) =>
+                              setEditReturnData({ ...editReturnData, status: value })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-xs border-slate-200 dark:border-slate-700">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="pending">Pending</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Refund Amount
+                          </label>
+                          <Input
+                            type="number"
+                            value={editReturnData.totalRefund || ""}
+                            onChange={(e) =>
+                              setEditReturnData({ ...editReturnData, totalRefund: e.target.value })
+                            }
+                            placeholder="0.00"
+                            className="h-8 text-xs border-slate-200 dark:border-slate-700"
+                            step="0.01"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="text-xs font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                            Reason
+                          </label>
+                          <Input
+                            value={editReturnData.reason || ""}
+                            onChange={(e) =>
+                              setEditReturnData({ ...editReturnData, reason: e.target.value })
+                            }
+                            placeholder="Enter reason for return"
+                            className="h-8 text-xs border-slate-200 dark:border-slate-700"
+                          />
+                        </div>
+                      </div>
+
+                      {editingError && (
+                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                          <p className="text-xs text-red-700 dark:text-red-300">{editingError}</p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 justify-end pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingReturnId(null);
+                            setEditReturnData({});
+                            setEditingError(null);
+                          }}
+                          className="h-8 text-xs border-slate-200 dark:border-slate-700"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleSaveReturn(editingReturnId)}
+                          disabled={isSavingReturn}
+                          className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          <Save className="h-3.5 w-3.5 mr-1" />
+                          {isSavingReturn ? "Saving..." : "Save Changes"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,16 +102,103 @@ export default function Settings() {
       });
     },
   });
+
+  // Receipt settings state
+  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
+  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
+  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
+  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
+  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
+  const [receiptFontSize, setReceiptFontSize] = useState("11");
+  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
+  const [receiptPadding, setReceiptPadding] = useState("12");
+
+  // Printer settings state
+  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
+  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
   
+  // Database settings state
   const [databasePath, setDatabasePath] = useState<string>("");
   const [isElectron, setIsElectron] = useState(false);
-
   const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
   const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
   const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
   const [databasePinError, setDatabasePinError] = useState("");
   const [showDatabasePin, setShowDatabasePin] = useState(false);
   const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  // Bill display settings
+  const [showCompanyName, setShowCompanyName] = useState(true);
+  const [showGST, setShowGST] = useState(true);
+  const [autoprint, setAutoprint] = useState(false);
+  const [billFooter, setBillFooter] = useState("Thank you for your business!");
+
+  // Load receipt settings from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).electron) {
+      setIsElectron(true);
+      (window as any).electron.getDatabasePath().then((path: string) => {
+        setDatabasePath(path);
+      });
+    }
+    
+    try {
+      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+      if (savedReceiptSettings) {
+        const settings = JSON.parse(savedReceiptSettings);
+        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
+        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
+        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
+        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
+        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
+        setReceiptFontSize(settings.fontSize || "11");
+        setReceiptItemFontSize(settings.itemFontSize || "12");
+        setReceiptPadding(settings.padding || "12");
+      }
+    } catch (error) {
+      console.error("Error loading receipt settings:", error);
+    }
+  }, []);
+
+  const handleSaveBillSettings = () => {
+    const receiptSettings = {
+      businessName: receiptBusinessName,
+      address: receiptAddress,
+      dealerText: receiptDealerText,
+      dealerBrands: receiptDealerBrands,
+      thankYou: receiptThankYou,
+      fontSize: receiptFontSize,
+      itemFontSize: receiptItemFontSize,
+      padding: receiptPadding,
+    };
+    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
+    toast({ title: "Receipt settings saved successfully" });
+  };
+
+  const handleConnectBluetooth = async () => {
+    try {
+      const device = await (navigator as any).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ['battery_service']
+      });
+      
+      setConnectedDevice(device.name);
+      setBluetoothEnabled(true);
+      toast({ title: `Connected to ${device.name}` });
+    } catch (error) {
+      toast({ 
+        title: "Bluetooth connection failed", 
+        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const handleDisconnectBluetooth = () => {
+    setConnectedDevice(null);
+    setBluetoothEnabled(false);
+    toast({ title: "Bluetooth disconnected" });
+  };
 
   const handleDatabaseTabClick = () => {
     if (!uiSettings?.permDatabaseAccess) {
@@ -196,63 +282,6 @@ export default function Settings() {
     }
   }, []);
 
-  const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showGST, setShowGST] = useState(true);
-  const [autoprint, setAutoprint] = useState(false);
-  const [billFooter, setBillFooter] = useState("Thank you for your business!");
-  
-  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
-  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
-  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
-  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
-  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
-  const [receiptFontSize, setReceiptFontSize] = useState("11");
-  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
-  const [receiptPadding, setReceiptPadding] = useState("12");
-
-  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
-  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
-
-  const handleSaveBillSettings = () => {
-    const receiptSettings = {
-      businessName: receiptBusinessName,
-      address: receiptAddress,
-      dealerText: receiptDealerText,
-      dealerBrands: receiptDealerBrands,
-      thankYou: receiptThankYou,
-      fontSize: receiptFontSize,
-      itemFontSize: receiptItemFontSize,
-      padding: receiptPadding,
-    };
-    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
-    toast({ title: "Receipt settings saved successfully" });
-  };
-
-  const handleConnectBluetooth = async () => {
-    try {
-      const device = await (navigator as any).bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: ['battery_service']
-      });
-      
-      setConnectedDevice(device.name);
-      setBluetoothEnabled(true);
-      toast({ title: `Connected to ${device.name}` });
-    } catch (error) {
-      toast({ 
-        title: "Bluetooth connection failed", 
-        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
-        variant: "destructive" 
-      });
-    }
-  };
-
-  const handleDisconnectBluetooth = () => {
-    setConnectedDevice(null);
-    setBluetoothEnabled(false);
-    toast({ title: "Bluetooth disconnected" });
-  };
-  
   const handleChangeDatabaseLocation = async () => {
     if (!(window as any).electron) return;
     
@@ -1105,71 +1134,71 @@ export default function Settings() {
               </div>
             </div>
           ) : (
-          <div className="glass-card p-5" data-testid="card-database-settings">
-            <div className="flex items-center gap-2 mb-1">
-              <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              <h3 className="font-semibold">Database Management</h3>
-              <Badge variant="secondary" className="ml-2">Unlocked</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">Manage your database backups and restore data</p>
-            <div className="space-y-4">
-              {isElectron && (
-                <>
-                  <div className="space-y-2">
-                    <Label>Current Database Location</Label>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-muted/50 rounded-lg text-sm font-mono" data-testid="text-database-path">
-                        {databasePath || "Loading..."}
-                      </code>
-                    </div>
-                  </div>
-                  <Separator className="opacity-50" />
-                </>
-              )}
-
-              <div className="flex flex-wrap gap-3">
+            <div className="glass-card p-5" data-testid="card-database-settings">
+              <div className="flex items-center gap-2 mb-1">
+                <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-semibold">Database Management</h3>
+                <Badge variant="secondary" className="ml-2">Unlocked</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">Manage your database backups and restore data</p>
+              <div className="space-y-4">
                 {isElectron && (
-                  <Button 
-                    onClick={handleChangeDatabaseLocation}
-                    variant="outline"
-                    data-testid="button-change-location"
-                  >
-                    <FolderOpen className="h-4 w-4 mr-2" />
-                    Change Location
-                  </Button>
+                  <>
+                    <div className="space-y-2">
+                      <Label>Current Database Location</Label>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 p-2 bg-muted/50 rounded-lg text-sm font-mono" data-testid="text-database-path">
+                          {databasePath || "Loading..."}
+                        </code>
+                      </div>
+                    </div>
+                    <Separator className="opacity-50" />
+                  </>
                 )}
-                <Button 
-                  onClick={handleExportDatabase}
-                  variant="outline"
-                  data-testid="button-export"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Backup
-                </Button>
-                <Button 
-                  onClick={handleImportDatabase}
-                  variant="outline"
-                  data-testid="button-import"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import Database
-                </Button>
-              </div>
 
-              <Separator className="opacity-50" />
+                <div className="flex flex-wrap gap-3">
+                  {isElectron && (
+                    <Button 
+                      onClick={handleChangeDatabaseLocation}
+                      variant="outline"
+                      data-testid="button-change-location"
+                    >
+                      <FolderOpen className="h-4 w-4 mr-2" />
+                      Change Location
+                    </Button>
+                  )}
+                  <Button 
+                    onClick={handleExportDatabase}
+                    variant="outline"
+                    data-testid="button-export"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Backup
+                  </Button>
+                  <Button 
+                    onClick={handleImportDatabase}
+                    variant="outline"
+                    data-testid="button-import"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Database
+                  </Button>
+                </div>
 
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
-                <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                  {isElectron && <li>Changing database location will restart the application</li>}
-                  <li>Export your database regularly to prevent data loss</li>
-                  <li>Importing a database will replace your current data</li>
-                  <li>Keep your database backups in a safe location</li>
-                  <li>Export creates a .db file you can download and save</li>
-                </ul>
+                <Separator className="opacity-50" />
+
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    {isElectron && <li>Changing database location will restart the application</li>}
+                    <li>Export your database regularly to prevent data loss</li>
+                    <li>Importing a database will replace your current data</li>
+                    <li>Keep your database backups in a safe location</li>
+                    <li>Export creates a .db file you can download and save</li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </div>
           )}
         </TabsContent>
       </Tabs>
