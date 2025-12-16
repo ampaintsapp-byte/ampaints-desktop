@@ -96,12 +96,21 @@ export default function Reports() {
   
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  // Initialize with today's date
+  // Helper function to get today's date in dd-mm-yyyy format
+  const getTodayString = useCallback(() => {
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    return `${day}-${month}-${year}`;
+  }, []);
+
+  // Initialize with today's date in dd-mm-yyyy format
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayString();
     setDateFrom(today);
     setDateTo(today);
-  }, []);
+  }, [getTodayString]);
 
   const { data: allSalesRaw = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
@@ -899,7 +908,8 @@ export default function Reports() {
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-zinc-800/50 border border-slate-200/50 dark:border-slate-700/50">
                   <Calendar className="h-4 w-4 text-slate-500" />
                   <Input
-                    type="date"
+                    type="text"
+                    placeholder="dd-mm-yyyy"
                     value={dateFrom}
                     onChange={(e) => setDateFrom(e.target.value)}
                     className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
@@ -907,7 +917,8 @@ export default function Reports() {
                   />
                   <span className="text-xs text-slate-400 font-medium">to</span>
                   <Input
-                    type="date"
+                    type="text"
+                    placeholder="dd-mm-yyyy"
                     value={dateTo}
                     onChange={(e) => setDateTo(e.target.value)}
                     className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
@@ -1002,145 +1013,79 @@ export default function Reports() {
           {/* Overview Tab */}
           <TabsContent value="overview">
             <div className="space-y-5">
-              {/* Empty State Alert */}
-              {allSales.length === 0 && paymentHistory.length === 0 && returns.length === 0 && (
-                <Card className="rounded-xl border border-blue-200/50 dark:border-blue-800/50 bg-blue-50/40 dark:bg-blue-900/10 backdrop-blur-sm">
-                  <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
-                      <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/30">
-                        <AlertCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              {/* Summary Cards - Clean Modern Style */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Total Bills */}
+                <Card className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-md transition-shadow">
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2.5 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                        <Receipt className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                       </div>
-                      <div className="flex-1">
-                        <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-2">
-                          No Data Available
-                        </h3>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                          Your reports page is empty because there are no transactions in the system yet. 
-                          To see financial reports and analytics, start by:
-                        </p>
-                        <ul className="text-sm text-slate-600 dark:text-slate-400 space-y-1.5 ml-4">
-                          <li className="flex items-center gap-2">
-                            <Receipt className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                            <span>Creating sales through the <Link href="/pos" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">POS system</Link></span>
-                          </li>
-                          <li className="flex items-center gap-2">
-                            <Wallet className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                            <span>Recording payment recoveries from customers</span>
-                          </li>
-                          <li className="flex items-center gap-2">
-                            <RotateCcw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                            <span>Processing any returns if applicable</span>
-                          </li>
-                        </ul>
-                        <div className="mt-4 flex gap-2">
-                          <Link href="/pos">
-                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
-                              <Receipt className="h-4 w-4 mr-2" />
-                              Go to POS
-                            </Button>
-                          </Link>
-                          <Link href="/sales">
-                            <Button size="sm" variant="outline" className="border-blue-200 dark:border-blue-800">
-                              <Receipt className="h-4 w-4 mr-2" />
-                              View All Sales
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
+                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total Bills</span>
+                    </div>
+                    <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
+                      Rs. {Math.round(filteredSalesTotal).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                      {filteredSales.length} bills in this period
                     </div>
                   </CardContent>
                 </Card>
-              )}
-
-              {/* Summary Cards - Premium Glass Banking Style */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Total Bills */}
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 to-blue-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
-                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-blue-500/5 p-5 overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
-                    <div className="relative">
-                      <div className="flex items-center gap-2.5 mb-4">
-                        <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
-                          <Receipt className="h-4 w-4 text-white" />
-                        </div>
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Total Bills</span>
-                      </div>
-                      <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums tracking-tight">
-                        Rs. {Math.round(filteredSalesTotal).toLocaleString("en-IN")}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
-                        {filteredSales.length} bills in this period
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Collected (Paid) */}
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/20 to-emerald-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
-                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-emerald-500/5 p-5 overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
-                    <div className="relative">
-                      <div className="flex items-center gap-2.5 mb-4">
-                        <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
-                          <TrendingUp className="h-4 w-4 text-white" />
-                        </div>
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Collected</span>
+                <Card className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-md transition-shadow">
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                        <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                       </div>
-                      <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums tracking-tight">
-                        Rs. {Math.round(filteredSalesPaid).toLocaleString("en-IN")}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
-                        {paidSales.length} fully paid bills
-                      </div>
+                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Collected</span>
                     </div>
-                  </div>
-                </div>
+                    <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      Rs. {Math.round(filteredSalesPaid).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                      {paidSales.length} fully paid bills
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {/* Unpaid */}
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-rose-400/20 to-rose-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
-                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-rose-500/5 p-5 overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-rose-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
-                    <div className="relative">
-                      <div className="flex items-center gap-2.5 mb-4">
-                        <div className="p-2 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 shadow-lg shadow-rose-500/30">
-                          <CreditCard className="h-4 w-4 text-white" />
-                        </div>
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Unpaid</span>
+                <Card className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-md transition-shadow">
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2.5 rounded-lg bg-rose-100 dark:bg-rose-900/30">
+                        <CreditCard className="h-5 w-5 text-rose-600 dark:text-rose-400" />
                       </div>
-                      <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums tracking-tight">
-                        Rs. {Math.round(filteredSalesOutstanding).toLocaleString("en-IN")}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
-                        {unpaidSales.length} bills pending
-                      </div>
+                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Unpaid</span>
                     </div>
-                  </div>
-                </div>
+                    <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                      Rs. {Math.round(filteredSalesOutstanding).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                      {unpaidSales.length} bills pending
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {/* Returns */}
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-amber-400/20 to-amber-600/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300 opacity-60" />
-                  <div className="relative rounded-2xl border border-white/60 dark:border-white/10 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl shadow-lg shadow-amber-500/5 p-5 overflow-hidden">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-amber-400/10 to-transparent rounded-full -translate-y-8 translate-x-8" />
-                    <div className="relative">
-                      <div className="flex items-center gap-2.5 mb-4">
-                        <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/30">
-                          <RotateCcw className="h-4 w-4 text-white" />
-                        </div>
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Returns</span>
+                <Card className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-md transition-shadow">
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2.5 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                        <RotateCcw className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                       </div>
-                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums tracking-tight">
-                        Rs. {Math.round(filteredSalesReturnCredits).toLocaleString("en-IN")}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
-                        {filteredSalesReturns.length} returns on these bills
-                      </div>
+                      <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Returns</span>
                     </div>
-                  </div>
-                </div>
+                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                      Rs. {Math.round(filteredSalesReturnCredits).toLocaleString("en-IN")}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+                      {filteredSalesReturns.length} returns on these bills
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               {/* Cash Balance Card */}

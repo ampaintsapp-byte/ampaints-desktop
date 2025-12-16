@@ -89,7 +89,23 @@ export default function StockHistory() {
 
   const getTodayString = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+
+  // Convert dd-mm-yyyy to Date object for filtering
+  const parseDateString = (dateStr: string): Date | null => {
+    if (!dateStr) return null;
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+    return null;
   };
 
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
@@ -156,15 +172,19 @@ export default function StockHistory() {
     }
 
     if (startDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      filtered = filtered.filter(h => new Date(h.createdAt) >= start);
+      const start = parseDateString(startDate);
+      if (start) {
+        start.setHours(0, 0, 0, 0);
+        filtered = filtered.filter(h => new Date(h.createdAt) >= start);
+      }
     }
 
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(h => new Date(h.createdAt) <= end);
+      const end = parseDateString(endDate);
+      if (end) {
+        end.setHours(23, 59, 59, 999);
+        filtered = filtered.filter(h => new Date(h.createdAt) <= end);
+      }
     }
 
     if (debouncedSearchQuery.trim()) {
@@ -351,11 +371,11 @@ export default function StockHistory() {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
             <div className="space-y-1">
               <Label className="text-xs font-medium text-slate-500">Start Date</Label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9 border-slate-200 bg-white" data-testid="input-start-date" />
+              <Input type="text" placeholder="dd-mm-yyyy" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9 border-slate-200 bg-white" data-testid="input-start-date" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs font-medium text-slate-500">End Date</Label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9 border-slate-200 bg-white" data-testid="input-end-date" />
+              <Input type="text" placeholder="dd-mm-yyyy" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9 border-slate-200 bg-white" data-testid="input-end-date" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs font-medium text-slate-500">Company</Label>
