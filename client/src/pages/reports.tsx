@@ -1,4 +1,4 @@
-import { useState, useMemo, useDeferredValue, useEffect, useCallback } from "react";
+import { useState, useMemo, useDeferredValue, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -96,12 +96,7 @@ export default function Reports() {
   
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  // Initialize with today's date
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    setDateFrom(today);
-    setDateTo(today);
-  }, []);
+  // Date filters start empty to show all data by default
 
   const { data: allSalesRaw = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
