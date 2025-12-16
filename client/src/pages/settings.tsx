@@ -139,10 +139,10 @@ export default function Settings() {
       }
     } catch (error) {
       console.error("Error loading receipt settings:", error);
+      // Non-critical error - just use defaults
       toast({
-        title: "Warning",
-        description: "Could not load saved receipt settings",
-        variant: "destructive",
+        title: "Using Default Settings",
+        description: "Could not load saved receipt settings. Using default values instead.",
       });
     }
   }, [toast]);

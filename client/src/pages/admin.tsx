@@ -526,8 +526,17 @@ export default function Admin() {
     }
 
     // Validate PIN is not too simple
-    if (newPin === '0000' || newPin === '1234' || newPin === '1111' || newPin === '9999') {
-      if (!confirm('⚠️ Warning: This PIN is too simple and easy to guess. Are you sure you want to use it?')) {
+    const weakPins = [
+      '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999',
+      '0123', '1234', '2345', '3456', '4567', '5678', '6789', '7890',
+      '9876', '8765', '7654', '6543', '5432', '4321', '3210', '2109'
+    ];
+    
+    // Check for repeating digits
+    const isRepeating = /^(.)\1{3}$/.test(newPin);
+    
+    if (weakPins.includes(newPin) || isRepeating) {
+      if (!confirm('⚠️ Security Warning: This PIN is too simple and easy to guess (common pattern or repeating digits).\n\nFor better security, please choose a more random PIN.\n\nDo you still want to use this PIN?')) {
         return;
       }
     }
