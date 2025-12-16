@@ -592,6 +592,35 @@ function createTables() {
       );
     `)
 
+    // Create cloud sync tables
+    console.log("[Database] Creating cloud sync tables...")
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS cloud_sync_jobs (
+        id TEXT PRIMARY KEY,
+        job_type TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        dry_run INTEGER DEFAULT 1,
+        initiated_by TEXT,
+        details TEXT,
+        attempts INTEGER DEFAULT 0,
+        last_error TEXT,
+        created_at DATETIME DEFAULT (datetime('now')),
+        updated_at DATETIME DEFAULT (datetime('now'))
+      );
+    `)
+
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS cloud_sync_connections (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        label TEXT,
+        connection_string_encrypted TEXT,
+        created_at DATETIME DEFAULT (datetime('now')),
+        updated_at DATETIME DEFAULT (datetime('now'))
+      );
+    `)
+
     try {
       sqlite.exec("ALTER TABLE settings ADD COLUMN master_pin_hash TEXT")
     } catch (e) {
@@ -662,6 +691,19 @@ function createTables() {
       sqlite.exec("CREATE INDEX IF NOT EXISTS idx_sales_stock_updated ON sales(stock_updated)")
     } catch (error) {
       console.log("[Database] Index already exists: idx_sales_stock_updated")
+    }
+
+    // Create indexes for cloud sync tables
+    try {
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_cloud_sync_jobs_status ON cloud_sync_jobs(status)")
+    } catch (error) {
+      console.log("[Database] Index already exists: idx_cloud_sync_jobs_status")
+    }
+
+    try {
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_cloud_sync_connections_provider ON cloud_sync_connections(provider)")
+    } catch (error) {
+      console.log("[Database] Index already exists: idx_cloud_sync_connections_provider")
     }
 
     sqlite.exec("CREATE INDEX IF NOT EXISTS idx_sales_payment_status ON sales(payment_status, created_at)")
