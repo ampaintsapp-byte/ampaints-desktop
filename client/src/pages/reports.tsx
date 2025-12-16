@@ -105,20 +105,20 @@ export default function Reports() {
 
   const { data: allSalesRaw = [], isLoading: salesLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    staleTime: 0,
+    gcTime: 1000 * 60 * 5, // 5 minutes cache
   });
 
   const { data: paymentHistoryRaw = [], isLoading: historyLoading } = useQuery<PaymentHistoryWithSale[]>({
     queryKey: ["/api/payment-history"],
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    staleTime: 0,
+    gcTime: 1000 * 60 * 5, // 5 minutes cache
   });
 
   const { data: returnsRaw = [], isLoading: returnsLoading } = useQuery<ReturnWithItems[]>({
     queryKey: ["/api/returns"],
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    staleTime: 0,
+    gcTime: 1000 * 60 * 5, // 5 minutes cache
   });
 
   const allSales = useDeferredValue(allSalesRaw);

@@ -72,5 +72,5 @@ export const queryClient = new QueryClient({
 // ✅ COMPLETELY DISABLE prefetching
 export function prefetchPageData(page: string) {
   // DO NOTHING - No automatic prefetching
-  console.log(`[DEBUG] Page: ${page} - Prefetching disabled to prevent reloads`);
+  // Debug logging removed to prevent console spam
 }

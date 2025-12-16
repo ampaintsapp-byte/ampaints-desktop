@@ -181,6 +181,23 @@ function updateSchema() {
     updateStmt.run()
     console.log("[Database] ✅ Settings table updated with default values")
 
+    // Check if connection_id column exists in cloud_sync_jobs table
+    const checkConnectionId = sqlite
+      .prepare(`
+      SELECT name FROM pragma_table_info('cloud_sync_jobs') WHERE name = 'connection_id'
+    `)
+      .get()
+
+    if (!checkConnectionId) {
+      console.log("[Database] Adding connection_id column to cloud_sync_jobs table...")
+      try {
+        sqlite.exec(`ALTER TABLE cloud_sync_jobs ADD COLUMN connection_id TEXT`)
+        console.log("[Database] ✅ connection_id column added to cloud_sync_jobs table")
+      } catch (alterError) {
+        console.error("[Database] Error adding connection_id column:", alterError)
+      }
+    }
+
     // Check if stock_in_history table needs new columns for returns tracking
     const checkStockHistoryType = sqlite
       .prepare(`
@@ -598,6 +615,7 @@ function createTables() {
         id TEXT PRIMARY KEY,
         job_type TEXT NOT NULL,
         provider TEXT NOT NULL,
+        connection_id TEXT,
         status TEXT NOT NULL DEFAULT 'pending', -- pending, running, success, failed
         dry_run INTEGER DEFAULT 1,
         initiated_by TEXT,

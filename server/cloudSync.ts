@@ -81,5 +81,5 @@ export async function deleteConnection(connectionId: string) {
 export async function enqueueJob(params: { id: string; jobType: string; provider: string; connectionId: string; dryRun?: boolean; initiatedBy?: string; details?: string }) {
   const { sqliteDb } = await import("./db")
   if (!sqliteDb) throw new Error("sqliteDb not available")
-  sqliteDb.prepare(`INSERT INTO cloud_sync_jobs (id, job_type, provider, status, dry_run, initiated_by, details, attempts, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?, ?, 0, datetime('now'), datetime('now'))`).run(params.id, params.jobType, params.provider, params.dryRun ? 1 : 0, params.initiatedBy || null, params.details || null)
+  sqliteDb.prepare(`INSERT INTO cloud_sync_jobs (id, job_type, provider, connection_id, status, dry_run, initiated_by, details, attempts, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, 0, datetime('now'), datetime('now'))`).run(params.id, params.jobType, params.provider, params.connectionId, params.dryRun ? 1 : 0, params.initiatedBy || null, params.details || null)
 }

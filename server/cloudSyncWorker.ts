@@ -17,7 +17,7 @@ export async function processNextJob() {
     try {
       if (job.job_type === 'export') {
         const { getConnection } = await import('./cloudSync')
-        const conn = await getConnection(job.connectionId)
+        const conn = await getConnection(job.connection_id)
         if (!conn) throw new Error('Connection not found')
         const { exportToPostgres } = await import('./cloudSyncExport')
         const result = await exportToPostgres(conn.connectionString, job.dry_run === 1)
@@ -28,7 +28,7 @@ export async function processNextJob() {
 
       if (job.job_type === 'import') {
         const { getConnection } = await import('./cloudSync')
-        const conn = await getConnection(job.connectionId)
+        const conn = await getConnection(job.connection_id)
         if (!conn) throw new Error('Connection not found')
         const { importFromPostgres } = await import('./cloudSyncImport')
         let strategy = 'merge'

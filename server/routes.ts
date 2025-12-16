@@ -1566,7 +1566,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sqliteDb } = await import("./db")
       if (!sqliteDb) return res.json({ ok: true, jobs: [] })
-      const jobs = sqliteDb.prepare("SELECT id, job_type, provider, status, dry_run, initiated_by, attempts, last_error, created_at, updated_at FROM cloud_sync_jobs ORDER BY created_at DESC").all()
+      const jobs = sqliteDb.prepare("SELECT id, job_type, provider, connection_id, status, dry_run, initiated_by, attempts, last_error, created_at, updated_at FROM cloud_sync_jobs ORDER BY created_at DESC").all()
       res.json({ ok: true, jobs })
     } catch (err) {
       console.error("[API] Error listing jobs:", err)
