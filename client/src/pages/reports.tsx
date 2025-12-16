@@ -1002,6 +1002,56 @@ export default function Reports() {
           {/* Overview Tab */}
           <TabsContent value="overview">
             <div className="space-y-5">
+              {/* Empty State Alert */}
+              {allSales.length === 0 && paymentHistory.length === 0 && returns.length === 0 && (
+                <Card className="rounded-xl border border-blue-200/50 dark:border-blue-800/50 bg-blue-50/40 dark:bg-blue-900/10 backdrop-blur-sm">
+                  <CardContent className="p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                        <AlertCircle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                          No Data Available
+                        </h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                          Your reports page is empty because there are no transactions in the system yet. 
+                          To see financial reports and analytics, start by:
+                        </p>
+                        <ul className="text-sm text-slate-600 dark:text-slate-400 space-y-1.5 ml-4">
+                          <li className="flex items-center gap-2">
+                            <Receipt className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                            <span>Creating sales through the <Link href="/pos" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">POS system</Link></span>
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <Wallet className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                            <span>Recording payment recoveries from customers</span>
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <RotateCcw className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                            <span>Processing any returns if applicable</span>
+                          </li>
+                        </ul>
+                        <div className="mt-4 flex gap-2">
+                          <Link href="/pos">
+                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                              <Receipt className="h-4 w-4 mr-2" />
+                              Go to POS
+                            </Button>
+                          </Link>
+                          <Link href="/sales">
+                            <Button size="sm" variant="outline" className="border-blue-200 dark:border-blue-800">
+                              <Receipt className="h-4 w-4 mr-2" />
+                              View All Sales
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Summary Cards - Premium Glass Banking Style */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Total Bills */}
