@@ -57,14 +57,31 @@ export default function Admin() {
     setIsVerifyingPin(true);
     try {
       const response = await fetch('/api/license/verify-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ masterPin: pin }) });
-      if (!response.ok) throw new Error('Invalid PIN');
+      const data = await response.json();
+      
+      if (!response.ok) {
+        if (response.status === 429) {
+          // Rate limited
+          setAdminPinError(`Too many failed attempts. Please wait ${data.lockoutTime} minutes before trying again.`);
+        } else if (data.remainingAttempts !== undefined) {
+          // Show remaining attempts
+          setAdminPinError(`Invalid PIN. ${data.remainingAttempts} attempts remaining before lockout.`);
+        } else {
+          setAdminPinError('Invalid PIN. Please try again.');
+        }
+        setAdminPinInput(["", "", "", ""]);
+        const first = document.querySelector('[data-testid="input-admin-pin-0"]') as HTMLInputElement;
+        first?.focus();
+        return;
+      }
+      
       setIsAdminUnlocked(true);
       try { sessionStorage.setItem('admin_unlocked', '1') } catch {}
       setShowAdminPinDialog(false);
       setAdminPinInput(["", "", "", ""]);
       toast({ title: 'Admin Unlocked', description: 'You can access admin tools.' });
     } catch (err: any) {
-      setAdminPinError('Invalid PIN. Please try again.');
+      setAdminPinError('Connection error. Please try again.');
       setAdminPinInput(["", "", "", ""]);
       const first = document.querySelector('[data-testid="input-admin-pin-0"]') as HTMLInputElement;
       first?.focus();
@@ -653,9 +670,29 @@ export default function Admin() {
                 {isLicenseActive ? 'Active' : 'Inactive'}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground mb-6">
+            <p className="text-sm text-muted-foreground mb-4">
               Manage your software license expiration date and activation status
             </p>
+            
+            {/* Security Warning Banner */}
+            <div className="mb-6 border-2 border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="h-6 w-6 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-red-900 dark:text-red-100 mb-2">🔒 Security Protected</h4>
+                  <p className="text-sm text-red-800 dark:text-red-200 mb-2">
+                    <strong>All license operations require your Master Secret Key.</strong> This is a cryptographic security measure to ensure only authorized administrators can modify license settings.
+                  </p>
+                  <ul className="text-xs text-red-700 dark:text-red-300 space-y-1 list-disc list-inside">
+                    <li>Secret key is <strong>never stored</strong> in the database or browser</li>
+                    <li>Key is <strong>hashed using SHA-256</strong> before validation</li>
+                    <li>Without the correct secret key, <strong>no one can reset expiry dates</strong></li>
+                    <li>Clients cannot bypass this security - it's server-side validated</li>
+                    <li>Contact administrator if you've lost the secret key</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
             <div className="space-y-6">
               <div className="border border-border/50 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-4">
@@ -715,6 +752,13 @@ export default function Admin() {
                   <p className="text-xs text-muted-foreground mt-1">
                     This key is required to perform any license management operations
                   </p>
+                  <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded text-xs">
+                    <p className="text-blue-900 dark:text-blue-100 font-medium mb-1">ℹ️ About Secret Keys</p>
+                    <p className="text-blue-800 dark:text-blue-200">
+                      The secret key can be set via environment variable <code className="bg-blue-100 dark:bg-blue-900 px-1 py-0.5 rounded">MASTER_SECRET_KEY</code> or customized in your deployment. 
+                      Default key is provided in SECRET-KEY-CONFIGURATION.md. For security, never share this key publicly.
+                    </p>
+                  </div>
                 </div>
               </div>
 

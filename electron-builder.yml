@@ -11,6 +11,22 @@ files:
   - dist-electron/**/*
   - package.json
   - node_modules/**/*
+  # Exclude development and unnecessary files from bundle
+  - "!node_modules/.cache/**/*"
+  - "!node_modules/@types/**/*"
+  - "!node_modules/**/*.md"
+  - "!node_modules/**/*.ts"
+  - "!node_modules/**/LICENSE*"
+  - "!node_modules/**/CHANGELOG*"
+  - "!node_modules/**/.eslintrc*"
+  - "!node_modules/**/.prettierrc*"
+  - "!node_modules/**/test/**/*"
+  - "!node_modules/**/tests/**/*"
+  - "!node_modules/**/__tests__/**/*"
+  - "!node_modules/**/example/**/*"
+  - "!node_modules/**/examples/**/*"
+  - "!node_modules/**/docs/**/*"
+  - "!node_modules/**/*.map"
 
 extraResources:
   - from: .
@@ -39,8 +55,12 @@ nsis:
   installerHeaderIcon: build/icon.ico
   displayLanguageSelector: false
   runAfterFinish: true
+  # Optimize installation speed
+  packElevateHelper: true
+  differentialPackage: true
 
-compression: maximum
+# Use "normal" compression for faster installation (trade-off: slightly larger installer)
+compression: normal
 asar: true
 asarUnpack:
   - "**/*.node"
@@ -48,3 +68,6 @@ asarUnpack:
 nodeGypRebuild: false
 buildDependenciesFromSource: false
 npmRebuild: true
+
+# Exclude development dependencies from bundle
+includeSubNodeModules: false

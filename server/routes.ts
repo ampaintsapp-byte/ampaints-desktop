@@ -14,6 +14,52 @@ import {
 import { z } from "zod"
 import crypto from "crypto"
 
+// Rate limiting for admin PIN verification (prevent brute force)
+const pinAttempts = new Map<string, { count: number; lastAttempt: number }>()
+const MAX_PIN_ATTEMPTS = 5
+const LOCKOUT_DURATION = 15 * 60 * 1000 // 15 minutes
+
+function checkPinRateLimit(ip: string): { allowed: boolean; remainingAttempts?: number; lockoutTime?: number } {
+  const now = Date.now()
+  const attempt = pinAttempts.get(ip)
+  
+  if (!attempt) {
+    pinAttempts.set(ip, { count: 1, lastAttempt: now })
+    return { allowed: true, remainingAttempts: MAX_PIN_ATTEMPTS - 1 }
+  }
+  
+  // Check if lockout period has passed
+  if (attempt.count >= MAX_PIN_ATTEMPTS) {
+    const timeSinceLast = now - attempt.lastAttempt
+    if (timeSinceLast < LOCKOUT_DURATION) {
+      const lockoutTime = Math.ceil((LOCKOUT_DURATION - timeSinceLast) / 1000 / 60)
+      return { allowed: false, lockoutTime }
+    }
+    // Reset after lockout period
+    pinAttempts.set(ip, { count: 1, lastAttempt: now })
+    return { allowed: true, remainingAttempts: MAX_PIN_ATTEMPTS - 1 }
+  }
+  
+  // Increment attempt count
+  attempt.count++
+  attempt.lastAttempt = now
+  return { allowed: true, remainingAttempts: MAX_PIN_ATTEMPTS - attempt.count }
+}
+
+function resetPinAttempts(ip: string): void {
+  pinAttempts.delete(ip)
+}
+
+// Cleanup old entries periodically (every hour)
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, attempt] of pinAttempts.entries()) {
+    if (now - attempt.lastAttempt > LOCKOUT_DURATION) {
+      pinAttempts.delete(ip)
+    }
+  }
+}, 60 * 60 * 1000)
+
 // Import necessary types for clarity if not already present from @shared/schema or storage
 // Assuming these types are defined and exported by your storage module or shared types
 interface Product {
@@ -1735,8 +1781,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============ SOFTWARE LICENSE MANAGEMENT ============
   
-  // Master PIN for software blocking
-  const MASTER_ADMIN_PIN = process.env.MASTER_ADMIN_PIN || "3620192373285"
+  // Master PIN for software blocking - Default is "0000" for first-time setup
+  const MASTER_ADMIN_PIN = process.env.MASTER_ADMIN_PIN || "0000"
 
   // Verify master admin PIN
   function verifyMasterPin(pin: string): boolean {
@@ -1960,33 +2006,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/license/verify-pin", async (req, res) => {
     try {
       const { masterPin } = req.body
-      if (!masterPin) return res.status(400).json({ valid: false, error: "masterPin required" })
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      if (!masterPin) {
+        console.log("[Admin PIN] Missing PIN in request")
+        return res.status(400).json({ valid: false, error: "masterPin required" })
+      }
+
+      // Check rate limiting
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        console.log(`[Admin PIN] Rate limit exceeded for ${clientIp} - locked out for ${rateLimit.lockoutTime} minutes`)
+        return res.status(429).json({ 
+          valid: false, 
+          error: `Too many failed attempts. Please wait ${rateLimit.lockoutTime} minutes before trying again.`,
+          lockoutTime: rateLimit.lockoutTime
+        })
+      }
+
+      console.log(`[Admin PIN] Verifying PIN attempt (${rateLimit.remainingAttempts} attempts remaining)`)
 
       // Check settings-stored master pin first
       const s = await storage.getSettings()
+      let isValid = false
+      
       if (s.masterPinHash && s.masterPinSalt) {
         try {
           const derived = crypto.scryptSync(masterPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
-          if (derived.toString('hex') !== s.masterPinHash) {
-            res.status(403).json({ valid: false, error: "Invalid master PIN" })
-            return
+          if (derived.toString('hex') === s.masterPinHash) {
+            isValid = true
+            console.log("[Admin PIN] Stored PIN verified successfully")
           }
-          res.json({ valid: true, message: "Master PIN verified" })
-          return
         } catch (err) {
-          // fallthrough to env check
+          console.log("[Admin PIN] Error checking stored PIN, falling back to default:", err)
         }
       }
 
-      // Fallback to env-based master PIN
-      if (!verifyMasterPin(masterPin)) {
-        res.status(403).json({ valid: false, error: "Invalid master PIN" })
+      // Fallback to env-based master PIN (default "0000" or custom env var)
+      if (!isValid && verifyMasterPin(masterPin)) {
+        isValid = true
+        console.log("[Admin PIN] Default PIN verified successfully")
+      }
+
+      if (!isValid) {
+        console.log(`[Admin PIN] Verification failed - Invalid PIN (${rateLimit.remainingAttempts} attempts remaining)`)
+        res.status(403).json({ 
+          valid: false, 
+          error: "Invalid master PIN",
+          remainingAttempts: rateLimit.remainingAttempts
+        })
         return
       }
 
+      // Success - reset rate limit for this IP
+      resetPinAttempts(clientIp)
+      console.log("[Admin PIN] PIN verified successfully")
       res.json({ valid: true, message: "Master PIN verified" })
     } catch (error) {
-      console.error("Error verifying PIN:", error)
+      console.error("[Admin PIN] Error verifying PIN:", error)
       res.status(500).json({ error: "Failed to verify PIN" })
     }
   })
@@ -1997,6 +2074,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { currentPin, newPin } = req.body
       if (!newPin) return res.status(400).json({ ok: false, error: "newPin required" })
 
+      console.log("[Admin PIN] Attempting to change master PIN")
+
       // Verify current pin: either matches stored hash or env
       const s = await storage.getSettings()
       let verified = false
@@ -2004,29 +2083,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const derived = crypto.scryptSync(currentPin, Buffer.from(s.masterPinSalt, 'hex'), 64)
           verified = derived.toString('hex') === s.masterPinHash
+          if (verified) {
+            console.log("[Admin PIN] Current stored PIN verified")
+          }
         } catch (err) {
+          console.log("[Admin PIN] Error verifying stored PIN:", err)
           verified = false
         }
       }
 
       if (!verified && currentPin) {
         verified = verifyMasterPin(currentPin)
+        if (verified) {
+          console.log("[Admin PIN] Current default PIN verified")
+        }
       }
 
       if (!verified && s.masterPinHash) {
+        console.log("[Admin PIN] Current PIN verification failed - stored PIN exists but invalid")
         return res.status(403).json({ ok: false, error: "Invalid current PIN" })
       }
 
       // If no master pin was set yet, allow setting without currentPin (first-time setup)
+      if (!s.masterPinHash && !currentPin) {
+        console.log("[Admin PIN] First-time setup - no current PIN required")
+      }
 
       // Generate salt and store scrypt hash
       const salt = crypto.randomBytes(16)
       const derived = crypto.scryptSync(newPin, salt, 64)
       await storage.updateSettings({ masterPinHash: derived.toString('hex'), masterPinSalt: salt.toString('hex') })
       invalidateCache("settings")
+      console.log("[Admin PIN] Master PIN changed successfully")
       res.json({ ok: true })
     } catch (err: any) {
-      console.error("Error setting master PIN:", err)
+      console.error("[Admin PIN] Error setting master PIN:", err)
       res.status(500).json({ ok: false, error: "Failed to set master PIN" })
     }
   })
