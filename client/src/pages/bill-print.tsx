@@ -48,6 +48,7 @@ export default function BillPrint() {
   const [customRate, setCustomRate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingItems, setEditingItems] = useState<{ [key: string]: { quantity: string; rate: string } }>({});
+  const [editingPaidAmount, setEditingPaidAmount] = useState("");
   
   const referrer = new URLSearchParams(searchParams).get('from');
 
@@ -60,6 +61,22 @@ export default function BillPrint() {
     queryKey: ["/api/colors"],
     enabled: addItemDialogOpen,
   });
+
+  // Fetch returns for this sale
+  const { data: saleReturns = [] } = useQuery<any[]>({
+    queryKey: ["/api/sales", saleId, "returns"],
+    enabled: !!saleId,
+    queryFn: async () => {
+      const response = await fetch(`/api/sales/${saleId}/returns`);
+      if (!response.ok) return [];
+      return response.json();
+    },
+  });
+
+  // Calculate total returns for this sale
+  const totalSaleReturns = useMemo(() => {
+    return saleReturns.reduce((sum, ret) => sum + (parseFloat(ret.totalRefund) || 0), 0);
+  }, [saleReturns]);
 
   // Delete Bill - IMPROVED VERSION
   const deleteSale = async () => {
@@ -168,7 +185,26 @@ export default function BillPrint() {
     return cleaned;
   };
 
-  // Download Bill as PDF - Professional Design
+  // Calculate balance with returns - FIXED VERSION
+  const calculateBalance = () => {
+    if (!sale) return { total: 0, paid: 0, returns: 0, balance: 0 };
+    
+    const total = parseFloat(sale.totalAmount) || 0;
+    const paid = parseFloat(sale.amountPaid) || 0;
+    const returns = totalSaleReturns || 0;
+    
+    // Correct calculation: Balance = Total - Paid - Returns
+    const balance = Math.max(0, total - paid - returns);
+    
+    return {
+      total: Math.round(total),
+      paid: Math.round(paid),
+      returns: Math.round(returns),
+      balance: Math.round(balance)
+    };
+  };
+
+  // Download Bill as PDF - Professional Design WITH RETURNS
   const downloadBillPDF = () => {
     if (!sale) return;
 
@@ -291,17 +327,32 @@ export default function BillPrint() {
 
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
-    pdf.text('Subtotal:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    
+    // Get calculated values
+    const { total, paid, returns, balance } = calculateBalance();
+    
+    // Subtotal (Total Amount)
+    pdf.text('Total:', summaryX, yPos);
+    pdf.text(`Rs. ${total.toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
 
-    pdf.setTextColor(34, 139, 34);
-    pdf.text('Amount Paid:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    // Amount Paid
+    pdf.setTextColor(34, 139, 34); // Green color for paid
+    pdf.text('Paid:', summaryX, yPos);
+    pdf.text(`Rs. ${paid.toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
 
-    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+    // Total Returns (if any)
+    if (returns > 0) {
+      pdf.setTextColor(255, 140, 0); // Orange color for returns
+      pdf.text('Returns:', summaryX, yPos);
+      pdf.text(`- Rs. ${returns.toLocaleString()}`, valueX, yPos, { align: 'right' });
+      yPos += 7;
+    }
 
+    pdf.setTextColor(0, 0, 0);
+
+    // Calculate balance due
     pdf.setFillColor(102, 126, 234);
     pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
 
@@ -309,12 +360,24 @@ export default function BillPrint() {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     
-    if (outstanding > 0) {
+    if (balance > 0) {
       pdf.text('BALANCE DUE:', summaryX, yPos + 4);
-      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      pdf.text(`Rs. ${balance.toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} deducted)`, summaryX, yPos + 9);
+      }
     } else {
       pdf.text('STATUS:', summaryX, yPos + 4);
       pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} adjusted)`, summaryX, yPos + 9);
+      }
     }
 
     yPos += 25;
@@ -459,17 +522,32 @@ export default function BillPrint() {
 
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
-    pdf.text('Subtotal:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    
+    // Get calculated values
+    const { total, paid, returns, balance } = calculateBalance();
+    
+    // Subtotal (Total Amount)
+    pdf.text('Total:', summaryX, yPos);
+    pdf.text(`Rs. ${total.toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
 
-    pdf.setTextColor(34, 139, 34);
-    pdf.text('Amount Paid:', summaryX, yPos);
-    pdf.text(`Rs. ${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}`, valueX, yPos, { align: 'right' });
+    // Amount Paid
+    pdf.setTextColor(34, 139, 34); // Green color for paid
+    pdf.text('Paid:', summaryX, yPos);
+    pdf.text(`Rs. ${paid.toLocaleString()}`, valueX, yPos, { align: 'right' });
     yPos += 7;
 
-    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+    // Total Returns (if any)
+    if (returns > 0) {
+      pdf.setTextColor(255, 140, 0); // Orange color for returns
+      pdf.text('Returns:', summaryX, yPos);
+      pdf.text(`- Rs. ${returns.toLocaleString()}`, valueX, yPos, { align: 'right' });
+      yPos += 7;
+    }
 
+    pdf.setTextColor(0, 0, 0);
+
+    // Calculate balance due
     pdf.setFillColor(102, 126, 234);
     pdf.roundedRect(summaryX - 5, yPos - 4, pageWidth - summaryX + 5 - margin + 5, 12, 2, 2, 'F');
 
@@ -477,12 +555,24 @@ export default function BillPrint() {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     
-    if (outstanding > 0) {
+    if (balance > 0) {
       pdf.text('BALANCE DUE:', summaryX, yPos + 4);
-      pdf.text(`Rs. ${Math.round(outstanding).toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      pdf.text(`Rs. ${balance.toLocaleString()}`, valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} deducted)`, summaryX, yPos + 9);
+      }
     } else {
       pdf.text('STATUS:', summaryX, yPos + 4);
       pdf.text('PAID IN FULL', valueX, yPos + 4, { align: 'right' });
+      if (returns > 0) {
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(255, 255, 255, 0.8);
+        pdf.text(`(Returns: Rs. ${returns.toLocaleString()} adjusted)`, summaryX, yPos + 9);
+      }
     }
 
     yPos += 25;
@@ -566,12 +656,20 @@ export default function BillPrint() {
     }
 
     // Fallback: Text message with WhatsApp link
-    const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
+    const { total, paid, returns, balance } = calculateBalance();
     const itemsList = sale.saleItems.map(item => 
       `${item.color.variant.product.productName} x${item.quantity} Rs.${Math.round(parseFloat(item.subtotal))}`
     ).join('\n');
 
-    const message = `*${receiptSettings.businessName}*\n*Bill #${sale.id.slice(0, 8).toUpperCase()}*\n\n${sale.customerName}\n\n*Items:*\n${itemsList}\n\n*Total:* Rs.${Math.round(parseFloat(sale.totalAmount)).toLocaleString()}\n*Paid:* Rs.${Math.round(parseFloat(sale.amountPaid)).toLocaleString()}\n${outstanding > 0 ? `*Due:* Rs.${Math.round(outstanding).toLocaleString()}` : '*Status: PAID*'}\n\n${receiptSettings.thankYou}`;
+    let message = `*${receiptSettings.businessName}*\n*Bill #${sale.id.slice(0, 8).toUpperCase()}*\n\n${sale.customerName}\n\n*Items:*\n${itemsList}\n\n*Total:* Rs.${total.toLocaleString()}\n`;
+    message += `*Paid:* Rs.${paid.toLocaleString()}\n`;
+    
+    if (returns > 0) {
+      message += `*Returns:* Rs.${returns.toLocaleString()}\n`;
+    }
+    
+    message += balance > 0 ? `*Balance:* Rs.${balance.toLocaleString()}` : '*Status: PAID*';
+    message += `\n\n${receiptSettings.thankYou}`;
 
     const encodedMessage = encodeURIComponent(message);
     window.open(`https://wa.me/${whatsappPhone}?text=${encodedMessage}`, '_blank');
@@ -622,12 +720,14 @@ export default function BillPrint() {
     });
 
     setEditingItems(initialEditingState);
+    setEditingPaidAmount(sale.amountPaid);
     setEditMode(true);
   };
 
   // Cancel Edit Mode
   const cancelEditMode = () => {
     setEditingItems({});
+    setEditingPaidAmount("");
     setEditMode(false);
   };
 
@@ -678,8 +778,23 @@ export default function BillPrint() {
         }
       }
 
+      // Update paid amount if changed
+      const newPaidAmount = parseFloat(editingPaidAmount);
+      const oldPaidAmount = parseFloat(sale.amountPaid);
+      if (!isNaN(newPaidAmount) && newPaidAmount >= 0 && newPaidAmount !== oldPaidAmount) {
+        hasChanges = true;
+        await apiRequest("PATCH", `/api/sales/${saleId}/paid-amount`, {
+          amountPaid: newPaidAmount,
+        });
+      }
+
       if (hasChanges) {
+        // Invalidate all relevant queries
         await queryClient.invalidateQueries({ queryKey: ["/api/sales", saleId] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/sales"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/customer", sale.customerPhone, "statement"] });
         toast({ title: "All changes saved" });
       } else {
         toast({ title: "No changes to save" });
@@ -687,6 +802,7 @@ export default function BillPrint() {
 
       setEditMode(false);
       setEditingItems({});
+      setEditingPaidAmount("");
     } catch (error) {
       console.error("Error saving changes:", error);
       toast({ title: "Failed to save changes", variant: "destructive" });
@@ -765,8 +881,10 @@ export default function BillPrint() {
   if (isLoading) return <div className="p-6"><Skeleton className="h-96 w-full max-w-2xl mx-auto" /></div>;
   if (!sale) return <div className="p-6 text-center text-muted-foreground">Bill not found</div>;
 
-  const outstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
-  const isPaid = sale.paymentStatus === "paid";
+  // Calculate values using the helper function
+  const { total, paid, returns, balance } = calculateBalance();
+  const isPaid = balance <= 0;
+  const originalOutstanding = parseFloat(sale.totalAmount) - parseFloat(sale.amountPaid);
 
   // Helper: One Line Product Name
   const getProductLine = (item: any) => {
@@ -927,26 +1045,71 @@ export default function BillPrint() {
             </div>
 
             <div className="border-t pt-4 space-y-2 text-lg">
+              {/* Total */}
               <div className="flex justify-between font-bold">
-                <span>Total : </span>
-                <span>{Math.round(parseFloat(sale.totalAmount))}</span>
+                <span>Total:</span>
+                <span>Rs. {total}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Paid : </span>
-                <span>{Math.round(parseFloat(sale.amountPaid))}</span>
+              
+              {/* Paid */}
+              <div className="flex justify-between items-center text-green-600">
+                <span>Paid:</span>
+                {editMode ? (
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={editingPaidAmount}
+                    onChange={(e) => setEditingPaidAmount(e.target.value)}
+                    className="w-32 text-right"
+                    data-testid="input-edit-paid-amount"
+                  />
+                ) : (
+                  <span>Rs. {paid}</span>
+                )}
               </div>
-              {!isPaid && (
-                <div className="flex justify-between text-red-600 font-bold">
-                  <span>Balance : </span>
-                  <span>{Math.round(outstanding)}</span>
+              
+              {/* Returns (if any) */}
+              {returns > 0 && (
+                <div className="flex justify-between text-amber-600">
+                  <span className="flex items-center gap-2">
+                    Returns
+                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 text-xs">
+                      -{returns}
+                    </Badge>
+                  </span>
+                  <span>- Rs. {returns}</span>
                 </div>
               )}
-              <div className="flex justify-between">
-                <span>Status : </span>
+              
+              {/* Balance */}
+              <div className="flex justify-between text-red-600 font-bold border-t pt-2 mt-2">
+                <span>Balance:</span>
+                <span>Rs. {balance}</span>
+              </div>
+              
+              {/* Status */}
+              <div className="flex justify-between mt-4 pt-4 border-t">
+                <span>Status:</span>
                 <Badge variant={isPaid ? "default" : "secondary"}>
-                  {sale.paymentStatus.toUpperCase()}
+                  {isPaid ? "PAID" : "PENDING"}
+                  {returns > 0 && ` (Rs. ${returns} returns)`}
                 </Badge>
               </div>
+              
+              {/* Calculation Breakdown (for debugging) */}
+              {returns > 0 && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-md text-sm">
+                  <p className="font-medium text-gray-700 mb-1">Calculation Breakdown:</p>
+                  <div className="grid grid-cols-2 gap-1 text-gray-600">
+                    <span>Total:</span><span>Rs. {total}</span>
+                    <span>Paid:</span><span>Rs. {paid}</span>
+                    <span>Returns:</span><span>- Rs. {returns}</span>
+                    <span className="font-bold">Balance:</span>
+                    <span className="font-bold">Rs. {balance} (Total {total} - Paid {paid} - Returns {returns})</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="text-center border-t pt-4">
@@ -956,7 +1119,11 @@ export default function BillPrint() {
       </div>
 
       {/* PRINT ONLY: Thermal Receipt */}
-      <ThermalReceipt sale={sale} receiptSettings={receiptSettings} />
+      <ThermalReceipt 
+        sale={sale} 
+        receiptSettings={receiptSettings} 
+        totalSaleReturns={totalSaleReturns} 
+      />
 
       {/* Delete Bill Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -972,6 +1139,9 @@ export default function BillPrint() {
               <li>All items in this bill</li>
               <li>Bill payment information</li>
               <li>Complete sale record</li>
+              {saleReturns.length > 0 && (
+                <li className="text-amber-600 font-medium">Associated returns ({saleReturns.length})</li>
+              )}
             </ul>
             <p className="text-sm font-medium text-red-600">
               This action cannot be undone and all data will be lost permanently.

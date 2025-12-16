@@ -100,7 +100,7 @@ export function initializeDatabase() {
 // NEW FUNCTION: Update schema for new columns
 function updateSchema() {
   try {
-    console.log("[Database] Checking for schema updates...")
+    console.log('[Database] Checking for schema updates...')
 
     // Check if cloud_database_url column exists in settings table
     const checkColumn = sqlite
@@ -201,8 +201,43 @@ function updateSchema() {
       }
     }
 
+    // NEW: Ensure returns.refund_method column exists
+    const checkRefundMethod = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('returns') WHERE name = 'refund_method'
+    `).get();
+
+    if (!checkRefundMethod) {
+      console.log('[Database] Adding refund_method column to returns table...');
+      try {
+        sqlite.exec(`ALTER TABLE returns ADD COLUMN refund_method TEXT DEFAULT 'cash'`);
+        console.log('[Database] ✅ refund_method column added to returns table');
+      } catch (err) {
+        console.error('[Database] Error adding refund_method column (continuing):', err);
+      }
+    }
+
+    // Ensure license fields exist on settings table (added in license system)
+    const checkLicenseExpiry = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('settings') WHERE name = 'license_expiry_date'
+    `).get()
+
+    const checkLicenseStatus = sqlite.prepare(`
+      SELECT name FROM pragma_table_info('settings') WHERE name = 'license_status'
+    `).get()
+
+    if (!checkLicenseExpiry || !checkLicenseStatus) {
+      console.log('[Database] Adding license columns to settings table...')
+      try {
+        if (!checkLicenseExpiry) sqlite.exec(`ALTER TABLE settings ADD COLUMN license_expiry_date TEXT`)
+        if (!checkLicenseStatus) sqlite.exec(`ALTER TABLE settings ADD COLUMN license_status TEXT NOT NULL DEFAULT 'active'`)
+        console.log('[Database] ✅ License columns added to settings table')
+      } catch (err) {
+        console.error('[Database] Error adding license columns (continuing):', err)
+      }
+    }
+    
   } catch (error) {
-    console.error("[Database] ❌ Error updating schema:", error)
+    console.error('[Database] ❌ Error updating schema:', error)
     // Don't throw error - continue with existing schema
   }
 }
@@ -321,7 +356,7 @@ function createTables() {
       );
     `)
 
-    // Create settings table with ALL columns INCLUDING AUDIT PIN
+    // Create settings table with ALL columns INCLUDING AUDIT PIN and MASTER PIN
     console.log("[Database] Creating settings table...")
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS settings (
@@ -335,6 +370,8 @@ function createTables() {
         show_stock_badge_border INTEGER NOT NULL DEFAULT 0,
         audit_pin_hash TEXT,
         audit_pin_salt TEXT,
+        master_pin_hash TEXT,
+        master_pin_salt TEXT,
         perm_stock_delete INTEGER NOT NULL DEFAULT 1,
         perm_stock_edit INTEGER NOT NULL DEFAULT 1,
         perm_stock_history_delete INTEGER NOT NULL DEFAULT 1,
@@ -415,7 +452,7 @@ function createTables() {
       console.log("[Database] Settings already exist or error:", settingsError)
     }
 
-    // Create returns table
+    // Create returns table (ensure refund_method included)
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS returns (
         id TEXT PRIMARY KEY,
@@ -426,8 +463,8 @@ function createTables() {
         total_refund TEXT NOT NULL DEFAULT '0',
         reason TEXT,
         status TEXT NOT NULL DEFAULT 'completed',
+        refund_method TEXT DEFAULT 'cash',
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL
       );
     `)
@@ -521,6 +558,57 @@ function createTables() {
         UNIQUE(color_id, date_summary)
       );
     `)
+
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS software_licenses (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL UNIQUE,
+        device_name TEXT,
+        store_name TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        blocked_reason TEXT,
+        blocked_at INTEGER,
+        blocked_by TEXT,
+        last_heartbeat INTEGER,
+        last_sync_time INTEGER,
+        ip_address TEXT,
+        user_agent TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `)
+
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS license_audit_log (
+        id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        reason TEXT,
+        performed_by TEXT,
+        previous_status TEXT,
+        new_status TEXT,
+        ip_address TEXT,
+        created_at INTEGER NOT NULL
+      );
+    `)
+
+    try {
+      sqlite.exec("ALTER TABLE settings ADD COLUMN master_pin_hash TEXT")
+    } catch (e) {
+      console.log("[Database] master_pin_hash column might already exist")
+    }
+    
+    try {
+      sqlite.exec("ALTER TABLE settings ADD COLUMN master_pin_salt TEXT")
+    } catch (e) {
+      console.log("[Database] master_pin_salt column might already exist")
+    }
+
+    try {
+      sqlite.exec("ALTER TABLE software_licenses ADD COLUMN auto_block_date TEXT")
+    } catch (e) {
+      console.log("[Database] auto_block_date column might already exist")
+    }
 
     console.log("[Database] Creating stock movement indexes...")
 

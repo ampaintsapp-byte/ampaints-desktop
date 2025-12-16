@@ -64,9 +64,10 @@ interface Return {
 export default function Sales() {
   const { formatDateShort } = useDateFormat();
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState("all");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [dateFilter, setDateFilter] = useState("today");
+  const today = new Date().toISOString().split("T")[0];
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
   const [visibleLimit, setVisibleLimit] = useState(VISIBLE_LIMIT_INITIAL);
@@ -79,12 +80,16 @@ export default function Sales() {
 
   const { data: salesRaw = [], isLoading } = useQuery<Sale[]>({
     queryKey: ["/api/sales"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const sales = useDeferredValue(salesRaw);
 
   const { data: returnsRaw = [] } = useQuery<Return[]>({
     queryKey: ["/api/returns"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const returns = useDeferredValue(returnsRaw);

@@ -1,3 +1,4 @@
+// queryClient.ts
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
@@ -41,48 +42,35 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+// ✅ MAIN FIX: Disable ALL automatic refetching
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: 60000,
-      gcTime: 1000 * 60 * 30,
+      refetchOnReconnect: false, // ✅ No refetch on reconnect
+      refetchOnMount: false, // ✅ NO automatic refetch when component mounts
+      staleTime: Infinity, // ✅ Data never becomes stale
+      gcTime: 1000 * 60 * 60 * 24, // ✅ 24 hours cache
       retry: false,
-      refetchOnMount: "always",
-      networkMode: "offlineFirst",
+      networkMode: "online", // ✅ Only fetch when online
       structuralSharing: true,
+      // ✅ IMPORTANT: Prevent background updates
+      enabled: true,
     },
     mutations: {
       retry: false,
+      // ✅ No optimistic updates that might trigger refetch
+      onSettled: () => {
+        // Don't invalidate queries automatically
+      },
     },
   },
 });
 
+// ✅ COMPLETELY DISABLE prefetching
 export function prefetchPageData(page: string) {
-  const pageEndpoints: Record<string, string[]> = {
-    "/": ["/api/dashboard-stats", "/api/settings"],
-    "/stock": ["/api/products", "/api/variants", "/api/colors", "/api/stock-in/history", "/api/stock-out/history"],
-    "/pos": ["/api/colors", "/api/settings", "/api/customers/suggestions"],
-    "/sales": ["/api/sales", "/api/returns"],
-    "/unpaid-bills": ["/api/sales", "/api/customers/suggestions"],
-    "/reports": ["/api/sales", "/api/returns", "/api/payment-history"],
-    "/returns": ["/api/returns", "/api/sales"],
-    "/rates": ["/api/products", "/api/variants", "/api/colors"],
-    "/audit": ["/api/settings"],
-    "/settings": ["/api/settings"],
-  };
-
-  const endpoints = pageEndpoints[page] || [];
-  
-  endpoints.forEach((endpoint) => {
-    const cached = queryClient.getQueryData([endpoint]);
-    if (!cached) {
-      queryClient.prefetchQuery({
-        queryKey: [endpoint],
-        staleTime: 60000,
-      });
-    }
-  });
+  // DO NOTHING - No automatic prefetching
+  console.log(`[DEBUG] Page: ${page} - Prefetching disabled to prevent reloads`);
 }

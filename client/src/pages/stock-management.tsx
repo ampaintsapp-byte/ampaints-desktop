@@ -60,7 +60,8 @@ import {
   PaintBucket,
   ArrowUpCircle,
   Database,
-  Zap
+  Zap,
+  AlertTriangle
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -230,7 +231,7 @@ export default function StockManagement() {
   /* Stock In History filters */
   const [historyCompanyFilter, setHistoryCompanyFilter] = useState("all");
   const [historyProductFilter, setHistoryProductFilter] = useState("all");
-  const [historyDateFilter, setHistoryDateFilter] = useState("all");
+  const [historyDateFilter, setHistoryDateFilter] = useState("today");
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [historyStartDate, setHistoryStartDate] = useState<string>("");
   const [historyEndDate, setHistoryEndDate] = useState<string>("");
@@ -249,21 +250,26 @@ export default function StockManagement() {
   const { data: productsRaw = [], isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const { data: variantsRaw = [], isLoading: variantsLoading } = useQuery<VariantWithProduct[]>({
     queryKey: ["/api/variants"],
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const { data: colorsRaw = [], isLoading: colorsLoading } = useQuery<ColorWithVariantAndProduct[]>({
     queryKey: ["/api/colors"],
     refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   /* Stock In History Query */
   const { data: stockInHistoryRaw = [], isLoading: historyLoading, refetch: refetchStockHistory } = useQuery<StockInHistory[]>({
     queryKey: ["/api/stock-in/history"],
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
   });
 
   const products = useDeferredValue(productsRaw);
@@ -1230,73 +1236,58 @@ export default function StockManagement() {
         </div>
       </div>
 
-      {/* Tabs - Clean Banking Style */}
-      <Tabs defaultValue="products" className="space-y-4">
-        <div className="bg-white rounded-xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto">
-          <TabsList className="bg-transparent inline-flex w-auto min-w-full gap-1">
-            <TabsTrigger 
-              value="products" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-500 data-[state=active]:to-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-products"
-            >
-              <Package className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">Products</span>
-              <span className="sm:hidden">Prod</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="variants" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-variants"
-            >
-              <Layers className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">Variants</span>
-              <span className="sm:hidden">Var</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="colors" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-500 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-colors"
-            >
-              <Palette className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">Colors</span>
-              <span className="sm:hidden">Col</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="stock-in" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-stock-in"
-            >
-              <TruckIcon className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">Stock In</span>
-              <span className="sm:hidden">In</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="stock-in-history" 
-              className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-white data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 data-[state=inactive]:bg-transparent rounded-lg px-3 py-2 text-sm font-medium transition-all"
-              data-testid="tab-stock-in-history"
-            >
-              <History className="h-4 w-4 mr-1.5" />
-              <span className="hidden sm:inline">History</span>
-              <span className="sm:hidden">Hist</span>
-            </TabsTrigger>
-          </TabsList>
-        </div>
+      {/* Tabs - Redesigned with integrated header */}
+      <Tabs defaultValue="products" className="space-y-0">
+        <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+          {/* Tab Navigation - Integrated Header */}
+          <div className="border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 pb-0">
+              <TabsList className="bg-slate-100/80 p-1 rounded-lg h-auto w-full sm:w-auto">
+                <TabsTrigger 
+                  value="products" 
+                  className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 rounded-md px-4 py-2 text-sm font-medium transition-all gap-2"
+                  data-testid="tab-products"
+                >
+                  <Package className="h-4 w-4" />
+                  Products
+                  <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0">
+                    {products.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="variants" 
+                  className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 rounded-md px-4 py-2 text-sm font-medium transition-all gap-2"
+                  data-testid="tab-variants"
+                >
+                  <Layers className="h-4 w-4" />
+                  Variants
+                  <Badge variant="secondary" className="ml-1 bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0">
+                    {variantsData.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="colors" 
+                  className="flex-1 sm:flex-none data-[state=active]:bg-white data-[state=active]:text-purple-600 data-[state=active]:shadow-sm data-[state=inactive]:text-slate-500 rounded-md px-4 py-2 text-sm font-medium transition-all gap-2"
+                  data-testid="tab-colors"
+                >
+                  <Palette className="h-4 w-4" />
+                  Colors
+                  <Badge variant="secondary" className="ml-1 bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0">
+                    {colorsData.length}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <div className="h-3"></div>
+          </div>
 
-        {/* Products Tab */}
-        <TabsContent value="products" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/80 to-transparent">
+          {/* Products Tab */}
+          <TabsContent value="products" className="m-0">
+            <div className="p-4 border-b border-slate-50 bg-gradient-to-r from-blue-50/50 to-transparent">
               <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-sm">
-                    <Package className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Products</h2>
-                    <p className="text-xs text-slate-500">
-                      <span className="font-semibold text-blue-600 tabular-nums">{products.length}</span> in catalog
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-blue-600" />
+                  <h2 className="text-base font-semibold text-slate-800">Manage Products</h2>
                 </div>
                 <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
                   <Button 
@@ -1448,7 +1439,7 @@ export default function StockManagement() {
                     </div>
                   )}
 
-                  {/* Products Grid */}
+                  {/* Products Table */}
                   {filteredProducts.length === 0 ? (
                     <div className="text-center py-12">
                       <div className="p-4 bg-slate-100 rounded-2xl inline-block mb-4">
@@ -1469,104 +1460,105 @@ export default function StockManagement() {
                     </div>
                   ) : (
                   <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {visibleProducts.map(product => {
-                      const productVariants = variantsData.filter(v => v.productId === product.id);
-                      
-                      const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
-                      const minRate = rates.length > 0 ? Math.min(...rates) : 0;
-                      const maxRate = rates.length > 0 ? Math.max(...rates) : 0;
-                      const priceRange = rates.length > 0 
-                        ? (minRate === maxRate 
-                          ? `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` 
-                          : `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} - ${maxRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`)
-                        : "No variants";
-                      
-                      return (
-                        <Card 
-                          key={product.id} 
-                          className="rounded-2xl p-4 border border-slate-100 bg-slate-50 hover:shadow-lg hover:border-blue-200 transition-all cursor-pointer group"
-                          onClick={() => setViewingProduct(product)}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-100 rounded-xl">
-                                  <Package className="h-4 w-4 text-blue-600" />
-                                </div>
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                                    {product.productName}
-                                  </h3>
-                                  <p className="text-sm text-slate-500">{product.company}</p>
-                                </div>
-                              </div>
-                              <input
-                                type="checkbox"
-                                checked={selectedProducts.has(product.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  const newSet = new Set(selectedProducts);
-                                  if (e.target.checked) {
-                                    newSet.add(product.id);
-                                  } else {
-                                    newSet.delete(product.id);
-                                  }
-                                  setSelectedProducts(newSet);
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Variants</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
-                                  {productVariants.length} variants
-                                </Badge>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Price Range</span>
-                                <span className="font-mono font-semibold text-blue-600">{priceRange}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Created</span>
-                                <span className="text-slate-400">{formatDateShort(product.createdAt)}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 mt-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 border-slate-200 text-slate-700"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingProduct(product);
-                                }}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                              {canEditStock && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="flex-1 border-slate-200 text-slate-700"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingProduct(product);
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50">
+                          <TableHead className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedProducts.size === visibleProducts.length && visibleProducts.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedProducts(new Set(visibleProducts.map(p => p.id)));
+                                } else {
+                                  setSelectedProducts(new Set());
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            />
+                          </TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Product Name</TableHead>
+                          <TableHead className="text-center">Variants</TableHead>
+                          <TableHead className="text-right">Price Range</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleProducts.map(product => {
+                          const productVariants = variantsData.filter(v => v.productId === product.id);
+                          
+                          const rates = productVariants.map(v => parseFloat(v.rate)).filter(r => !isNaN(r));
+                          const minRate = rates.length > 0 ? Math.min(...rates) : 0;
+                          const maxRate = rates.length > 0 ? Math.max(...rates) : 0;
+                          const priceRange = rates.length > 0 
+                            ? (minRate === maxRate 
+                              ? `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` 
+                              : `Rs. ${minRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} - ${maxRate.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`)
+                            : "No variants";
+                          
+                          return (
+                            <TableRow 
+                              key={product.id} 
+                              className="hover:bg-slate-50 cursor-pointer"
+                              onClick={() => setViewingProduct(product)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedProducts.has(product.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedProducts);
+                                    if (e.target.checked) {
+                                      newSet.add(product.id);
+                                    } else {
+                                      newSet.delete(product.id);
+                                    }
+                                    setSelectedProducts(newSet);
                                   }}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
-                                </Button>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">{product.company}</TableCell>
+                              <TableCell>{product.productName}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
+                                  {productVariants.length}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold text-blue-600">
+                                {priceRange}
+                              </TableCell>
+                              <TableCell className="text-slate-500">
+                                {formatDateShort(product.createdAt)}
+                              </TableCell>
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setViewingProduct(product)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {canEditStock && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setEditingProduct(product)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
                   {/* Load More Button for Products */}
                   {filteredProducts.length > productsVisibleLimit && (
@@ -1585,24 +1577,15 @@ export default function StockManagement() {
                 </div>
               )}
             </div>
-          </Card>
-        </TabsContent>
+          </TabsContent>
 
-        {/* Variants Tab */}
-        <TabsContent value="variants" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 to-transparent">
+          {/* Variants Tab */}
+          <TabsContent value="variants" className="m-0">
+            <div className="p-4 border-b border-slate-50 bg-gradient-to-r from-indigo-50/50 to-transparent">
               <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg shadow-sm">
-                    <Layers className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Variants</h2>
-                    <p className="text-xs text-slate-500">
-                      <span className="font-semibold text-indigo-600 tabular-nums">{variantsData.length}</span> product variants
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-indigo-600" />
+                  <h2 className="text-base font-semibold text-slate-800">Manage Variants</h2>
                 </div>
                 <Dialog open={isVariantDialogOpen} onOpenChange={setIsVariantDialogOpen}>
                   <Button 
@@ -1689,7 +1672,7 @@ export default function StockManagement() {
                 </Dialog>
               </div>
             </div>
-            <CardContent className="p-5">
+            <div className="p-5">
               {variantsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
@@ -1801,7 +1784,7 @@ export default function StockManagement() {
                     </div>
                   )}
 
-                  {/* Variants Grid */}
+                  {/* Variants Table */}
                   {filteredVariants.length === 0 ? (
                     <div className="text-center py-12">
                       <div className="p-4 bg-slate-100 rounded-2xl inline-block mb-4">
@@ -1824,94 +1807,97 @@ export default function StockManagement() {
                     </div>
                   ) : (
                   <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {visibleVariants.map(variant => {
-                      const variantColors = colorsData.filter(c => c.variantId === variant.id);
-                      return (
-                        <Card 
-                          key={variant.id} 
-                          className="rounded-2xl p-4 border border-slate-100 bg-slate-50 hover:shadow-lg hover:border-indigo-200 transition-all cursor-pointer group"
-                          onClick={() => setViewingVariant(variant)}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div className="p-2 bg-indigo-100 rounded-xl">
-                                  <Layers className="h-4 w-4 text-indigo-600" />
-                                </div>
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                                    {variant.packingSize}
-                                  </h3>
-                                  <p className="text-sm text-slate-500">{variant.product.company} - {variant.product.productName}</p>
-                                </div>
-                              </div>
-                              <input
-                                type="checkbox"
-                                checked={selectedVariants.has(variant.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  const newSet = new Set(selectedVariants);
-                                  if (e.target.checked) {
-                                    newSet.add(variant.id);
-                                  } else {
-                                    newSet.delete(variant.id);
-                                  }
-                                  setSelectedVariants(newSet);
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Rate</span>
-                                <span className="font-mono font-semibold text-indigo-600">Rs. {Math.round(parseFloat(variant.rate))}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Colors</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
-                                  {variantColors.length} colors
-                                </Badge>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Product</span>
-                                <span className="text-slate-400 truncate">{variant.product.productName}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 mt-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 border-slate-200 text-slate-700"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingVariant(variant);
-                                }}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                              {canEditStock && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="flex-1 border-slate-200 text-slate-700"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingVariant(variant);
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-slate-50">
+                          <TableHead className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedVariants.size === visibleVariants.length && visibleVariants.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedVariants(new Set(visibleVariants.map(v => v.id)));
+                                } else {
+                                  setSelectedVariants(new Set());
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                            />
+                          </TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead>Product</TableHead>
+                          <TableHead>Size</TableHead>
+                          <TableHead className="text-right">Rate</TableHead>
+                          <TableHead className="text-center">Colors</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleVariants.map(variant => {
+                          const variantColors = colorsData.filter(c => c.variantId === variant.id);
+                          return (
+                            <TableRow 
+                              key={variant.id} 
+                              className="hover:bg-slate-50 cursor-pointer"
+                              onClick={() => setViewingVariant(variant)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedVariants.has(variant.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedVariants);
+                                    if (e.target.checked) {
+                                      newSet.add(variant.id);
+                                    } else {
+                                      newSet.delete(variant.id);
+                                    }
+                                    setSelectedVariants(newSet);
                                   }}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
-                                </Button>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">{variant.product.company}</TableCell>
+                              <TableCell>{variant.product.productName}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                                  {variant.packingSize}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold text-indigo-600">
+                                Rs. {Math.round(parseFloat(variant.rate))}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="outline" className="bg-slate-100 text-slate-700 border-slate-200">
+                                  {variantColors.length}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setViewingVariant(variant)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {canEditStock && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setEditingVariant(variant)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
                   {/* Load More Button for Variants */}
                   {filteredVariants.length > variantsVisibleLimit && (
@@ -1929,25 +1915,16 @@ export default function StockManagement() {
                 )}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </TabsContent>
 
-        {/* Colors Tab */}
-        <TabsContent value="colors" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-purple-50/80 to-transparent">
+          {/* Colors Tab */}
+          <TabsContent value="colors" className="m-0">
+            <div className="p-4 border-b border-slate-50 bg-gradient-to-r from-purple-50/50 to-transparent">
               <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-sm">
-                    <Palette className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Colors & Inventory</h2>
-                    <p className="text-xs text-slate-500">
-                      <span className="font-semibold text-purple-600 tabular-nums">{colorsData.length}</span> color variants in stock
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Palette className="h-5 w-5 text-purple-600" />
+                  <h2 className="text-base font-semibold text-slate-800">Manage Colors & Inventory</h2>
                 </div>
                 <Dialog open={isColorDialogOpen} onOpenChange={setIsColorDialogOpen}>
                   <Button 
@@ -2047,7 +2024,7 @@ export default function StockManagement() {
                 </Dialog>
               </div>
             </div>
-            <CardContent className="p-5">
+            <div className="p-5">
               {colorsLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3].map(i => (
@@ -2170,96 +2147,104 @@ export default function StockManagement() {
                     </div>
                   ) : (
                     <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {visibleColors.map(color => (
-                        <Card 
-                          key={color.id} 
-                          className="rounded-2xl p-4 border border-slate-200 hover:shadow-lg transition-all cursor-pointer group"
-                          onClick={() => setViewingColor(color)}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div 
-                                  className="w-8 h-8 rounded-lg border-2 border-white shadow-sm"
-                                  style={{ backgroundColor: color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : color.colorCode }}
-                                />
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-purple-600 transition-colors">
-                                    {color.colorName}
-                                  </h3>
-                                  <p className="text-sm font-mono text-slate-500">{color.colorCode}</p>
-                                </div>
-                              </div>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-slate-50">
+                            <TableHead className="w-10">
                               <input
                                 type="checkbox"
-                                checked={selectedColors.has(color.id)}
+                                checked={selectedColors.size === visibleColors.length && visibleColors.length > 0}
                                 onChange={(e) => {
-                                  e.stopPropagation();
-                                  const newSet = new Set(selectedColors);
                                   if (e.target.checked) {
-                                    newSet.add(color.id);
+                                    setSelectedColors(new Set(visibleColors.map(c => c.id)));
                                   } else {
-                                    newSet.delete(color.id);
+                                    setSelectedColors(new Set());
                                   }
-                                  setSelectedColors(newSet);
                                 }}
-                                className="h-4 w-4 rounded border-slate-200 text-blue-600 focus:ring-blue-500"
+                                className="h-4 w-4 rounded border-slate-300 text-purple-600"
                               />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Product</span>
-                                <span className="text-slate-400 truncate">{color.variant.product.productName}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Size</span>
+                            </TableHead>
+                            <TableHead>Color</TableHead>
+                            <TableHead>Code</TableHead>
+                            <TableHead>Company</TableHead>
+                            <TableHead>Product</TableHead>
+                            <TableHead>Size</TableHead>
+                            <TableHead className="text-right">Stock</TableHead>
+                            <TableHead className="text-center">Status</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {visibleColors.map(color => (
+                            <TableRow 
+                              key={color.id} 
+                              className="hover:bg-slate-50 cursor-pointer"
+                              onClick={() => setViewingColor(color)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedColors.has(color.id)}
+                                  onChange={(e) => {
+                                    const newSet = new Set(selectedColors);
+                                    if (e.target.checked) {
+                                      newSet.add(color.id);
+                                    } else {
+                                      newSet.delete(color.id);
+                                    }
+                                    setSelectedColors(newSet);
+                                  }}
+                                  className="h-4 w-4 rounded border-slate-300 text-purple-600"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-6 h-6 rounded border border-slate-200 flex-shrink-0"
+                                    style={{ backgroundColor: color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : color.colorCode }}
+                                  />
+                                  <span className="font-medium">{color.colorName}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-slate-600">{color.colorCode}</TableCell>
+                              <TableCell>{color.variant.product.company}</TableCell>
+                              <TableCell>{color.variant.product.productName}</TableCell>
+                              <TableCell>
                                 <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200">
                                   {color.variant.packingSize}
                                 </Badge>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Stock</span>
-                                <span className="font-mono font-semibold">{color.stockQuantity}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Status</span>
-                                <div className="text-sm">{getStockBadge(color.stockQuantity)}</div>
-                              </div>
-                            </div>
-
-                            <div className="flex gap-2 mt-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 border-slate-200 text-slate-600 hover:border-purple-300"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingColor(color);
-                                }}
-                              >
-                                <Eye className="h-4 w-4 mr-1" />
-                                View
-                              </Button>
-                              {canEditStock && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="flex-1 border-slate-200 text-slate-600 hover:border-blue-300"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingColor(color);
-                                  }}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Edit
-                                </Button>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {color.stockQuantity}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {getStockBadge(color.stockQuantity)}
+                              </TableCell>
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setViewingColor(color)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {canEditStock && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => setEditingColor(color)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     </div>
                     {/* Load More Button for Colors */}
                     {filteredColors.length > colorsVisibleLimit && (
@@ -2277,648 +2262,13 @@ export default function StockManagement() {
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Stock In Tab */}
-        <TabsContent value="stock-in" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-emerald-50/80 to-transparent">
-              <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg shadow-sm">
-                    <TruckIcon className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Stock In</h2>
-                    <p className="text-xs text-slate-500">Add inventory to existing colors</p>
-                  </div>
-                </div>
-                <Button 
-                  size="sm"
-                  onClick={() => setIsStockInDialogOpen(true)}
-                  className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-sm border-0"
-                >
-                  <ArrowUpCircle className="h-4 w-4 mr-1.5" />
-                  Add Stock
-                </Button>
-              </div>
             </div>
-            <CardContent className="p-5">
-              {colorsLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
-                    </div>
-                  ))}
-                </div>
-              ) : colorsData.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="p-4 bg-slate-100 rounded-2xl inline-block mb-4">
-                    <TruckIcon className="h-12 w-12 text-slate-400" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">No colors found</h3>
-                  <p className="text-slate-500 mb-4">Add colors first before using stock in functionality</p>
-                  <Button 
-                    onClick={() => setIsColorDialogOpen(true)}
-                    className="bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Colors
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input 
-                      placeholder="Search by color code, name, company, or product..." 
-                      value={stockInSearchQuery} 
-                      onChange={e => setStockInSearchQuery(e.target.value)} 
-                      className="pl-9 border-slate-200 bg-white rounded-xl"
-                    />
-                  </div>
-
-                  {filteredColorsForStockIn.length === 0 ? (
-                    <div className="text-center py-8 text-slate-500">
-                      <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No colors found matching your search</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredColorsForStockIn.map(color => (
-                        <Card 
-                          key={color.id} 
-                          className="rounded-2xl p-4 border border-slate-100 bg-slate-50 hover:shadow-lg hover:border-emerald-200 transition-all cursor-pointer group"
-                          onClick={() => {
-                            stockInForm.setValue("colorId", color.id);
-                            stockInForm.setValue("quantity", "");
-                            stockInForm.setValue("notes", "");
-                            stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
-                            setSelectedColorForStockIn(color);
-                            setIsStockInDialogOpen(true);
-                          }}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div 
-                                  className="w-8 h-8 rounded-lg border-2 border-white shadow-sm"
-                                  style={{ backgroundColor: color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : color.colorCode }}
-                                />
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-green-600 transition-colors">
-                                    {color.colorName}
-                                  </h3>
-                                  <p className="text-sm font-mono text-slate-500">{color.colorCode}</p>
-                                </div>
-                              </div>
-                              {getStockBadge(color.stockQuantity)}
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Product</span>
-                                <span className="text-slate-400 truncate">{color.variant.product.productName}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Size</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200">
-                                  {color.variant.packingSize}
-                                </Badge>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Current Stock</span>
-                                <span className="font-mono font-semibold text-blue-600">{color.stockQuantity}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Company</span>
-                                <span className="text-slate-400">{color.variant.product.company}</span>
-                              </div>
-                            </div>
-
-                            <Button
-                              className="w-full mt-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:shadow-lg"
-                              size="sm"
-                            >
-                              <ArrowUpCircle className="h-4 w-4 mr-1" />
-                              Add Stock
-                            </Button>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Stock In Dialog */}
-          <Dialog open={isStockInDialogOpen} onOpenChange={(open) => {
-            setIsStockInDialogOpen(open);
-            if (!open) {
-              setSelectedColorForStockIn(null);
-              setStockInSearchQuery("");
-              stockInForm.reset({
-                stockInDate: formatDateToDDMMYYYY(new Date())
-              });
-            }
-          }}>
-            <DialogContent className="bg-white border border-slate-200 max-w-3xl max-h-[85vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <ArrowUpCircle className="h-5 w-5" />
-                  Add Stock
-                </DialogTitle>
-                <DialogDescription>Add quantity to inventory with date tracking</DialogDescription>
-              </DialogHeader>
-
-              {!selectedColorForStockIn ? (
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input 
-                      placeholder="Search by color code, name, product, or company..." 
-                      value={stockInSearchQuery} 
-                      onChange={e => setStockInSearchQuery(e.target.value)} 
-                      className="pl-9 border-slate-200"
-                    />
-                  </div>
-
-                  <div className="max-h-[50vh] overflow-y-auto space-y-2">
-                    {filteredColorsForStockIn.length === 0 ? (
-                      <div className="text-center py-8 text-slate-500">
-                        <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>{stockInSearchQuery ? "No colors found matching your search" : "No colors available"}</p>
-                      </div>
-                    ) : (
-                      filteredColorsForStockIn.map(color => (
-                        <div 
-                          key={color.id} 
-                          className="bg-white rounded-xl p-3 border border-slate-200 hover:shadow-md cursor-pointer transition-shadow"
-                          onClick={() => {
-                            setSelectedColorForStockIn(color);
-                            stockInForm.setValue("colorId", color.id);
-                            stockInForm.setValue("stockInDate", formatDateToDDMMYYYY(new Date()));
-                          }}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-semibold font-mono text-sm">{color.colorCode}</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-xs">
-                                  Stock: {color.stockQuantity}
-                                </Badge>
-                              </div>
-                              <p className="text-xs text-slate-500">{color.colorName}</p>
-                              <p className="text-xs text-slate-500">
-                                {color.variant.product.company} - {color.variant.product.productName} ({color.variant.packingSize})
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <Form {...stockInForm}>
-                  <form onSubmit={stockInForm.handleSubmit((data) => stockInMutation.mutate(data))} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-slate-600">Selected Color</Label>
-                      <div className="bg-white rounded-xl p-4 border border-slate-200">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div 
-                                className="w-6 h-6 rounded border-2 border-white shadow-sm"
-                                style={{ backgroundColor: selectedColorForStockIn.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : selectedColorForStockIn.colorCode }}
-                              />
-                              <span className="font-semibold font-mono text-sm">{selectedColorForStockIn.colorCode}</span>
-                              <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-xs">
-                                Current: {selectedColorForStockIn.stockQuantity}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-slate-500">{selectedColorForStockIn.colorName}</p>
-                            <p className="text-xs text-slate-500">
-                              {selectedColorForStockIn.variant.product.company} - {selectedColorForStockIn.variant.product.productName} ({selectedColorForStockIn.variant.packingSize})
-                            </p>
-                          </div>
-                          <Button 
-                            type="button" 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => setSelectedColorForStockIn(null)}
-                            className="border-slate-200"
-                          >
-                            Change
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <FormField control={stockInForm.control} name="quantity" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Quantity to Add</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            min="1" 
-                            step="1" 
-                            placeholder="0" 
-                            {...field} 
-                            className="border-slate-200"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-
-                    <FormField control={stockInForm.control} name="stockInDate" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Stock In Date (DD-MM-YYYY)</FormLabel>
-                        <FormControl>
-                          <Input 
-                            placeholder="DD-MM-YYYY" 
-                            {...field} 
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (/^\d{0,2}-?\d{0,2}-?\d{0,4}$/.test(value)) {
-                                field.onChange(value);
-                              }
-                            }}
-                            className="border-slate-200"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-
-                    <FormField control={stockInForm.control} name="notes" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Notes (Optional)</FormLabel>
-                        <FormControl>
-                          <Textarea 
-                            placeholder="Add any notes about this stock addition..." 
-                            {...field} 
-                            className="border-slate-200"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-
-                    <div className="flex justify-end gap-2">
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        onClick={() => {
-                          setSelectedColorForStockIn(null);
-                          setStockInSearchQuery("");
-                          stockInForm.reset({
-                            stockInDate: formatDateToDDMMYYYY(new Date())
-                          });
-                        }}
-                        className="border-slate-200"
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit" 
-                        disabled={stockInMutation.isPending}
-                        className="bg-gradient-to-r from-blue-500 to-purple-600 text-white"
-                      >
-                        {stockInMutation.isPending ? "Adding..." : "Add Stock"}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              )}
-            </DialogContent>
-          </Dialog>
-        </TabsContent>
-
-        {/* Stock In History Tab */}
-        <TabsContent value="stock-in-history" className="space-y-4">
-          <Card className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-gradient-to-r from-amber-50/80 to-transparent">
-              <div className="flex flex-row items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg shadow-sm">
-                    <History className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-800">Stock In History</h2>
-                    <p className="text-xs text-slate-500">
-                      <span className="font-semibold text-amber-600 tabular-nums">{filteredStockInHistory.length}</span> records found
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={refreshStockInHistory}
-                    className="border-slate-200 text-slate-600"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={exportStockInHistory}
-                    className="border-slate-200 text-slate-600"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export CSV
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={exportStockInHistoryPDF}
-                    className="border-slate-200 text-slate-600"
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Export PDF
-                  </Button>
-                </div>
-              </div>
-            </div>
-            <CardContent className="p-5">
-              {historyLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                      <Skeleton className="h-6 w-3/4 mb-2 rounded-lg" />
-                      <Skeleton className="h-4 w-1/2 rounded-lg" />
-                    </div>
-                  ))}
-                </div>
-              ) : filteredStockInHistory.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="p-4 bg-slate-100 rounded-2xl inline-block mb-4">
-                    <History className="h-12 w-12 text-slate-400" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">No stock history found</h3>
-                  <p className="text-slate-500 mb-4">Stock in history will appear here when you add stock to colors</p>
-                  <Button 
-                    onClick={refreshStockInHistory}
-                    className="bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh History
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Enhanced Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50/80 rounded-xl border border-slate-100">
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-slate-600">Start Date</Label>
-                      <Input
-                        type="date"
-                        value={historyStartDate || ''}
-                        onChange={(e) => setHistoryStartDate(e.target.value)}
-                        className="w-full border-slate-200 bg-white rounded-lg"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-slate-600">End Date</Label>
-                      <Input
-                        type="date"
-                        value={historyEndDate || ''}
-                        onChange={(e) => setHistoryEndDate(e.target.value)}
-                        className="w-full border-slate-200 bg-white rounded-lg"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-slate-600">Company</Label>
-                      <Select value={historyCompanyFilter} onValueChange={setHistoryCompanyFilter}>
-                        <SelectTrigger className="border-slate-200 bg-white rounded-lg">
-                          <SelectValue placeholder="All Companies" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white border-slate-200">
-                          <SelectItem value="all">All Companies</SelectItem>
-                          {companies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-slate-600">Product</Label>
-                      <Select value={historyProductFilter} onValueChange={setHistoryProductFilter}>
-                        <SelectTrigger className="border-slate-200 bg-white rounded-lg">
-                          <SelectValue placeholder="All Products" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white border-slate-200">
-                          <SelectItem value="all">All Products</SelectItem>
-                          {Array.from(new Set(stockInHistory.map(h => h.color.variant.product.productName))).sort().map(p => (
-                            <SelectItem key={p} value={p}>{p}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Search and Quick Filters */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2 md:col-span-2">
-                      <Label className="text-xs font-medium text-slate-600">Search</Label>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input 
-                          placeholder="Search by color code, color name, stock in date..." 
-                          value={historySearchQuery}
-                          onChange={e => setHistorySearchQuery(e.target.value)}
-                          className="pl-9 border-slate-200 bg-white rounded-xl"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium text-slate-600">Quick Date Filters</Label>
-                      <Select value={historyDateFilter} onValueChange={setHistoryDateFilter}>
-                        <SelectTrigger className="border-slate-200 bg-white rounded-lg">
-                          <SelectValue placeholder="All Time" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white border-slate-200">
-                          <SelectItem value="all">All Time</SelectItem>
-                          <SelectItem value="today">Today</SelectItem>
-                          <SelectItem value="yesterday">Yesterday</SelectItem>
-                          <SelectItem value="week">Last 7 Days</SelectItem>
-                          <SelectItem value="month">Last 30 Days</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Clear Filters */}
-                  {(historyCompanyFilter !== "all" || historyProductFilter !== "all" || historyDateFilter !== "all" || historySearchQuery || historyStartDate || historyEndDate) && (
-                    <div className="flex justify-between items-center">
-                      <p className="text-sm text-slate-500">
-                        Showing {filteredStockInHistory.length} of {stockInHistory.length} records
-                      </p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => {
-                          setHistoryCompanyFilter("all");
-                          setHistoryProductFilter("all");
-                          setHistoryDateFilter("all");
-                          setHistorySearchQuery("");
-                          setHistoryStartDate("");
-                          setHistoryEndDate("");
-                        }}
-                        className="border-slate-200 text-slate-600"
-                      >
-                        <Filter className="h-4 w-4 mr-2" />
-                        Clear All Filters
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* History Cards */}
-                  {filteredStockInHistory.length === 0 ? (
-                    <div className="text-center py-8 text-slate-500">
-                      <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No history found matching your filters</p>
-                    </div>
-                  ) : (
-                    <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {visibleStockInHistory.map(history => {
-                        const isReturn = history.type === 'return';
-                        return (
-                        <Card 
-                          key={history.id} 
-                          className={`rounded-2xl p-4 border hover:shadow-lg transition-all cursor-pointer group ${isReturn ? 'border-amber-300 bg-amber-50/30' : 'border-slate-100 bg-slate-50'}`}
-                          onClick={() => {
-                            if (canDeleteStockHistory) {
-                              setEditingStockHistory(history);
-                              setIsEditStockHistoryOpen(true);
-                            }
-                          }}
-                          data-testid={`card-stock-history-${history.id}`}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-center gap-3">
-                                <div 
-                                  className="w-8 h-8 rounded-lg border-2 border-white shadow-sm"
-                                  style={{ backgroundColor: history.color.colorCode.toLowerCase().includes('ral') ? '#f0f0f0' : history.color.colorCode }}
-                                />
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors" data-testid={`text-color-name-${history.id}`}>
-                                    {history.color.colorName}
-                                  </h3>
-                                  <p className="text-sm font-mono text-slate-500" data-testid={`text-color-code-${history.id}`}>{history.color.colorCode}</p>
-                                </div>
-                              </div>
-                              <div className="flex flex-col items-end gap-1">
-                                {isReturn && (
-                                  <Badge className="bg-amber-500 text-white text-xs" data-testid={`badge-returned-${history.id}`}>
-                                    Returned
-                                  </Badge>
-                                )}
-                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-xs" data-testid={`badge-date-${history.id}`}>
-                                  {history.stockInDate}
-                                </Badge>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Product</span>
-                                <span className="text-slate-400 truncate" data-testid={`text-product-${history.id}`}>{history.color.variant.product.productName}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500">Size</span>
-                                <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200" data-testid={`badge-size-${history.id}`}>
-                                  {history.color.variant.packingSize}
-                                </Badge>
-                              </div>
-                              
-                              {/* Customer Info for Returns */}
-                              {isReturn && history.customerName && (
-                                <div className="bg-amber-100 p-2 rounded-lg border border-amber-200 space-y-1" data-testid={`return-info-${history.id}`}>
-                                  <div className="flex justify-between items-center text-sm">
-                                    <span className="text-amber-700 font-medium">Customer</span>
-                                    <span className="text-slate-800 font-semibold" data-testid={`text-return-customer-${history.id}`}>{history.customerName}</span>
-                                  </div>
-                                  {history.customerPhone && (
-                                    <div className="flex justify-between items-center text-sm">
-                                      <span className="text-amber-700 font-medium">Phone</span>
-                                      <span className="text-slate-600" data-testid={`text-return-phone-${history.id}`}>{history.customerPhone}</span>
-                                    </div>
-                                  )}
-                                  {history.saleId && (
-                                    <div className="flex justify-between items-center text-sm">
-                                      <span className="text-amber-700 font-medium">Bill Ref</span>
-                                      <span className="text-slate-600 font-mono text-xs" data-testid={`text-return-bill-${history.id}`}>{history.saleId.substring(0, 8)}...</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                              
-                              {/* Stock Information */}
-                              <div className="grid grid-cols-3 gap-2 text-center mt-3 p-2 bg-slate-50 rounded-lg">
-                                <div className="space-y-1">
-                                  <p className="text-xs text-slate-500">Previous</p>
-                                  <p className="font-mono text-sm font-semibold text-orange-600" data-testid={`text-previous-stock-${history.id}`}>{history.previousStock}</p>
-                                </div>
-                                <div className="space-y-1">
-                                  <p className="text-xs text-slate-500">{isReturn ? 'Restored' : 'Added'}</p>
-                                  <p className={`font-mono text-sm font-semibold ${isReturn ? 'text-amber-600' : 'text-green-600'}`} data-testid={`text-quantity-${history.id}`}>+{history.quantity}</p>
-                                </div>
-                                <div className="space-y-1">
-                                  <p className="text-xs text-slate-500">New</p>
-                                  <p className="font-mono text-sm font-semibold text-blue-600" data-testid={`text-new-stock-${history.id}`}>{history.newStock}</p>
-                                </div>
-                              </div>
-
-                              {history.notes && (
-                                <div className={`text-xs p-2 rounded-lg mt-2 ${isReturn ? 'text-amber-700 bg-amber-50' : 'text-slate-500 bg-slate-50'}`} data-testid={`text-notes-${history.id}`}>
-                                  <p className="line-clamp-2">{history.notes}</p>
-                                </div>
-                              )}
-
-                              <div className="flex justify-between items-center text-xs text-slate-400 pt-2 border-t border-slate-200">
-                                <span data-testid={`text-date-${history.id}`}>{formatDateShort(history.createdAt)}</span>
-                                <span data-testid={`text-time-${history.id}`}>{new Date(history.createdAt).toLocaleTimeString()}</span>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )})}
-                    </div>
-                    {/* Load More Button for Stock In History */}
-                    {filteredStockInHistory.length > historyVisibleLimit && (
-                      <div className="flex justify-center mt-4">
-                        <Button
-                          variant="outline"
-                          onClick={() => setHistoryVisibleLimit(prev => prev + VISIBLE_LIMIT_INCREMENT)}
-                          className="border-slate-200"
-                        >
-                          Load More ({filteredStockInHistory.length - historyVisibleLimit} remaining)
-                        </Button>
-                      </div>
-                    )}
-                    </>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+          </TabsContent>
+        </Card>
       </Tabs>
 
+      {/* Note: Stock In and Stock History are now available as separate pages via sidebar navigation */}
+      
       {/* Quick Add Dialog */}
       <Dialog open={isQuickAddOpen} onOpenChange={(open) => {
         setIsQuickAddOpen(open);
