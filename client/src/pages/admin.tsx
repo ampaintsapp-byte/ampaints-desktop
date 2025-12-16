@@ -278,8 +278,9 @@ export default function Admin() {
   const [jobsLoading, setJobsLoading] = useState(false);
   
   // Strategy selection dialog state
+  type ImportStrategy = 'merge' | 'skip' | 'overwrite';
   const [showStrategyDialog, setShowStrategyDialog] = useState(false);
-  const [selectedStrategy, setSelectedStrategy] = useState<'merge' | 'skip' | 'overwrite'>('merge');
+  const [selectedStrategy, setSelectedStrategy] = useState<ImportStrategy>('merge');
   const [pendingJobRequest, setPendingJobRequest] = useState<{ connectionId: string, jobType: 'export' | 'import', dryRun: boolean } | null>(null);
   
   // Confirmation dialog state
@@ -483,7 +484,6 @@ export default function Admin() {
     
     // Close strategy dialog first
     setShowStrategyDialog(false);
-    const request = pendingJobRequest;
     setPendingJobRequest(null);
     
     // Show confirmation dialog
@@ -492,7 +492,7 @@ export default function Admin() {
       ? `This will simulate importing data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?`
       : `⚠️ WARNING: This will ACTUALLY IMPORT data from cloud with strategy "${strategy}".\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to your local database!\n\nMake sure you have a backup before proceeding.\n\nProceed?`;
     
-    showConfirmation(title, message, () => executeJobEnqueue(request.connectionId, request.jobType, request.dryRun, details));
+    showConfirmation(title, message, () => executeJobEnqueue(connectionId, jobType, dryRun, details));
   };
   
   const handleStrategyCancel = () => {
@@ -1068,7 +1068,7 @@ export default function Admin() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <RadioGroup value={selectedStrategy} onValueChange={(value) => setSelectedStrategy(value as 'merge' | 'skip' | 'overwrite')}>
+            <RadioGroup value={selectedStrategy} onValueChange={(value) => setSelectedStrategy(value as ImportStrategy)}>
               <div className="flex items-start space-x-3 p-3 rounded-lg border border-border hover:bg-accent/50 transition-colors">
                 <RadioGroupItem value="merge" id="strategy-merge" className="mt-1" />
                 <Label htmlFor="strategy-merge" className="flex-1 cursor-pointer">
