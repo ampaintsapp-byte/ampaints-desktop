@@ -411,7 +411,7 @@ export default function Admin() {
     } finally { setJobsLoading(false) }
   };
 
-  const enqueueJob = async (connectionId: string, jobType: 'export' | 'import') => {
+  const enqueueJob = async (connectionId: string, jobType: 'export' | 'import', dryRun: boolean = false) => {
     try {
       let details = undefined;
       
@@ -429,12 +429,20 @@ export default function Admin() {
         details = { strategy: strategy.toLowerCase() };
         
         // Warn about import risks
-        if (!confirm(`⚠️ Warning: This will import data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made yet.\n\nProceed?`)) {
+        const confirmMsg = dryRun 
+          ? `⚠️ This will simulate importing data from cloud with strategy "${strategy}".\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?`
+          : `⚠️ WARNING: This will ACTUALLY IMPORT data from cloud with strategy "${strategy}".\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to your local database!\n\nMake sure you have a backup before proceeding.\n\nProceed?`;
+        
+        if (!confirm(confirmMsg)) {
           return;
         }
       } else {
         // Confirm export operation
-        if (!confirm('This will export your local data to the cloud.\n\nThis is a DRY RUN - no actual changes will be made yet.\n\nProceed?')) {
+        const confirmMsg = dryRun
+          ? 'This will simulate exporting your local data to the cloud.\n\nThis is a DRY RUN - no actual changes will be made.\n\nProceed?'
+          : '⚠️ WARNING: This will ACTUALLY EXPORT your local data to the cloud.\n\n🔴 THIS IS NOT A DRY RUN - Real changes will be made to the cloud database!\n\nExisting data in the cloud may be overwritten.\n\nProceed?';
+        
+        if (!confirm(confirmMsg)) {
           return;
         }
       }
@@ -442,7 +450,7 @@ export default function Admin() {
       const res = await apiRequest('POST', '/api/cloud-sync/jobs', { 
         connectionId, 
         jobType, 
-        dryRun: true, 
+        dryRun, 
         details 
       });
       const json = await res.json();
@@ -450,7 +458,9 @@ export default function Admin() {
       if (res.ok && json.ok) {
         toast({ 
           title: 'Job Enqueued', 
-          description: `Job ${json.jobId} created (dry-run mode)` 
+          description: dryRun 
+            ? `Job ${json.jobId} created (dry-run mode - preview only)` 
+            : `Job ${json.jobId} created - will make real changes when processed!` 
         });
         loadJobs(); // Refresh job list
       } else {
@@ -875,13 +885,23 @@ export default function Admin() {
                             {c.provider} • Created: {new Date(c.created_at).toLocaleString()}
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export')}>
-                            Run Export (dry-run)
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import')}>
-                            Run Import (dry-run)
-                          </Button>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'export', true)} className="text-xs">
+                              Preview Export
+                            </Button>
+                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'export', false)} className="bg-blue-600 hover:bg-blue-700 text-xs">
+                              ⬆️ Export to Cloud
+                            </Button>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => enqueueJob(c.id, 'import', true)} className="text-xs">
+                              Preview Import
+                            </Button>
+                            <Button size="sm" variant="default" onClick={() => enqueueJob(c.id, 'import', false)} className="bg-green-600 hover:bg-green-700 text-xs">
+                              ⬇️ Import from Cloud
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -908,15 +928,37 @@ export default function Admin() {
                     <div className="space-y-2">
                       {jobs.length === 0 && <p className="text-sm text-muted-foreground">No jobs</p>}
                       {jobs.map((j: any) => (
-                        <div key={j.id} className="p-3 border rounded flex items-center justify-between">
-                          <div>
-                            <div className="font-medium">{j.job_type} • {j.provider}</div>
-                            <div className="text-xs text-muted-foreground">
-                              Status: {j.status} • Attempts: {j.attempts} • {new Date(j.created_at).toLocaleString()}
+                        <div key={j.id} className="p-3 border rounded">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium capitalize">{j.job_type}</div>
+                              <Badge variant="outline" className="text-xs">{j.provider}</Badge>
+                              {j.dry_run ? (
+                                <Badge variant="secondary" className="text-xs">Preview Mode</Badge>
+                              ) : (
+                                <Badge variant="default" className="text-xs bg-orange-600">Live Mode</Badge>
+                              )}
                             </div>
+                            <Badge 
+                              variant={
+                                j.status === 'success' ? 'default' : 
+                                j.status === 'failed' ? 'destructive' : 
+                                j.status === 'running' ? 'secondary' : 
+                                'outline'
+                              }
+                              className="text-xs"
+                            >
+                              {j.status}
+                            </Badge>
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {j.last_error ? `Error: ${j.last_error}` : ''}
+                          <div className="text-xs text-muted-foreground space-y-1">
+                            <div>Attempts: {j.attempts} • {new Date(j.created_at).toLocaleString()}</div>
+                            {j.last_error && (
+                              <div className="text-destructive font-medium">Error: {j.last_error}</div>
+                            )}
+                            {j.details && (
+                              <div className="text-slate-600 dark:text-slate-400">Details: {j.details}</div>
+                            )}
                           </div>
                         </div>
                       ))}
