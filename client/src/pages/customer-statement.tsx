@@ -785,8 +785,10 @@ export default function CustomerStatement() {
       ["Paid Bills:", stats.paidBills.toString(), "Total Paid:", `Rs. ${stats.totalPaid.toLocaleString()}`],
       ["Unpaid Bills:", stats.unpaidBills.toString(), "Credit Returns:", `Rs. ${stats.totalReturnCredits.toLocaleString()}`],
       ["Total Returns:", stats.totalReturns.toString(), "Cash Returns:", `Rs. ${stats.totalCashReturns.toLocaleString()}`],
-      ["", "", balanceLabel, balanceValue],
     ]
+    
+    // Add balance row separately for clarity
+    summaryData.push(["", "", balanceLabel, balanceValue])
 
     pdf.setFontSize(9)
     summaryData.forEach((row) => {
@@ -1885,16 +1887,17 @@ Thank you for your business!`
                                 <p className="font-semibold text-slate-800 dark:text-white">
                                   {ret.returnType === "bill" ? "Full Bill Return" : "Item Return"}
                                 </p>
-                                <Badge 
-                                  variant="outline" 
-                                  className={
-                                    ret.refundMethod === 'credit'
-                                      ? "border-green-300 bg-green-100 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                      : "border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
-                                  }
-                                >
-                                  {ret.refundMethod === 'credit' ? 'CREDIT' : 'CASH'}
-                                </Badge>
+                                {(() => {
+                                  const isCreditReturn = ret.refundMethod === 'credit'
+                                  const badgeClassName = isCreditReturn
+                                    ? "border-green-300 bg-green-100 text-green-700 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                    : "border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                                  return (
+                                    <Badge variant="outline" className={badgeClassName}>
+                                      {isCreditReturn ? 'CREDIT' : 'CASH'}
+                                    </Badge>
+                                  )
+                                })()}
                               </div>
                               <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                                 {formatDateShort(ret.createdAt)}
