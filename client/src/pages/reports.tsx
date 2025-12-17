@@ -96,16 +96,16 @@ export default function Reports() {
   
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  // Helper function to get today's date in dd-mm-yyyy format
+  // Helper function to get today's date in yyyy-mm-dd format (for native date input)
   const getTodayString = useCallback(() => {
     const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const month = String(today.getMonth() + 1).padStart(2, '0');
     const year = today.getFullYear();
-    return `${day}-${month}-${year}`;
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }, []);
 
-  // Initialize with today's date in dd-mm-yyyy format
+  // Initialize with today's date in yyyy-mm-dd format (for native date input)
   useEffect(() => {
     const today = getTodayString();
     setDateFrom(today);
@@ -176,7 +176,7 @@ export default function Reports() {
     }
 
     if (dateFrom) {
-      const fromDate = startOfDay(new Date(dateFrom));
+      const fromDate = startOfDay(parseISO(dateFrom));
       filtered = filtered.filter((sale) => {
         const saleDate = parseDate(sale.createdAt);
         return saleDate && !isBefore(saleDate, fromDate);
@@ -184,7 +184,7 @@ export default function Reports() {
     }
 
     if (dateTo) {
-      const toDate = endOfDay(new Date(dateTo));
+      const toDate = endOfDay(parseISO(dateTo));
       filtered = filtered.filter((sale) => {
         const saleDate = parseDate(sale.createdAt);
         return saleDate && !isAfter(saleDate, toDate);
@@ -233,7 +233,7 @@ export default function Reports() {
     }
 
     if (dateFrom) {
-      const fromDate = startOfDay(new Date(dateFrom));
+      const fromDate = startOfDay(parseISO(dateFrom));
       filtered = filtered.filter((payment) => {
         const paymentDate = parseDate(payment.createdAt);
         return paymentDate && !isBefore(paymentDate, fromDate);
@@ -241,7 +241,7 @@ export default function Reports() {
     }
 
     if (dateTo) {
-      const toDate = endOfDay(new Date(dateTo));
+      const toDate = endOfDay(parseISO(dateTo));
       filtered = filtered.filter((payment) => {
         const paymentDate = parseDate(payment.createdAt);
         return paymentDate && !isAfter(paymentDate, toDate);
@@ -289,7 +289,7 @@ export default function Reports() {
     }
 
     if (dateFrom) {
-      const fromDate = startOfDay(new Date(dateFrom));
+      const fromDate = startOfDay(parseISO(dateFrom));
       filtered = filtered.filter((ret) => {
         const returnDate = parseDate(ret.createdAt);
         return returnDate && !isBefore(returnDate, fromDate);
@@ -297,7 +297,7 @@ export default function Reports() {
     }
 
     if (dateTo) {
-      const toDate = endOfDay(new Date(dateTo));
+      const toDate = endOfDay(parseISO(dateTo));
       filtered = filtered.filter((ret) => {
         const returnDate = parseDate(ret.createdAt);
         return returnDate && !isAfter(returnDate, toDate);
@@ -908,8 +908,7 @@ export default function Reports() {
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-zinc-800/50 border border-slate-200/50 dark:border-slate-700/50">
                   <Calendar className="h-4 w-4 text-slate-500" />
                   <Input
-                    type="text"
-                    placeholder="dd-mm-yyyy"
+                    type="date"
                     value={dateFrom}
                     onChange={(e) => setDateFrom(e.target.value)}
                     className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
@@ -917,8 +916,7 @@ export default function Reports() {
                   />
                   <span className="text-xs text-slate-400 font-medium">to</span>
                   <Input
-                    type="text"
-                    placeholder="dd-mm-yyyy"
+                    type="date"
                     value={dateTo}
                     onChange={(e) => setDateTo(e.target.value)}
                     className="w-36 h-8 text-sm border-0 bg-transparent focus-visible:ring-0 p-0"
