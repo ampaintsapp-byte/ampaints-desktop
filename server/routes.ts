@@ -1756,18 +1756,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const dbPath = getDatabasePath()
       const dbDir = path.dirname(dbPath)
-      const backupPath = path.join(dbDir, req.params.filename)
       
-      // Security: ensure the file is in the correct directory and is a backup
-      if (!backupPath.startsWith(dbDir) || !req.params.filename.startsWith("backup-")) {
-        return res.status(400).json({ ok: false, error: "Invalid backup file" })
+      // Security: normalize filename to prevent path traversal attacks
+      const filename = path.basename(req.params.filename) // Remove any path components
+      
+      // Additional security: only allow backup files with expected naming pattern
+      if (!filename.startsWith("backup-") || !filename.endsWith(".db")) {
+        return res.status(400).json({ ok: false, error: "Invalid backup filename format" })
       }
       
-      if (!fs.existsSync(backupPath)) {
+      // Additional security: validate no path separators in filename
+      if (filename.includes(path.sep) || filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+        return res.status(400).json({ ok: false, error: "Invalid characters in filename" })
+      }
+      
+      const backupPath = path.join(dbDir, filename)
+      
+      // Security: resolve and verify the full path is within allowed directory
+      const resolvedPath = path.resolve(backupPath)
+      const resolvedDir = path.resolve(dbDir)
+      if (!resolvedPath.startsWith(resolvedDir + path.sep)) {
+        return res.status(400).json({ ok: false, error: "Invalid backup file path" })
+      }
+      
+      if (!fs.existsSync(resolvedPath)) {
         return res.status(404).json({ ok: false, error: "Backup not found" })
       }
       
-      fs.unlinkSync(backupPath)
+      fs.unlinkSync(resolvedPath)
       res.json({ ok: true, message: "Backup deleted" })
     } catch (err: any) {
       console.error("[API] Error deleting backup:", err)
@@ -1781,12 +1797,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { sqliteDb } = await import("./db")
       if (!sqliteDb) return res.json({ ok: true, stats: null })
       
-      // Get job statistics
-      const totalJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs").get() as any
-      const pendingJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'pending'").get() as any
-      const runningJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'running'").get() as any
-      const successJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'success'").get() as any
-      const failedJobs = sqliteDb.prepare("SELECT COUNT(*) as count FROM cloud_sync_jobs WHERE status = 'failed'").get() as any
+      // Get job statistics using a single optimized query
+      const jobStats = sqliteDb.prepare(`
+        SELECT 
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+          SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as running,
+          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success,
+          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+        FROM cloud_sync_jobs
+      `).get() as any
       
       // Get last successful sync
       const lastExport = sqliteDb.prepare("SELECT * FROM cloud_sync_jobs WHERE job_type = 'export' AND status = 'success' ORDER BY updated_at DESC LIMIT 1").get() as any
@@ -1799,11 +1819,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ok: true,
         stats: {
           jobs: {
-            total: totalJobs?.count || 0,
-            pending: pendingJobs?.count || 0,
-            running: runningJobs?.count || 0,
-            success: successJobs?.count || 0,
-            failed: failedJobs?.count || 0
+            total: jobStats?.total || 0,
+            pending: jobStats?.pending || 0,
+            running: jobStats?.running || 0,
+            success: jobStats?.success || 0,
+            failed: jobStats?.failed || 0
           },
           connections: connections?.count || 0,
           lastExport: lastExport ? {

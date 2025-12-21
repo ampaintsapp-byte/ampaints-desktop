@@ -18,8 +18,11 @@ const EXPORT_TABLES = [
   "settings",      // No dependencies
 ]
 
-// Batch size for processing large datasets
-const BATCH_SIZE = 100
+// Configuration constants
+const BATCH_SIZE = 100  // Configurable: process this many records per batch
+const MAX_ERROR_DETAILS = 10  // Maximum error details to include in results
+const EXPORT_TIMEOUT_MS = 120000  // 2 minutes export timeout
+const CONNECTION_TIMEOUT_MS = 10000  // 10 seconds connection timeout
 
 // Export statistics interface
 export interface ExportStats {
@@ -254,8 +257,8 @@ export async function exportToPostgres(connectionString: string, dryRun = true):
   const { Client } = await import("pg")
   const client = new Client({ 
     connectionString, 
-    statement_timeout: 120000, // 2 minutes timeout for larger operations
-    connectionTimeoutMillis: 10000 // 10 seconds connection timeout
+    statement_timeout: EXPORT_TIMEOUT_MS,
+    connectionTimeoutMillis: CONNECTION_TIMEOUT_MS
   })
   
   try {
@@ -343,7 +346,7 @@ export async function exportToPostgres(connectionString: string, dryRun = true):
       summary[table].inserted = tableInserted
       summary[table].errors = tableErrors
       if (allErrorDetails.length > 0) {
-        summary[table].errorDetails = allErrorDetails.slice(0, 10) // Keep first 10 errors
+        summary[table].errorDetails = allErrorDetails.slice(0, MAX_ERROR_DETAILS)
       }
       
       totalExported += tableInserted

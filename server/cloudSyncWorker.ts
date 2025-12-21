@@ -1,5 +1,9 @@
 import crypto from "crypto"
 
+// Configuration constants
+const JOB_PROCESSING_DELAY_MS = 100  // Delay between jobs to prevent overwhelming the system
+const DEFAULT_CLEANUP_DAYS = 30  // Default days to keep completed jobs
+
 export interface JobResult {
   id: string
   status: 'success' | 'failed'
@@ -176,7 +180,7 @@ export async function processAllPendingJobs(): Promise<{ processed: number; resu
     processed++
     
     // Small delay between jobs to prevent overwhelming the system
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise(resolve => setTimeout(resolve, JOB_PROCESSING_DELAY_MS))
   }
   
   return { processed, results }

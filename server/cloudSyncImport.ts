@@ -17,8 +17,11 @@ const IMPORT_TABLES = [
   "settings",      // No dependencies
 ]
 
-// Batch size for processing large datasets
-const BATCH_SIZE = 100
+// Configuration constants
+const BATCH_SIZE = 100  // Configurable: process this many records per batch
+const MAX_ERROR_DETAILS = 10  // Maximum error details to include in results
+const IMPORT_TIMEOUT_MS = 120000  // 2 minutes import timeout
+const CONNECTION_TIMEOUT_MS = 10000  // 10 seconds connection timeout
 
 // Import result interface
 export interface ImportResult {
@@ -298,8 +301,8 @@ export async function importFromPostgres(
   const { Client } = await import("pg")
   const client = new Client({ 
     connectionString, 
-    statement_timeout: 120000,
-    connectionTimeoutMillis: 10000
+    statement_timeout: IMPORT_TIMEOUT_MS,
+    connectionTimeoutMillis: CONNECTION_TIMEOUT_MS
   })
   
   try {
@@ -408,7 +411,7 @@ export async function importFromPostgres(
       summary[table].skipped = tableSkipped
       if (tableErrors > 0) {
         summary[table].errors = tableErrors
-        summary[table].errorDetails = allErrorDetails.slice(0, 10)
+        summary[table].errorDetails = allErrorDetails.slice(0, MAX_ERROR_DETAILS)
       }
       
       totalImported += tableInserted + tableUpdated
@@ -546,25 +549,33 @@ export async function verifyImport(connectionString: string): Promise<{
 export async function restoreFromBackup(backupPath: string): Promise<{ ok: boolean; message: string }> {
   console.log(`[CloudSyncImport] Restoring from backup: ${backupPath}`)
   
-  if (!fs.existsSync(backupPath)) {
+  // Security: validate backup path
+  const pathModule = await import("path")
+  const resolvedBackupPath = pathModule.resolve(backupPath)
+  const filename = pathModule.basename(resolvedBackupPath)
+  
+  // Only allow restoring from backup files with expected naming pattern
+  if (!filename.startsWith("backup-") || !filename.endsWith(".db")) {
+    throw new Error("Invalid backup file: must be a backup-*.db file")
+  }
+  
+  if (!fs.existsSync(resolvedBackupPath)) {
     throw new Error(`Backup file not found: ${backupPath}`)
   }
   
   try {
-    const { getDatabasePath, setDatabasePath } = await import("./db")
+    const { getDatabasePath, restoreDatabase } = await import("./db")
     const dbPath = getDatabasePath()
     
-    // Copy backup over current database
-    fs.copyFileSync(backupPath, dbPath)
+    // Use the existing restoreDatabase function which properly handles
+    // closing the connection before file operations
+    restoreDatabase(resolvedBackupPath)
     
-    // Reinitialize database
-    setDatabasePath(dbPath)
-    
-    console.log("[CloudSyncImport] Database restored from backup")
+    console.log("[CloudSyncImport] Database restored from backup using db.restoreDatabase()")
     
     return {
       ok: true,
-      message: `Database successfully restored from ${backupPath}`
+      message: `Database successfully restored from ${filename}`
     }
   } catch (err: any) {
     throw new Error(`Restore failed: ${err.message || String(err)}`)
