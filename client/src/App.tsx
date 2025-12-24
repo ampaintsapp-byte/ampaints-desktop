@@ -9,21 +9,24 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { DateFormatProvider } from "@/hooks/use-date-format";
 import { NavigationRefreshContext } from "@/hooks/use-navigation-refresh";
 import { PageSkeleton } from "@/components/page-skeleton";
+import { LicenseGuard } from "@/components/license-guard";
 import ActivationScreen from "@/components/activation-screen";
 import NotFound from "@/pages/not-found";
 
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const StockManagement = lazy(() => import("@/pages/stock-management"));
+const StockIn = lazy(() => import("@/pages/stock-in"));
+const StockHistory = lazy(() => import("@/pages/stock-history"));
 const POSSales = lazy(() => import("@/pages/pos-sales"));
 const Sales = lazy(() => import("@/pages/sales"));
 const UnpaidBills = lazy(() => import("@/pages/unpaid-bills"));
 const CustomerStatement = lazy(() => import("@/pages/customer-statement"));
 const Reports = lazy(() => import("@/pages/reports"));
-const RateManagement = lazy(() => import("@/pages/rate-management"));
 const BillPrint = lazy(() => import("@/pages/bill-print"));
 const Returns = lazy(() => import("@/pages/returns"));
-const Audit = lazy(() => import("@/pages/audit"));
+const ReturnsHistory = lazy(() => import("@/pages/returns-history"));
 const Settings = lazy(() => import("@/pages/settings"));
+const Admin = lazy(() => import("@/pages/admin"));
 
 function Router() {
   return (
@@ -31,15 +34,17 @@ function Router() {
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/stock" component={StockManagement} />
+        <Route path="/stock/in" component={StockIn} />
+        <Route path="/stock/history" component={StockHistory} />
         <Route path="/pos" component={POSSales} />
         <Route path="/sales" component={Sales} />
         <Route path="/unpaid-bills" component={UnpaidBills} />
         <Route path="/customer/:phone" component={CustomerStatement} />
         <Route path="/reports" component={Reports} />
         <Route path="/returns" component={Returns} />
-        <Route path="/audit" component={Audit} />
-        <Route path="/rates" component={RateManagement} />
+        <Route path="/returns/history" component={ReturnsHistory} />
         <Route path="/settings" component={Settings} />
+        <Route path="/admin" component={Admin} />
         <Route path="/bill/:id" component={BillPrint} />
         <Route component={NotFound} />
       </Switch>
@@ -113,23 +118,25 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <DateFormatProvider>
-          <NavigationRefreshContext.Provider value={{ refreshKey, triggerRefresh }}>
-            <SidebarProvider style={style as React.CSSProperties}>
-              <div className="flex h-screen w-full">
-                <AppSidebar />
-                <div className="flex flex-col flex-1 overflow-hidden">
-                  <header className="flex items-center justify-between h-16 px-4 border-b border-border">
-                    <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  </header>
-                  <main key={refreshKey} className="flex-1 overflow-auto">
-                    <Router />
-                  </main>
+        <LicenseGuard>
+          <DateFormatProvider>
+            <NavigationRefreshContext.Provider value={{ refreshKey, triggerRefresh }}>
+              <SidebarProvider style={style as React.CSSProperties}>
+                <div className="flex h-screen w-full">
+                  <AppSidebar />
+                  <div className="flex flex-col flex-1 overflow-hidden">
+                    <header className="flex items-center justify-between h-16 px-4 border-b border-border">
+                      <SidebarTrigger data-testid="button-sidebar-toggle" />
+                    </header>
+                    <main key={refreshKey} className="flex-1 overflow-auto">
+                      <Router />
+                    </main>
+                  </div>
                 </div>
-              </div>
-            </SidebarProvider>
-          </NavigationRefreshContext.Provider>
-        </DateFormatProvider>
+              </SidebarProvider>
+            </NavigationRefreshContext.Provider>
+          </DateFormatProvider>
+        </LicenseGuard>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

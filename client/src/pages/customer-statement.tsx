@@ -43,6 +43,7 @@ import {
   ChevronDown,
   ChevronRight,
   Package,
+  RefreshCw,
 } from "lucide-react"
 import { useState, useMemo, Fragment } from "react"
 import { SiWhatsapp } from "react-icons/si"
@@ -86,6 +87,7 @@ interface Transaction {
   status?: string
   saleId?: string
   items?: SaleItemDisplay[]
+  billReturns?: number // Returns specific to this bill
 }
 
 // Utility function to safely parse numbers
@@ -106,6 +108,11 @@ const safeParseDate = (value: any): Date => {
 // Utility function to round numbers for display
 const roundNumber = (num: number): number => {
   return Math.round(num * 100) / 100
+}
+
+// Helper function to get credited refund amount (0 for cash refunds)
+const getCreditedRefundAmount = (ret: any): number => {
+  return ret.refundMethod === 'credit' ? safeParseFloat(ret.totalRefund) : 0
 }
 
 export default function CustomerStatement() {
@@ -137,6 +144,12 @@ export default function CustomerStatement() {
   const [paymentToDelete, setPaymentToDelete] = useState<PaymentHistoryWithSale | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
+  // Clear Full Account state
+  const [clearAccountDialogOpen, setClearAccountDialogOpen] = useState(false)
+  const [clearAccountMethod, setClearAccountMethod] = useState("cash")
+  const [clearAccountNotes, setClearAccountNotes] = useState("")
+  const [clearAccountProcessing, setClearAccountProcessing] = useState(false)
+
   const toggleRowExpand = (rowId: string) => {
     setExpandedRows((prev) => {
       const newSet = new Set(prev)
@@ -164,7 +177,8 @@ export default function CustomerStatement() {
     },
     enabled: !!customerPhone,
     refetchOnWindowFocus: true,
-    staleTime: 30000, // Cache for 30 seconds
+    refetchOnMount: 'always',
+    staleTime: 0, // Always fetch fresh data on mount
   })
 
   // Extract data from combined response
@@ -296,17 +310,115 @@ export default function CustomerStatement() {
     },
   })
 
-  const paidSales = useMemo(() => allSales.filter((s) => s.paymentStatus === "paid"), [allSales])
-  const unpaidSales = useMemo(() => allSales.filter((s) => s.paymentStatus !== "paid"), [allSales])
+  // Function to clear full account - pay all unpaid bills at once
+  const handleClearFullAccount = async () => {
+    if (unpaidSales.length === 0) {
+      toast({
+        title: "No Unpaid Bills",
+        description: "All bills are already paid.",
+      })
+      return
+    }
+
+    setClearAccountProcessing(true)
+    let successCount = 0
+    const failedBills: string[] = []
+
+    try {
+      // Process each unpaid bill sequentially
+      for (const sale of unpaidSales) {
+        const outstanding = roundNumber(safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid))
+        if (outstanding <= 0) continue
+
+        try {
+          await apiRequest("POST", `/api/sales/${sale.id}/payment`, {
+            amount: outstanding,
+            paymentMethod: clearAccountMethod,
+            notes: clearAccountNotes || `Full account clearance payment`,
+          })
+          successCount++
+        } catch (error) {
+          const billRef = sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`
+          failedBills.push(billRef)
+        }
+      }
+
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ["/api/customer", customerPhone, "statement"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/sales/unpaid"] })
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard-stats"] })
+
+      setClearAccountDialogOpen(false)
+      setClearAccountMethod("cash")
+      setClearAccountNotes("")
+
+      if (failedBills.length === 0) {
+        toast({
+          title: "Account Cleared",
+          description: `Successfully paid ${successCount} bill(s). Account balance is now zero.`,
+        })
+      } else {
+        toast({
+          title: "Partial Success",
+          description: `Paid ${successCount} bill(s). Failed: ${failedBills.join(", ")}. Please check remaining bills.`,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to clear account. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setClearAccountProcessing(false)
+    }
+  }
 
   const customerName = allSales[0]?.customerName || "Customer"
 
-  // Corrected and improved stats calculations
+  // Calculate returns per sale
+  const getSaleReturns = (saleId: string): number => {
+    return customerReturns
+      .filter(ret => ret.saleId === saleId)
+      .reduce((sum, ret) => sum + getCreditedRefundAmount(ret), 0)
+  }
+
+  const paidSales = useMemo(() => {
+    return allSales.filter((s) => {
+      const total = safeParseFloat(s.totalAmount)
+      const paid = safeParseFloat(s.amountPaid)
+      const returns = getSaleReturns(s.id)
+      // Sale is paid if total - paid - returns <= 0
+      return roundNumber(total - paid - returns) <= 0
+    })
+  }, [allSales, customerReturns])
+
+  const unpaidSales = useMemo(() => {
+    return allSales.filter((s) => {
+      const total = safeParseFloat(s.totalAmount)
+      const paid = safeParseFloat(s.amountPaid)
+      const returns = getSaleReturns(s.id)
+      // Sale is unpaid if total - paid - returns > 0
+      return roundNumber(total - paid - returns) > 0
+    })
+  }, [allSales, customerReturns])
+
+  // Corrected and improved stats calculations - INCLUDING return credits and credit balances
   const stats = useMemo(() => {
     const totalPurchases = allSales.reduce((sum, s) => sum + safeParseFloat(s.totalAmount), 0)
     const totalPaid = allSales.reduce((sum, s) => sum + safeParseFloat(s.amountPaid), 0)
-    const totalOutstanding = Math.max(0, totalPurchases - totalPaid)
     const totalPaymentsReceived = paymentHistory.reduce((sum, p) => sum + safeParseFloat(p.amount), 0)
+    
+    // Calculate total return credits (only credited refunds reduce outstanding balance, not cash refunds)
+    const totalReturnCredits = customerReturns.reduce((sum, r) => sum + getCreditedRefundAmount(r), 0)
+    
+    // Outstanding = Bills - Payments - Returns (can be negative for credit/advance)
+    // Negative value means customer has credit/advance balance
+    const totalOutstanding = roundNumber(totalPurchases - totalPaid - totalReturnCredits)
+    const hasCredit = totalOutstanding < 0
+    // displayOutstanding is always positive for display purposes
+    const displayOutstanding = roundNumber(Math.abs(totalOutstanding))
 
     return {
       totalBills: allSales.length,
@@ -314,16 +426,22 @@ export default function CustomerStatement() {
       unpaidBills: unpaidSales.length,
       totalPurchases: roundNumber(totalPurchases),
       totalPaid: roundNumber(totalPaid),
-      totalOutstanding: roundNumber(totalOutstanding),
+      totalOutstanding: totalOutstanding, // Keep signed value for consistency with ledger
+      displayOutstanding, // Positive value for display
+      hasCredit,
       totalPaymentsReceived: roundNumber(totalPaymentsReceived),
+      totalReturnCredits: roundNumber(totalReturnCredits),
+      totalReturns: customerReturns.length,
     }
-  }, [allSales, paidSales, unpaidSales, paymentHistory])
+  }, [allSales, paidSales, unpaidSales, paymentHistory, customerReturns])
 
   // FIXED: Corrected transactions calculation with proper balance tracking
+  // User's preferred logic: Show DEBIT and CREDIT in the SAME row for bills paid at POS
   const transactions = useMemo((): Transaction[] => {
     const txns: Transaction[] = []
 
     // First, collect all bills in chronological order
+    // Include initial payment (at POS) as credit in the same row
     const billTransactions: Transaction[] = allSalesWithItems.map((sale) => {
       const saleItems: SaleItemDisplay[] =
         sale.saleItems?.map((item) => ({
@@ -336,18 +454,35 @@ export default function CustomerStatement() {
           subtotal: safeParseFloat(item.subtotal),
         })) || []
 
-      const totalAmt = safeParseFloat(sale.totalAmount)
-      const paidAmt = safeParseFloat(sale.amountPaid)
-      const outstandingAmt = Math.max(0, totalAmt - paidAmt)
+      const totalAmt = roundNumber(safeParseFloat(sale.totalAmount))
+      const paidAmt = roundNumber(safeParseFloat(sale.amountPaid))
+      
+      // Calculate returns for this specific bill (only credited returns count)
+      const billReturns = roundNumber(customerReturns
+        .filter(ret => ret.saleId === sale.id)
+        .reduce((sum, ret) => sum + getCreditedRefundAmount(ret), 0))
+      
+      // Outstanding = Bill amount - Payments - Returns for this bill
+      const outstandingAmt = roundNumber(Math.max(0, totalAmt - paidAmt - billReturns))
+      
+      // Calculate initial payment (paid at POS, not via recovery)
+      // Initial payment = amountPaid - sum of recovery payments for this sale
+      // Use roundNumber to avoid floating point precision issues
+      const recoveryPayments = roundNumber(paymentHistory
+        .filter((p) => p.saleId === sale.id)
+        .reduce((sum, p) => sum + safeParseFloat(p.amount), 0))
+      const initialPayment = roundNumber(Math.max(0, paidAmt - recoveryPayments))
 
       return {
         id: `bill-${sale.id}`,
         date: safeParseDate(sale.createdAt),
         type: sale.isManualBalance ? "cash_loan" : "bill",
-        description: sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`,
+        description: sale.isManualBalance 
+          ? "Manual Balance" 
+          : `Bill #${sale.id.slice(0, 8)}${billReturns > 0 ? ` (Return: Rs. ${Math.round(billReturns).toLocaleString()})` : ''}`,
         reference: sale.id.slice(0, 8).toUpperCase(),
         debit: totalAmt,
-        credit: 0,
+        credit: initialPayment, // Include initial payment as credit in same row
         balance: 0,
         paid: paidAmt,
         totalAmount: totalAmt,
@@ -357,10 +492,12 @@ export default function CustomerStatement() {
         status: sale.paymentStatus,
         saleId: sale.id,
         items: saleItems.length > 0 ? saleItems : undefined,
+        billReturns: billReturns // Store returns for this bill
       }
     })
 
-    // Then collect all payments
+    // Then collect all payments from payment_history (recovery payments only)
+    // These are payments made AFTER the initial sale
     const paymentTransactions: Transaction[] = paymentHistory.map((payment) => ({
       id: `payment-${payment.id}`,
       date: safeParseDate(payment.createdAt),
@@ -390,14 +527,21 @@ export default function CustomerStatement() {
         subtotal: safeParseFloat(item.subtotal),
       })) || []
 
+      const returnMethod = ret.returnType === "bill" ? "Full Bill Return" : "Item Return"
+      const reasonText = ret.reason ? ` - ${ret.reason}` : ""
+
+      // If refund method is "cash", credit should be 0 (no credit to account)
+      // If refund method is "credited", credit should be the refund amount
+      const creditAmount = getCreditedRefundAmount(ret)
+
       return {
         id: `return-${ret.id}`,
         date: safeParseDate(ret.createdAt),
         type: "return" as TransactionType,
-        description: ret.returnType === "full_bill" ? "Full Bill Return" : `Item Return${ret.reason ? ` - ${ret.reason}` : ""}`,
+        description: `${returnMethod}${reasonText}`,
         reference: `RET-${ret.id.slice(0, 6).toUpperCase()}`,
         debit: 0,
-        credit: refundAmount,
+        credit: creditAmount,
         balance: 0,
         paid: refundAmount,
         totalAmount: 0,
@@ -421,17 +565,20 @@ export default function CustomerStatement() {
       return timeDiff
     })
 
-    // CORRECTED: Calculate running balance - SIMPLE AND ACCURATE METHOD
+    // Calculate running balance with combined debit/credit per row
+    // For bills: net effect = debit - credit (bill amount minus initial payment)
+    // For payments/returns: net effect = -credit (reduces balance)
+    // Use roundNumber to avoid floating point precision issues
     let runningBalance = 0
     
     txns.forEach((txn) => {
       if (txn.type === "payment" || txn.type === "return") {
         // Payments and returns reduce the balance (customer pays us / we refund)
-        runningBalance -= txn.credit
+        runningBalance = roundNumber(runningBalance - txn.credit)
       } else {
-        // Bills increase the balance (customer owes us)
-        // Add the total amount of the bill
-        runningBalance += txn.debit
+        // Bills: add debit (bill amount) and subtract credit (initial payment at POS)
+        // This gives the net effect in one row
+        runningBalance = roundNumber(runningBalance + txn.debit - txn.credit)
       }
       txn.balance = runningBalance
     })
@@ -444,17 +591,24 @@ export default function CustomerStatement() {
     const now = new Date()
     return unpaidSales
       .filter((s) => s.dueDate)
-      .map((s) => ({
-        ...s,
-        dueDate: safeParseDate(s.dueDate!),
-        outstanding: safeParseFloat(s.totalAmount) - safeParseFloat(s.amountPaid),
-      }))
+      .map((s) => {
+        const total = safeParseFloat(s.totalAmount)
+        const paid = safeParseFloat(s.amountPaid)
+        const returns = getSaleReturns(s.id)
+        const outstanding = roundNumber(total - paid - returns)
+        
+        return {
+          ...s,
+          dueDate: safeParseDate(s.dueDate!),
+          outstanding: Math.max(0, outstanding),
+        }
+      })
       .sort((a, b) => {
         const dateA = safeParseDate(a.dueDate)
         const dateB = safeParseDate(b.dueDate)
         return dateA.getTime() - dateB.getTime()
       })
-  }, [unpaidSales])
+  }, [unpaidSales, customerReturns])
 
   const getDueDateStatus = (dueDate: Date | null) => {
     if (!dueDate) return "none"
@@ -545,8 +699,9 @@ export default function CustomerStatement() {
   }
 
   const selectedSale = selectedSaleId ? allSales.find((s) => s.id === selectedSaleId) : null
+  const selectedSaleReturns = selectedSale ? getSaleReturns(selectedSale.id) : 0
   const selectedSaleOutstanding = selectedSale
-    ? safeParseFloat(selectedSale.totalAmount) - safeParseFloat(selectedSale.amountPaid)
+    ? Math.max(0, roundNumber(safeParseFloat(selectedSale.totalAmount) - safeParseFloat(selectedSale.amountPaid) - selectedSaleReturns))
     : 0
 
   const generateBankStatement = async () => {
@@ -619,10 +774,13 @@ export default function CustomerStatement() {
 
     addSectionHeader("ACCOUNT SUMMARY")
 
+    const balanceLabel = stats.hasCredit ? "Credit:" : "Outstanding:"
+    const balanceValue = `Rs. ${stats.displayOutstanding.toLocaleString()}`
     const summaryData = [
       ["Total Bills:", stats.totalBills.toString(), "Total Purchases:", `Rs. ${stats.totalPurchases.toLocaleString()}`],
       ["Paid Bills:", stats.paidBills.toString(), "Total Paid:", `Rs. ${stats.totalPaid.toLocaleString()}`],
-      ["Unpaid Bills:", stats.unpaidBills.toString(), "Outstanding:", `Rs. ${stats.totalOutstanding.toLocaleString()}`],
+      ["Unpaid Bills:", stats.unpaidBills.toString(), "Total Returns:", `Rs. ${stats.totalReturnCredits.toLocaleString()}`],
+      ["Total Returns:", stats.totalReturns.toString(), balanceLabel, balanceValue],
     ]
 
     pdf.setFontSize(9)
@@ -748,7 +906,9 @@ export default function CustomerStatement() {
     pdf.setFontSize(12)
     pdf.setFont("helvetica", "bold")
     const closingBalance = transactions.length > 0 ? transactions[0].balance : 0
-    pdf.text(`CLOSING BALANCE: Rs. ${Math.round(closingBalance).toLocaleString()}`, pageWidth - margin, yPos, {
+    const closingLabel = closingBalance < 0 ? "CREDIT BALANCE" : "CLOSING BALANCE"
+    const closingDisplay = Math.abs(closingBalance)
+    pdf.text(`${closingLabel}: Rs. ${Math.round(closingDisplay).toLocaleString()}`, pageWidth - margin, yPos, {
       align: "right",
     })
     yPos += 15
@@ -850,13 +1010,14 @@ export default function CustomerStatement() {
     const colWidth = (pageWidth - 2 * margin) / 3
     pdf.text("Total Purchases", margin + colWidth / 2, yPos, { align: "center" })
     pdf.text("Total Paid", margin + colWidth + colWidth / 2, yPos, { align: "center" })
-    pdf.text("Balance Due", margin + 2 * colWidth + colWidth / 2, yPos, { align: "center" })
+    pdf.text(stats.hasCredit ? "Credit Balance" : "Balance Due", margin + 2 * colWidth + colWidth / 2, yPos, { align: "center" })
     yPos += 6
 
     pdf.setFontSize(11)
     pdf.text(`Rs. ${stats.totalPurchases.toLocaleString()}`, margin + colWidth / 2, yPos, { align: "center" })
     pdf.text(`Rs. ${stats.totalPaid.toLocaleString()}`, margin + colWidth + colWidth / 2, yPos, { align: "center" })
-    pdf.text(`Rs. ${stats.totalOutstanding.toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, {
+    const balanceDisplay = stats.displayOutstanding
+    pdf.text(`Rs. ${balanceDisplay.toLocaleString()}`, margin + 2 * colWidth + colWidth / 2, yPos, {
       align: "center",
     })
     yPos += 15
@@ -912,13 +1073,19 @@ export default function CustomerStatement() {
     pdf.line(margin, yPos, pageWidth - margin, yPos)
     yPos += 10
 
-    pdf.setFillColor(102, 126, 234)
+    const premiumClosingLabel = stats.hasCredit ? "CREDIT BALANCE:" : "CLOSING BALANCE:"
+    const premiumClosingValue = stats.displayOutstanding
+    if (stats.hasCredit) {
+      pdf.setFillColor(16, 185, 129)
+    } else {
+      pdf.setFillColor(102, 126, 234)
+    }
     pdf.roundedRect(pageWidth - margin - 70, yPos - 5, 70, 15, 2, 2, "F")
     pdf.setTextColor(255, 255, 255)
     pdf.setFontSize(10)
     pdf.setFont("helvetica", "bold")
-    pdf.text("CLOSING BALANCE:", pageWidth - margin - 65, yPos + 3)
-    pdf.text(`Rs. ${stats.totalOutstanding.toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: "right" })
+    pdf.text(premiumClosingLabel, pageWidth - margin - 65, yPos + 3)
+    pdf.text(`Rs. ${premiumClosingValue.toLocaleString()}`, pageWidth - margin - 5, yPos + 3, { align: "right" })
 
     return pdf.output("blob")
   }
@@ -969,8 +1136,8 @@ export default function CustomerStatement() {
         }
         reader.readAsDataURL(pdfBlob)
         return
-      } catch (error) {
-        console.log("Electron share failed, falling back to web share:", error)
+      } catch {
+        // Electron share failed, fall back to web share
       }
     }
 
@@ -979,10 +1146,13 @@ export default function CustomerStatement() {
 
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
+        const balanceText = stats.hasCredit 
+          ? `Credit: Rs. ${stats.displayOutstanding.toLocaleString()}`
+          : `Balance: Rs. ${stats.displayOutstanding.toLocaleString()}`
         await navigator.share({
           files: [pdfFile],
           title: `Account Statement - ${customerName}`,
-          text: `Account Statement from ${receiptSettings.businessName} - Balance: Rs. ${stats.totalOutstanding.toLocaleString()}`,
+          text: `Account Statement from ${receiptSettings.businessName} - ${balanceText}`,
         })
         toast({
           title: "Shared Successfully",
@@ -990,16 +1160,17 @@ export default function CustomerStatement() {
         })
         return
       } catch (error) {
-        if ((error as Error).name !== "AbortError") {
-          console.log("Share failed, falling back to text share")
-        } else {
+        if ((error as Error).name === "AbortError") {
           return
         }
+        // Share failed, fall back to text share
       }
     }
 
     // Fallback: Open WhatsApp with text message
     const closingBalance = transactions.length > 0 ? transactions[0].balance : 0
+    const balanceLabel = closingBalance < 0 ? "CREDIT BALANCE" : "CURRENT BALANCE"
+    const displayBalance = Math.abs(closingBalance)
 
     const message = `*ACCOUNT STATEMENT*
 ${receiptSettings.businessName}
@@ -1012,8 +1183,9 @@ ${receiptSettings.businessName}
 Total Bills: ${stats.totalBills}
 Total Purchases: Rs. ${stats.totalPurchases.toLocaleString()}
 Total Paid: Rs. ${stats.totalPaid.toLocaleString()}
+Total Returns: Rs. ${stats.totalReturnCredits.toLocaleString()}
 
-*CURRENT BALANCE: Rs. ${Math.round(closingBalance).toLocaleString()}*
+*${balanceLabel}: Rs. ${Math.round(displayBalance).toLocaleString()}*
 
 Thank you for your business!`
 
@@ -1174,9 +1346,11 @@ Thank you for your business!`
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-blue-200/80 text-[10px] font-semibold tracking-wider uppercase">Outstanding Balance</p>
-                <p className="text-2xl md:text-3xl font-bold tracking-tight tabular-nums" data-testid="text-current-balance">
-                  <span className="text-base md:text-lg font-normal opacity-60">Rs.</span> {stats.totalOutstanding.toLocaleString()}
+                <p className="text-blue-200/80 text-[10px] font-semibold tracking-wider uppercase">
+                  {stats.hasCredit ? "Credit Balance" : "Outstanding Balance"}
+                </p>
+                <p className={`text-2xl md:text-3xl font-bold tracking-tight tabular-nums ${stats.hasCredit ? "text-emerald-300" : ""}`} data-testid="text-current-balance">
+                  <span className="text-base md:text-lg font-normal opacity-60">Rs.</span> {stats.displayOutstanding.toLocaleString()}
                 </p>
                 <p className="text-blue-300/70 text-[10px] mt-0.5">
                   As of {formatDateShort(new Date().toISOString())}
@@ -1222,19 +1396,53 @@ Thank you for your business!`
           </div>
           <div className="stat-tile p-5 rounded-xl">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-lg bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center">
-                <AlertCircle className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${stats.hasCredit ? "bg-emerald-50 dark:bg-emerald-900/30" : "bg-rose-50 dark:bg-rose-900/30"}`}>
+                <AlertCircle className={`h-5 w-5 ${stats.hasCredit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`} />
               </div>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Due</p>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                {stats.hasCredit ? "Credit" : "Due"}
+              </p>
             </div>
-            <p className="text-2xl font-bold text-rose-600 dark:text-rose-400" data-testid="text-outstanding">
-              Rs. {stats.totalOutstanding.toLocaleString()}
+            <p className={`text-2xl font-bold ${stats.hasCredit ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`} data-testid="text-outstanding">
+              Rs. {stats.displayOutstanding.toLocaleString()}
             </p>
           </div>
         </div>
 
+        {/* Returns Summary Card */}
+        {stats.totalReturnCredits > 0 && (
+          <div className="mb-6">
+            <Card className="border-0 shadow-lg bg-orange-50/50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 rounded-xl">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                      <Package className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">Total Returns</p>
+                      <p className="text-xs text-orange-600/80 dark:text-orange-400/80">
+                        {stats.totalReturns} return{stats.totalReturns !== 1 ? 's' : ''} processed
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Return Credits</p>
+                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">
+                      Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-orange-600/70 dark:text-orange-400/70">
+                      Deducted from outstanding balance
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         <Tabs defaultValue="transactions" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          <TabsList className="grid w-full grid-cols-5 mb-6 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
             <TabsTrigger 
               value="transactions" 
               className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm" 
@@ -1266,6 +1474,14 @@ Thank you for your business!`
             >
               <CalendarClock className="h-4 w-4" />
               <span className="hidden sm:inline">Due</span> ({scheduledPayments.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="returns" 
+              className="flex items-center gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm"
+              data-testid="tab-returns"
+            >
+              <Package className="h-4 w-4" />
+              <span className="hidden sm:inline">Returns</span> ({customerReturns.length})
             </TabsTrigger>
           </TabsList>
 
@@ -1369,7 +1585,7 @@ Thank you for your business!`
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right font-medium text-emerald-600 dark:text-emerald-400">
-                                  {txn.type === "payment" || txn.type === "return" ? (
+                                  {txn.credit > 0 ? (
                                     <span className="font-mono">Rs. {Math.round(txn.credit).toLocaleString()}</span>
                                   ) : (
                                     <span className="text-slate-400">-</span>
@@ -1507,57 +1723,178 @@ Thank you for your business!`
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {paidSales.map((sale) => (
-                      <div
-                        key={sale.id}
-                        className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
-                        data-testid={`card-paid-${sale.id}`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div
-                            className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                              sale.isManualBalance 
-                                ? "bg-amber-50 dark:bg-amber-900/20" 
-                                : "bg-emerald-50 dark:bg-emerald-900/20"
-                            }`}
-                          >
-                            {sale.isManualBalance ? (
-                              <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                            ) : (
-                              <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    {paidSales.map((sale) => {
+                      const saleReturns = getSaleReturns(sale.id)
+                      const total = safeParseFloat(sale.totalAmount)
+                      const paid = safeParseFloat(sale.amountPaid)
+                      const outstanding = roundNumber(total - paid - saleReturns)
+                      
+                      return (
+                        <div
+                          key={sale.id}
+                          className="p-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800/50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
+                          data-testid={`card-paid-${sale.id}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                                sale.isManualBalance 
+                                  ? "bg-amber-50 dark:bg-amber-900/20" 
+                                  : "bg-emerald-50 dark:bg-emerald-900/20"
+                              }`}
+                            >
+                              {sale.isManualBalance ? (
+                                <Landmark className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                              ) : (
+                                <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-800 dark:text-white">
+                                  {sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`}
+                                </p>
+                                <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                  PAID
+                                </Badge>
+                                {saleReturns > 0 && (
+                                  <Badge variant="outline" className="border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                    Return: Rs. {Math.round(saleReturns).toLocaleString()}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">{formatDateShort(sale.createdAt)}</p>
+                              {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
+                              {saleReturns > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                  Returns deducted: Rs. {Math.round(saleReturns).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Amount</p>
+                              <p className="text-xl font-bold text-slate-800 dark:text-white font-mono">
+                                Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
+                              </p>
+                              <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium font-mono">
+                                <div>Paid: Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}</div>
+                                {saleReturns > 0 && (
+                                  <div className="text-orange-600 dark:text-orange-400">
+                                    Returns: Rs. {Math.round(saleReturns).toLocaleString()}
+                                  </div>
+                                )}
+                                <div className="font-bold mt-1">
+                                  Balance: Rs. {Math.round(outstanding).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                            <Link href={`/bill/${sale.id}?from=customer`}>
+                              <Button size="icon" variant="outline" className="border-slate-200 dark:border-slate-600" data-testid={`button-view-paid-${sale.id}`}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="returns">
+            <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
+              <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                    <Package className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  Return History
+                  {customerReturns.length > 0 && (
+                    <Badge variant="outline" className="ml-2 border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                      Total: Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4">
+                {customerReturns.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400">
+                    <Package className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>No returns recorded</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {customerReturns.map((ret) => {
+                      const refundAmount = safeParseFloat(ret.totalRefund)
+                      const returnItems = ret.returnItems?.map((item: any) => ({
+                        productName: item.color?.variant?.product?.productName || "Product",
+                        variantName: item.color?.variant?.packingSize || "Variant",
+                        colorName: item.color?.colorName || "Color",
+                        colorCode: item.color?.colorCode || "",
+                        quantity: item.quantity,
+                        rate: safeParseFloat(item.rate),
+                        subtotal: safeParseFloat(item.subtotal),
+                      })) || []
+
+                      return (
+                        <div
+                          key={ret.id}
+                          className="p-4 rounded-xl border border-orange-200 bg-orange-50/30 dark:border-orange-800 dark:bg-orange-900/20 flex flex-col md:flex-row md:items-center md:justify-between gap-4 hover:shadow-md transition-shadow"
+                          data-testid={`card-return-${ret.id}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
+                              <Package className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-slate-800 dark:text-white">
+                                  {ret.returnType === "bill" ? "Full Bill Return" : "Item Return"}
+                                </p>
+                                <Badge variant="outline" className="border-orange-300 bg-orange-100 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                  REFUND
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                                {formatDateShort(ret.createdAt)}
+                              </p>
+                              {ret.reason && (
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
+                                  <span className="font-medium">Reason:</span> {ret.reason}
+                                </p>
+                              )}
+                              {returnItems.length > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                  {returnItems.length} item{returnItems.length > 1 ? 's' : ''} returned
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Refund Amount</p>
+                              <p className="text-xl font-bold text-orange-600 dark:text-orange-400 font-mono">
+                                Rs. {Math.round(refundAmount).toLocaleString()}
+                              </p>
+                              <p className="text-xs text-orange-600/80 dark:text-orange-400/80 mt-0.5">
+                                Deducted from bill balance
+                              </p>
+                            </div>
+                            {ret.saleId && (
+                              <Link href={`/bill/${ret.saleId}?from=customer`}>
+                                <Button size="icon" variant="outline" className="border-orange-300 dark:border-orange-600">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
                             )}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-semibold text-slate-800 dark:text-white">
-                                {sale.isManualBalance ? "Manual Balance" : `Bill #${sale.id.slice(0, 8)}`}
-                              </p>
-                              <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                PAID
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">{formatDateShort(sale.createdAt)}</p>
-                            {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
-                          </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Amount</p>
-                            <p className="text-xl font-bold text-slate-800 dark:text-white font-mono">
-                              Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
-                            </p>
-                            <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium font-mono">
-                              Paid: Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()}
-                            </p>
-                          </div>
-                          <Link href={`/bill/${sale.id}?from=customer`}>
-                            <Button size="icon" variant="outline" className="border-slate-200 dark:border-slate-600" data-testid={`button-view-paid-${sale.id}`}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -1645,17 +1982,33 @@ Thank you for your business!`
                                 Rs. {Math.round(payment.outstanding).toLocaleString()}
                               </p>
                             </div>
-                            <Button
-                              onClick={() => {
-                                setSelectedSaleId(payment.id)
-                                setPaymentDialogOpen(true)
-                              }}
-                              className="action-btn text-white border-0"
-                              data-testid={`button-pay-${payment.id}`}
-                            >
-                              <Wallet className="h-4 w-4 mr-2" />
-                              Pay
-                            </Button>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedSaleId(payment.id)
+                                  setPaymentAmount("")
+                                  setPaymentDialogOpen(true)
+                                }}
+                                className="border-slate-200 dark:border-slate-600"
+                                data-testid={`button-pay-${payment.id}`}
+                              >
+                                <Wallet className="h-4 w-4 mr-2" />
+                                Pay
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  setSelectedSaleId(payment.id)
+                                  setPaymentAmount(String(Math.round(payment.outstanding)))
+                                  setPaymentDialogOpen(true)
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                data-testid={`button-pay-full-scheduled-${payment.id}`}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Pay Full
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       )
@@ -1669,12 +2022,29 @@ Thank you for your business!`
           <TabsContent value="unpaid-bills">
             <Card className="border-0 shadow-lg bg-white dark:bg-slate-800/50 rounded-xl overflow-hidden">
               <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-700">
-                <CardTitle className="flex items-center gap-3 text-lg">
-                  <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
-                    <Receipt className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                  </div>
-                  Outstanding Bills
-                </CardTitle>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <CardTitle className="flex items-center gap-3 text-lg">
+                    <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
+                      <Receipt className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                    </div>
+                    Outstanding Bills
+                    {unpaidSales.length > 0 && (
+                      <Badge variant="outline" className="ml-2 border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                        {unpaidSales.length} bill{unpaidSales.length > 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  {unpaidSales.length > 0 && (
+                    <Button
+                      onClick={() => setClearAccountDialogOpen(true)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                      data-testid="button-pay-full-account"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Pay Full (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-4">
                 {unpaidSales.length === 0 ? (
@@ -1685,8 +2055,11 @@ Thank you for your business!`
                 ) : (
                   <div className="space-y-3">
                     {unpaidSales.map((sale) => {
-                      const outstanding = safeParseFloat(sale.totalAmount) - safeParseFloat(sale.amountPaid)
-                      const paidPercent = (safeParseFloat(sale.amountPaid) / safeParseFloat(sale.totalAmount)) * 100
+                      const saleReturns = getSaleReturns(sale.id)
+                      const total = safeParseFloat(sale.totalAmount)
+                      const paid = safeParseFloat(sale.amountPaid)
+                      const outstanding = roundNumber(total - paid - saleReturns)
+                      const paidPercent = (paid / total) * 100
                       return (
                         <div
                           key={sale.id}
@@ -1722,12 +2095,22 @@ Thank you for your business!`
                                 >
                                   {sale.paymentStatus.toUpperCase()}
                                 </Badge>
+                                {saleReturns > 0 && (
+                                  <Badge variant="outline" className="border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
+                                    Return: Rs. {Math.round(saleReturns).toLocaleString()}
+                                  </Badge>
+                                )}
                               </div>
                               <p className="text-sm text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                                 {formatDateShort(sale.createdAt)}
                                 {sale.dueDate && <span className="text-slate-400 dark:text-slate-500"> | Due: {formatDateShort(sale.dueDate)}</span>}
                               </p>
                               {sale.notes && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 italic">{sale.notes}</p>}
+                              {saleReturns > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                                  Returns deducted: Rs. {Math.round(saleReturns).toLocaleString()}
+                                </p>
+                              )}
                               <div className="w-40 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-2 overflow-hidden">
                                 <div
                                   className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all"
@@ -1735,7 +2118,7 @@ Thank you for your business!`
                                 />
                               </div>
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">
-                                Rs. {Math.round(safeParseFloat(sale.amountPaid)).toLocaleString()} / Rs. {Math.round(safeParseFloat(sale.totalAmount)).toLocaleString()}
+                                Rs. {Math.round(paid).toLocaleString()} / Rs. {Math.round(total).toLocaleString()}
                               </p>
                             </div>
                           </div>
@@ -1745,6 +2128,11 @@ Thank you for your business!`
                               <p className="text-2xl font-bold text-rose-600 dark:text-rose-400 font-mono">
                                 Rs. {Math.round(outstanding).toLocaleString()}
                               </p>
+                              {saleReturns > 0 && (
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">
+                                  (Incl. Rs. {Math.round(saleReturns).toLocaleString()} returns)
+                                </p>
+                              )}
                             </div>
                             <div className="flex gap-2">
                               <Link href={`/bill/${sale.id}?from=customer`}>
@@ -1753,11 +2141,13 @@ Thank you for your business!`
                                 </Button>
                               </Link>
                               <Button
+                                variant="outline"
                                 onClick={() => {
                                   setSelectedSaleId(sale.id)
+                                  setPaymentAmount("")
                                   setPaymentDialogOpen(true)
                                 }}
-                                className="action-btn text-white border-0"
+                                className="border-slate-200 dark:border-slate-600"
                                 data-testid={`button-receive-payment-${sale.id}`}
                               >
                                 <Wallet className="h-4 w-4 mr-2" />
@@ -1785,6 +2175,11 @@ Thank you for your business!`
             </DialogTitle>
             <DialogDescription>
               Outstanding: Rs. {Math.round(selectedSaleOutstanding).toLocaleString()}
+              {selectedSaleReturns > 0 && (
+                <span className="text-orange-600 ml-2">
+                  (Returns: Rs. {Math.round(selectedSaleReturns).toLocaleString()} deducted)
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1987,6 +2382,98 @@ Thank you for your business!`
             </Button>
             <Button onClick={handleAddCashLoan} disabled={addCashLoanMutation.isPending} data-testid="button-add-loan">
               {addCashLoanMutation.isPending ? "Adding..." : "Add Balance"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pay Full Account Dialog */}
+      <Dialog open={clearAccountDialogOpen} onOpenChange={setClearAccountDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-600">
+              <CheckCircle className="h-5 w-5" />
+              Pay Full Account
+            </DialogTitle>
+            <DialogDescription>
+              Pay all outstanding bills at once to clear the customer's account balance. 
+              The selected payment method and notes will be applied to each bill.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Summary Card */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-slate-500 dark:text-slate-400">Customer</span>
+                <span className="font-semibold text-slate-800 dark:text-white">{customerName}</span>
+              </div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-slate-500 dark:text-slate-400">Unpaid Bills</span>
+                <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                  {unpaidSales.length} bill{unpaidSales.length > 1 ? "s" : ""}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm text-slate-500 dark:text-slate-400">Total Returns</span>
+                <span className="font-semibold text-orange-600 dark:text-orange-400">
+                  Rs. {Math.round(stats.totalReturnCredits).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-600">
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Total Outstanding</span>
+                <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                  Rs. {Math.round(stats.totalOutstanding).toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Payment Method</Label>
+              <Select value={clearAccountMethod} onValueChange={setClearAccountMethod}>
+                <SelectTrigger data-testid="select-clear-method">
+                  <SelectValue placeholder="Select payment method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="upi">UPI</SelectItem>
+                  <SelectItem value="easypaisa">EasyPaisa</SelectItem>
+                  <SelectItem value="jazzcash">JazzCash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                placeholder="Add notes for this full account clearance..."
+                value={clearAccountNotes}
+                onChange={(e) => setClearAccountNotes(e.target.value)}
+                data-testid="input-clear-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setClearAccountDialogOpen(false)} disabled={clearAccountProcessing}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleClearFullAccount}
+              disabled={clearAccountProcessing || unpaidSales.length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              data-testid="button-confirm-pay-full"
+            >
+              {clearAccountProcessing ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Pay Full (Rs. {Math.round(stats.totalOutstanding).toLocaleString()})
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

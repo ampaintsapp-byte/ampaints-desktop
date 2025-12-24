@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Settings2, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette, CalendarDays, Check, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { Settings2, Receipt, Bluetooth, Printer, Database, Download, Upload, FolderOpen, Palette, CalendarDays, Check, Lock, Eye, EyeOff, ShieldCheck, Key, Calendar, AlertCircle, Zap } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -49,7 +49,7 @@ const dateFormats: { value: DateFormatType; label: string; description: string; 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
+  
   const { data: uiSettings, isLoading: isLoadingSettings } = useQuery<UISettings>({
     queryKey: ["/api/settings"],
   });
@@ -64,6 +64,39 @@ export default function Settings() {
     dateFormat: "DD-MM-YYYY",
   });
 
+  // Receipt settings state
+  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
+  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
+  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
+  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
+  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
+  const [receiptFontSize, setReceiptFontSize] = useState("11");
+  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
+  const [receiptPadding, setReceiptPadding] = useState("12");
+
+  // Bill display settings state
+  const [showCompanyName, setShowCompanyName] = useState(true);
+  const [showGST, setShowGST] = useState(true);
+  const [autoprint, setAutoprint] = useState(false);
+  const [billFooter, setBillFooter] = useState("Thank you for your business!");
+
+  // Bluetooth printer state
+  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
+  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
+
+  // Database management state
+  const [databasePath, setDatabasePath] = useState<string>("");
+  const [isElectron, setIsElectron] = useState(false);
+
+  // Database PIN verification state
+  const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
+  const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
+  const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
+  const [databasePinError, setDatabasePinError] = useState("");
+  const [showDatabasePin, setShowDatabasePin] = useState(false);
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  // Sync form data when settings are loaded
   useEffect(() => {
     if (uiSettings) {
       setUiFormData({
@@ -78,14 +111,59 @@ export default function Settings() {
     }
   }, [uiSettings]);
 
+  // Load receipt settings and check for electron
+  useEffect(() => {
+    // Check if running in Electron
+    if (typeof window !== 'undefined' && (window as any).electron) {
+      setIsElectron(true);
+      (window as any).electron.getDatabasePath().then((path: string) => {
+        setDatabasePath(path);
+      }).catch((error: any) => {
+        console.error("Failed to get database path:", error);
+      });
+    }
+
+    // Load receipt settings from localStorage
+    try {
+      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
+      if (savedReceiptSettings) {
+        const settings = JSON.parse(savedReceiptSettings);
+        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
+        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
+        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
+        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
+        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
+        setReceiptFontSize(settings.fontSize || "11");
+        setReceiptItemFontSize(settings.itemFontSize || "12");
+        setReceiptPadding(settings.padding || "12");
+      }
+    } catch (error) {
+      console.error("Error loading receipt settings:", error);
+      // Non-critical error - just use defaults
+      toast({
+        title: "Using Default Settings",
+        description: "Could not load saved receipt settings. Using default values instead.",
+      });
+    }
+  }, [toast]);
+
+  // UI Settings mutation
   const updateUiMutation = useMutation({
     mutationFn: async (data: UpdateSettings) => {
+      // Validate storeName before sending
+      if (!data.storeName || data.storeName.trim().length === 0) {
+        throw new Error("Store name cannot be empty");
+      }
+
       const response = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!response.ok) throw new Error("Failed to update settings");
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Failed to update settings" }));
+        throw new Error(error.error || "Failed to update settings");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -95,25 +173,16 @@ export default function Settings() {
         description: "Your settings have been updated successfully.",
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to save settings. Please try again.",
+        description: error.message || "Failed to save settings. Please try again.",
         variant: "destructive",
       });
     },
   });
-  
-  const [databasePath, setDatabasePath] = useState<string>("");
-  const [isElectron, setIsElectron] = useState(false);
 
-  const [isDatabaseUnlocked, setIsDatabaseUnlocked] = useState(false);
-  const [showDatabasePinDialog, setShowDatabasePinDialog] = useState(false);
-  const [databasePinInput, setDatabasePinInput] = useState(["", "", "", ""]);
-  const [databasePinError, setDatabasePinError] = useState("");
-  const [showDatabasePin, setShowDatabasePin] = useState(false);
-  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
-
+  // Database tab click handler
   const handleDatabaseTabClick = () => {
     if (!uiSettings?.permDatabaseAccess) {
       toast({
@@ -148,6 +217,15 @@ export default function Settings() {
   };
 
   const verifyDatabasePin = async (pin: string) => {
+    // Validate PIN format
+    if (!/^\d{4}$/.test(pin)) {
+      setDatabasePinError("PIN must be 4 digits");
+      setDatabasePinInput(["", "", "", ""]);
+      const firstInput = document.querySelector('[data-testid="input-db-pin-0"]') as HTMLInputElement;
+      firstInput?.focus();
+      return;
+    }
+
     setIsVerifyingPin(true);
     try {
       const response = await apiRequest("POST", "/api/audit/verify", { pin });
@@ -155,10 +233,13 @@ export default function Settings() {
         setIsDatabaseUnlocked(true);
         setShowDatabasePinDialog(false);
         setDatabasePinInput(["", "", "", ""]);
+        setDatabasePinError("");
         toast({
           title: "Database Unlocked",
           description: "You can now access database management.",
         });
+      } else {
+        throw new Error("Invalid PIN");
       }
     } catch (error) {
       setDatabasePinError("Invalid PIN. Please try again.");
@@ -169,92 +250,143 @@ export default function Settings() {
       setIsVerifyingPin(false);
     }
   };
-  
-  useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).electron) {
-      setIsElectron(true);
-      (window as any).electron.getDatabasePath().then((path: string) => {
-        setDatabasePath(path);
+
+  // Handler to save receipt settings with validation
+  const handleSaveBillSettings = () => {
+    try {
+      // Validate font sizes
+      const fontSize = parseInt(receiptFontSize);
+      const itemFontSize = parseInt(receiptItemFontSize);
+      const padding = parseInt(receiptPadding);
+
+      if (isNaN(fontSize) || fontSize < 8 || fontSize > 16) {
+        toast({ 
+          title: "Invalid Font Size", 
+          description: "General font size must be between 8 and 16 pixels",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (isNaN(itemFontSize) || itemFontSize < 10 || itemFontSize > 18) {
+        toast({ 
+          title: "Invalid Font Size", 
+          description: "Item font size must be between 10 and 18 pixels",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      if (isNaN(padding) || padding < 0 || padding > 20) {
+        toast({ 
+          title: "Invalid Padding", 
+          description: "Padding must be between 0 and 20 pixels",
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Validate required fields
+      if (!receiptBusinessName.trim()) {
+        toast({ 
+          title: "Invalid Input", 
+          description: "Business name cannot be empty",
+          variant: "destructive" 
+        });
+        return;
+      }
+    
+      const receiptSettings = {
+        businessName: receiptBusinessName.trim(),
+        address: receiptAddress.trim(),
+        dealerText: receiptDealerText.trim(),
+        dealerBrands: receiptDealerBrands.trim(),
+        thankYou: receiptThankYou.trim(),
+        fontSize: receiptFontSize,
+        itemFontSize: receiptItemFontSize,
+        padding: receiptPadding,
+      };
+      
+      localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
+      toast({ 
+        title: "Success",
+        description: "Receipt settings saved successfully" 
+      });
+    } catch (error) {
+      console.error("Error saving receipt settings:", error);
+      toast({ 
+        title: "Error", 
+        description: "Failed to save receipt settings",
+        variant: "destructive" 
       });
     }
-    
-    try {
-      const savedReceiptSettings = localStorage.getItem('posReceiptSettings');
-      if (savedReceiptSettings) {
-        const settings = JSON.parse(savedReceiptSettings);
-        setReceiptBusinessName(settings.businessName || "ALI MUHAMMAD PAINTS");
-        setReceiptAddress(settings.address || "Basti Malook, Multan. 0300-868-3395");
-        setReceiptDealerText(settings.dealerText || "AUTHORIZED DEALER:");
-        setReceiptDealerBrands(settings.dealerBrands || "ICI-DULUX • MOBI PAINTS • WESTER 77");
-        setReceiptThankYou(settings.thankYou || "THANKS FOR YOUR BUSINESS");
-        setReceiptFontSize(settings.fontSize || "11");
-        setReceiptItemFontSize(settings.itemFontSize || "12");
-        setReceiptPadding(settings.padding || "12");
-      }
-    } catch (error) {
-      console.error("Error loading receipt settings:", error);
-    }
-  }, []);
-
-  const [showCompanyName, setShowCompanyName] = useState(true);
-  const [showGST, setShowGST] = useState(true);
-  const [autoprint, setAutoprint] = useState(false);
-  const [billFooter, setBillFooter] = useState("Thank you for your business!");
-  
-  const [receiptBusinessName, setReceiptBusinessName] = useState("ALI MUHAMMAD PAINTS");
-  const [receiptAddress, setReceiptAddress] = useState("Basti Malook, Multan. 0300-868-3395");
-  const [receiptDealerText, setReceiptDealerText] = useState("AUTHORIZED DEALER:");
-  const [receiptDealerBrands, setReceiptDealerBrands] = useState("ICI-DULUX • MOBI PAINTS • WESTER 77");
-  const [receiptThankYou, setReceiptThankYou] = useState("THANKS FOR YOUR BUSINESS");
-  const [receiptFontSize, setReceiptFontSize] = useState("11");
-  const [receiptItemFontSize, setReceiptItemFontSize] = useState("12");
-  const [receiptPadding, setReceiptPadding] = useState("12");
-
-  const [bluetoothEnabled, setBluetoothEnabled] = useState(false);
-  const [connectedDevice, setConnectedDevice] = useState<string | null>(null);
-
-  const handleSaveBillSettings = () => {
-    const receiptSettings = {
-      businessName: receiptBusinessName,
-      address: receiptAddress,
-      dealerText: receiptDealerText,
-      dealerBrands: receiptDealerBrands,
-      thankYou: receiptThankYou,
-      fontSize: receiptFontSize,
-      itemFontSize: receiptItemFontSize,
-      padding: receiptPadding,
-    };
-    localStorage.setItem('posReceiptSettings', JSON.stringify(receiptSettings));
-    toast({ title: "Receipt settings saved successfully" });
   };
 
+  // Bluetooth handlers
   const handleConnectBluetooth = async () => {
     try {
+      // Check if Bluetooth API is available
+      if (!navigator.bluetooth) {
+        toast({ 
+          title: "Bluetooth Not Available", 
+          description: "Your browser doesn't support Bluetooth. Use Chrome or Edge.",
+          variant: "destructive" 
+        });
+        return;
+      }
+
       const device = await (navigator as any).bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: ['battery_service']
       });
       
-      setConnectedDevice(device.name);
-      setBluetoothEnabled(true);
-      toast({ title: `Connected to ${device.name}` });
-    } catch (error) {
-      toast({ 
-        title: "Bluetooth connection failed", 
-        description: "Make sure Bluetooth is enabled and the device is in pairing mode",
-        variant: "destructive" 
-      });
+      if (device && device.name) {
+        setConnectedDevice(device.name);
+        setBluetoothEnabled(true);
+        toast({ 
+          title: "Connected Successfully",
+          description: `Connected to ${device.name}` 
+        });
+      }
+    } catch (error: any) {
+      console.error("Bluetooth connection error:", error);
+      
+      // Handle user cancellation gracefully
+      if (error.name === 'NotFoundError') {
+        toast({ 
+          title: "No Device Selected", 
+          description: "Please select a device from the list",
+          variant: "destructive" 
+        });
+      } else {
+        toast({ 
+          title: "Bluetooth Connection Failed", 
+          description: "Make sure Bluetooth is enabled and the device is in pairing mode",
+          variant: "destructive" 
+        });
+      }
     }
   };
 
   const handleDisconnectBluetooth = () => {
     setConnectedDevice(null);
     setBluetoothEnabled(false);
-    toast({ title: "Bluetooth disconnected" });
+    toast({ 
+      title: "Disconnected",
+      description: "Bluetooth printer disconnected" 
+    });
   };
   
+  // Database management handlers
   const handleChangeDatabaseLocation = async () => {
-    if (!(window as any).electron) return;
+    if (!(window as any).electron) {
+      toast({
+        title: "Not Available",
+        description: "This feature is only available in the desktop application.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     try {
       const newPath = await (window as any).electron.selectDatabaseLocation();
@@ -264,10 +396,11 @@ export default function Settings() {
           description: "Application will restart to apply changes.",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Database location change error:", error);
       toast({
         title: "Error",
-        description: "Failed to change database location.",
+        description: error.message || "Failed to change database location.",
         variant: "destructive",
       });
     }
@@ -277,29 +410,33 @@ export default function Settings() {
     if ((window as any).electron) {
       try {
         const result = await (window as any).electron.exportDatabase();
-        if (result.success) {
+        if (result && result.success) {
           toast({
             title: "Export Successful",
-            description: `Database exported successfully!`,
+            description: "Database exported successfully!",
           });
         } else {
           toast({
             title: "Export Failed",
-            description: result.error || "Unknown error occurred",
+            description: result?.error || "Unknown error occurred",
             variant: "destructive",
           });
         }
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Database export error:", error);
         toast({
           title: "Error",
-          description: "Failed to export database.",
+          description: error.message || "Failed to export database.",
           variant: "destructive",
         });
       }
     } else {
       try {
         const response = await fetch("/api/database/export");
-        if (!response.ok) throw new Error("Export failed");
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Export failed" }));
+          throw new Error(errorData.error || "Export failed");
+        }
         
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -315,10 +452,11 @@ export default function Settings() {
           title: "Export Successful",
           description: "Database backup downloaded successfully!",
         });
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Database export error:", error);
         toast({
           title: "Error",
-          description: "Failed to export database.",
+          description: error.message || "Failed to export database.",
           variant: "destructive",
         });
       }
@@ -326,10 +464,15 @@ export default function Settings() {
   };
 
   const handleImportDatabase = async () => {
+    // Confirm before importing as it will replace all data
+    if (!confirm("⚠️ Warning: Importing a database will replace ALL your current data. This action cannot be undone. Do you want to continue?")) {
+      return;
+    }
+
     if ((window as any).electron) {
       try {
         const result = await (window as any).electron.importDatabase();
-        if (result.success) {
+        if (result && result.success) {
           toast({
             title: "Import Successful",
             description: "Application will restart to apply changes.",
@@ -337,14 +480,15 @@ export default function Settings() {
         } else {
           toast({
             title: "Import Failed",
-            description: result.error || "Unknown error occurred",
+            description: result?.error || "Unknown error occurred",
             variant: "destructive",
           });
         }
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Database import error:", error);
         toast({
           title: "Error",
-          description: "Failed to import database.",
+          description: error.message || "Failed to import database.",
           variant: "destructive",
         });
       }
@@ -355,42 +499,81 @@ export default function Settings() {
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (!file) return;
+
+        // Validate file extension
+        if (!file.name.endsWith('.db')) {
+          toast({
+            title: "Invalid File",
+            description: "Please select a valid database file (.db)",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Validate file size (max 100MB)
+        if (file.size > 100 * 1024 * 1024) {
+          toast({
+            title: "File Too Large",
+            description: "Database file must be less than 100MB",
+            variant: "destructive",
+          });
+          return;
+        }
         
         try {
           const reader = new FileReader();
           reader.onload = async (e) => {
-            const arrayBuffer = e.target?.result as ArrayBuffer;
-            const base64 = btoa(
-              new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-            );
-            
-            const response = await fetch("/api/database/import", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ fileData: base64 }),
-            });
-            
-            const result = await response.json();
-            
-            if (response.ok && result.success) {
-              toast({
-                title: "Import Successful",
-                description: "Database imported. Refreshing page...",
+            try {
+              const arrayBuffer = e.target?.result as ArrayBuffer;
+              const base64 = btoa(
+                new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+              );
+              
+              const response = await fetch("/api/database/import", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fileData: base64 }),
               });
-              setTimeout(() => window.location.reload(), 1500);
-            } else {
+              
+              const result = await response.json();
+              
+              if (response.ok && result.success) {
+                toast({
+                  title: "Import Successful",
+                  description: "Database imported. Refreshing page...",
+                });
+                setTimeout(() => window.location.reload(), 1500);
+              } else {
+                toast({
+                  title: "Import Failed",
+                  description: result.error || "Unknown error occurred",
+                  variant: "destructive",
+                });
+              }
+            } catch (error: any) {
+              console.error("File processing error:", error);
               toast({
-                title: "Import Failed",
-                description: result.error || "Unknown error occurred",
+                title: "Error",
+                description: error.message || "Failed to process database file.",
                 variant: "destructive",
               });
             }
           };
+          
+          reader.onerror = () => {
+            toast({
+              title: "Error",
+              description: "Failed to read database file.",
+              variant: "destructive",
+            });
+          };
+          
           reader.readAsArrayBuffer(file);
-        } catch (error) {
+        } catch (error: any) {
+          console.error("Database import error:", error);
           toast({
             title: "Error",
-            description: "Failed to import database.",
+            description: error.message || "Failed to import database.",
             variant: "destructive",
           });
         }
@@ -1105,71 +1288,71 @@ export default function Settings() {
               </div>
             </div>
           ) : (
-          <div className="glass-card p-5" data-testid="card-database-settings">
-            <div className="flex items-center gap-2 mb-1">
-              <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-              <h3 className="font-semibold">Database Management</h3>
-              <Badge variant="secondary" className="ml-2">Unlocked</Badge>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">Manage your database backups and restore data</p>
-            <div className="space-y-4">
-              {isElectron && (
-                <>
-                  <div className="space-y-2">
-                    <Label>Current Database Location</Label>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-muted/50 rounded-lg text-sm font-mono" data-testid="text-database-path">
-                        {databasePath || "Loading..."}
-                      </code>
-                    </div>
-                  </div>
-                  <Separator className="opacity-50" />
-                </>
-              )}
-
-              <div className="flex flex-wrap gap-3">
+            <div className="glass-card p-5" data-testid="card-database-settings">
+              <div className="flex items-center gap-2 mb-1">
+                <Database className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-semibold">Database Management</h3>
+                <Badge variant="secondary" className="ml-2">Unlocked</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">Manage your database backups and restore data</p>
+              <div className="space-y-4">
                 {isElectron && (
-                  <Button 
-                    onClick={handleChangeDatabaseLocation}
-                    variant="outline"
-                    data-testid="button-change-location"
-                  >
-                    <FolderOpen className="h-4 w-4 mr-2" />
-                    Change Location
-                  </Button>
+                  <>
+                    <div className="space-y-2">
+                      <Label>Current Database Location</Label>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 p-2 bg-muted/50 rounded-lg text-sm font-mono" data-testid="text-database-path">
+                          {databasePath || "Loading..."}
+                        </code>
+                      </div>
+                    </div>
+                    <Separator className="opacity-50" />
+                  </>
                 )}
-                <Button 
-                  onClick={handleExportDatabase}
-                  variant="outline"
-                  data-testid="button-export"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Backup
-                </Button>
-                <Button 
-                  onClick={handleImportDatabase}
-                  variant="outline"
-                  data-testid="button-import"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Import Database
-                </Button>
-              </div>
 
-              <Separator className="opacity-50" />
+                <div className="flex flex-wrap gap-3">
+                  {isElectron && (
+                    <Button 
+                      onClick={handleChangeDatabaseLocation}
+                      variant="outline"
+                      data-testid="button-change-location"
+                    >
+                      <FolderOpen className="h-4 w-4 mr-2" />
+                      Change Location
+                    </Button>
+                  )}
+                  <Button 
+                    onClick={handleExportDatabase}
+                    variant="outline"
+                    data-testid="button-export"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Backup
+                  </Button>
+                  <Button 
+                    onClick={handleImportDatabase}
+                    variant="outline"
+                    data-testid="button-import"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import Database
+                  </Button>
+                </div>
 
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
-                <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                  {isElectron && <li>Changing database location will restart the application</li>}
-                  <li>Export your database regularly to prevent data loss</li>
-                  <li>Importing a database will replace your current data</li>
-                  <li>Keep your database backups in a safe location</li>
-                  <li>Export creates a .db file you can download and save</li>
-                </ul>
+                <Separator className="opacity-50" />
+
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium text-sm mb-2">Important Notes:</h4>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    {isElectron && <li>Changing database location will restart the application</li>}
+                    <li>Export your database regularly to prevent data loss</li>
+                    <li>Importing a database will replace your current data</li>
+                    <li>Keep your database backups in a safe location</li>
+                    <li>Export creates a .db file you can download and save</li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </div>
           )}
         </TabsContent>
       </Tabs>

@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { log } from "./utils";
 import { isDatabaseReady } from "./db";
+import { startHeartbeatInterval, isNeonLicenseConfigured } from "./neonLicenseService";
 
 const app = express();
 
@@ -96,6 +97,34 @@ app.use((req, res, next) => {
     const port = parseInt(process.env.PORT || '5000', 10);
     server.listen(port, "0.0.0.0", () => {
       log(`[Server] serving on port ${port}`);
+    });
+
+    // Start Neon license heartbeat if configured
+    let stopHeartbeat: (() => void) | null = null;
+    if (isNeonLicenseConfigured()) {
+      log("[NeonLicense] Starting heartbeat interval for license tracking...");
+      stopHeartbeat = startHeartbeatInterval();
+      log("[NeonLicense] ✅ Heartbeat service started");
+    } else {
+      log("[NeonLicense] Not configured - heartbeat disabled (set NEON_LICENSE_DB_URL to enable)");
+    }
+
+    // Handle graceful shutdown
+    process.on("SIGINT", () => {
+      log("[Server] Shutting down gracefully...");
+      if (stopHeartbeat) {
+        stopHeartbeat();
+        log("[NeonLicense] Heartbeat stopped, session ended");
+      }
+      process.exit(0);
+    });
+    process.on("SIGTERM", () => {
+      log("[Server] Shutting down gracefully...");
+      if (stopHeartbeat) {
+        stopHeartbeat();
+        log("[NeonLicense] Heartbeat stopped, session ended");
+      }
+      process.exit(0);
     });
   } catch (error) {
     console.error("[Server] ❌ FATAL ERROR starting server:", error);

@@ -142,6 +142,7 @@ export const returns = sqliteTable("returns", {
   returnType: text("return_type").notNull().default("item"), // "bill" for full bill return, "item" for partial return
   totalRefund: text("total_refund").notNull().default("0"), // Total refund amount
   reason: text("reason"), // Optional reason for return
+  refundMethod: text("refund_method").notNull().default("cash"), // cash, credit, bank_transfer
   status: text("status").notNull().default("completed"), // completed, pending
   createdAt: integer("created_at", { mode: "timestamp" })
     .$defaultFn(() => new Date())
@@ -224,7 +225,55 @@ export const settings = sqliteTable("settings", {
   cloudDatabaseUrl: text("cloud_database_url"), // Neon/Supabase PostgreSQL connection URL
   cloudSyncEnabled: integer("cloud_sync_enabled", { mode: "boolean" }).notNull().default(false), // Auto-sync enabled
   lastSyncTime: integer("last_sync_time", { mode: "timestamp" }), // Last successful sync timestamp
+  // Master Admin PIN for Software Blocking (stored as hash for security)
+  masterPinHash: text("master_pin_hash"), // SHA-256 hash of master admin PIN
+  masterPinSalt: text("master_pin_salt"), // Random salt for hashing
+  // Software License Settings
+  licenseExpiryDate: text("license_expiry_date"), // YYYY-MM-DD format for license expiration
+  licenseStatus: text("license_status").notNull().default("active"), // active, deactivated, expired
   updatedAt: integer("updated_at", { mode: "timestamp" })
+    .$defaultFn(() => new Date())
+    .notNull(),
+})
+
+// Software Licenses table - tracks devices and their blocking status
+export const softwareLicenses = sqliteTable("software_licenses", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  deviceId: text("device_id").notNull().unique(), // Unique device fingerprint
+  deviceName: text("device_name"), // Optional friendly name for the device
+  storeName: text("store_name"), // Store name associated with this device
+  status: text("status").notNull().default("active"), // active, blocked, suspended
+  blockedReason: text("blocked_reason"), // Reason for blocking (e.g., "overdue billing")
+  blockedAt: integer("blocked_at", { mode: "timestamp" }), // When the device was blocked
+  blockedBy: text("blocked_by"), // Who blocked it (admin identifier)
+  autoBlockDate: text("auto_block_date"), // Date to automatically block (YYYY-MM-DD format)
+  lastHeartbeat: integer("last_heartbeat", { mode: "timestamp" }), // Last time device checked in
+  lastSyncTime: integer("last_sync_time", { mode: "timestamp" }), // Last successful sync
+  ipAddress: text("ip_address"), // Last known IP address
+  userAgent: text("user_agent"), // Browser/app user agent
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .$defaultFn(() => new Date())
+    .notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .$defaultFn(() => new Date())
+    .notNull(),
+})
+
+// License Audit Log table - tracks all admin actions
+export const licenseAuditLog = sqliteTable("license_audit_log", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  deviceId: text("device_id").notNull(), // Which device was affected
+  action: text("action").notNull(), // block, unblock, suspend, activate
+  reason: text("reason"), // Reason for the action
+  performedBy: text("performed_by"), // Admin identifier
+  previousStatus: text("previous_status"), // Status before the action
+  newStatus: text("new_status"), // Status after the action
+  ipAddress: text("ip_address"), // IP address of admin
+  createdAt: integer("created_at", { mode: "timestamp" })
     .$defaultFn(() => new Date())
     .notNull(),
 })
@@ -410,6 +459,23 @@ export const insertSettingsSchema = createInsertSchema(settings).omit({
 
 export const updateSettingsSchema = insertSettingsSchema.partial()
 
+// Software License schemas
+export const insertSoftwareLicenseSchema = createInsertSchema(softwareLicenses)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+
+export const updateSoftwareLicenseSchema = insertSoftwareLicenseSchema.partial()
+
+// License Audit Log schema
+export const insertLicenseAuditLogSchema = createInsertSchema(licenseAuditLog)
+  .omit({
+    id: true,
+    createdAt: true,
+  })
+
 // Select schemas
 export const selectProductSchema = createSelectSchema(products)
 export const selectVariantSchema = createSelectSchema(variants)
@@ -422,6 +488,8 @@ export const selectReturnSchema = createSelectSchema(returns)
 export const selectReturnItemSchema = createSelectSchema(returnItems)
 export const selectCustomerAccountSchema = createSelectSchema(customerAccounts)
 export const selectSettingsSchema = createSelectSchema(settings)
+export const selectSoftwareLicenseSchema = createSelectSchema(softwareLicenses)
+export const selectLicenseAuditLogSchema = createSelectSchema(licenseAuditLog)
 
 // Types
 export type InsertProduct = z.infer<typeof insertProductSchema>
@@ -457,6 +525,13 @@ export type CustomerAccount = typeof customerAccounts.$inferSelect
 export type InsertSettings = z.infer<typeof insertSettingsSchema>
 export type UpdateSettings = z.infer<typeof updateSettingsSchema>
 export type Settings = typeof settings.$inferSelect
+
+export type InsertSoftwareLicense = z.infer<typeof insertSoftwareLicenseSchema>
+export type UpdateSoftwareLicense = z.infer<typeof updateSoftwareLicenseSchema>
+export type SoftwareLicense = typeof softwareLicenses.$inferSelect
+
+export type InsertLicenseAuditLog = z.infer<typeof insertLicenseAuditLogSchema>
+export type LicenseAuditLog = typeof licenseAuditLog.$inferSelect
 
 // Extended types for queries with relations
 export type VariantWithProduct = Variant & {
