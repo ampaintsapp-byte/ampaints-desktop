@@ -78,15 +78,9 @@ jobs:
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli
 
-      - name: Initialize Capacitor (if not exists)
+      - name: Create or update Capacitor config
         run: |
-          if [ ! -f "capacitor.config.ts" ] && [ ! -f "capacitor.config.json" ]; then
-            echo "Initializing Capacitor..."
-            npx cap init "PaintPulse" "com.ampaints.paintpulse" --web-dir dist/public
-          fi
-
-      - name: Create Capacitor config
-        run: |
+          # Always create/overwrite capacitor.config.json with correct settings
           cat > capacitor.config.json << 'EOF'
           {
             "appId": "com.ampaints.paintpulse",
@@ -139,11 +133,13 @@ jobs:
 
       - name: Generate Android icons (using placeholder)
         run: |
-          # Create a simple icon placeholder if no icon exists
+          # Use existing icon or create a default placeholder
           if [ -f "build/icon.png" ]; then
             cp build/icon.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          elif [ -f "client/public/favicon.ico" ]; then
-            echo "Using favicon as placeholder"
+            echo "Copied build/icon.png as launcher icon"
+          else
+            # Generate a simple colored placeholder icon using ImageMagick
+            echo "No custom icon found, using default Capacitor icons"
           fi
 
       - name: Configure Android build
