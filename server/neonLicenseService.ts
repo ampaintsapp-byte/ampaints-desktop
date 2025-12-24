@@ -13,6 +13,7 @@
 
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless"
 import os from "os"
+import crypto from "crypto"
 
 // Environment variable for Neon database URL
 const NEON_LICENSE_DB_URL = process.env.NEON_LICENSE_DB_URL
@@ -28,6 +29,7 @@ const HEARTBEAT_INTERVAL = 60000 // 1 minute heartbeat interval
 // Error logging cache to prevent flooding
 const errorCache = new Map<string, { count: number; lastLogged: Date }>()
 const ERROR_LOG_INTERVAL = 300000 // 5 minutes between same error logs
+const MAX_ERROR_CACHE_SIZE = 100 // Maximum number of cached errors to prevent memory leak
 
 // Types for license data
 export interface NeonLicenseRecord {
@@ -107,18 +109,11 @@ export function getDeviceId(): string {
     const cpuModel = cpus.length > 0 ? cpus[0].model : 'unknown'
     const totalMem = os.totalmem()
     
-    // Create a stable device ID from hardware characteristics
+    // Create a stable device ID from hardware characteristics using SHA256
     const baseString = `${hostname}-${platform}-${cpuModel}-${totalMem}`
+    const hash = crypto.createHash('sha256').update(baseString).digest('hex').substring(0, 16)
     
-    // Simple hash for consistent device ID
-    let hash = 0
-    for (let i = 0; i < baseString.length; i++) {
-      const char = baseString.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash // Convert to 32bit integer
-    }
-    
-    return `device-${Math.abs(hash).toString(16)}`
+    return `device-${hash}`
   } catch (error) {
     return `device-${Date.now()}`
   }
@@ -241,8 +236,19 @@ export async function logErrorToNeon(
   const now = new Date()
   
   if (cached && (now.getTime() - cached.lastLogged.getTime()) < ERROR_LOG_INTERVAL) {
-    cached.count++
-    return // Skip logging, same error logged recently
+    // Already logged recently, skip
+    return
+  }
+  
+  // Clean up old cache entries to prevent memory leak
+  if (errorCache.size >= MAX_ERROR_CACHE_SIZE) {
+    const oldestEntries = Array.from(errorCache.entries())
+      .sort((a, b) => a[1].lastLogged.getTime() - b[1].lastLogged.getTime())
+      .slice(0, errorCache.size - MAX_ERROR_CACHE_SIZE + 1)
+    
+    for (const [key] of oldestEntries) {
+      errorCache.delete(key)
+    }
   }
   
   errorCache.set(cacheKey, { count: 1, lastLogged: now })
@@ -306,7 +312,7 @@ export async function registerSoftwareInstance(
 
     return null
   } catch (error) {
-    await logErrorToNeon('registration_error', String(error), (error as Error).stack)
+    await logErrorToNeon('registration_error', String(error), (error as Error)?.stack)
     return null
   }
 }
@@ -372,7 +378,7 @@ export async function checkNeonLicenseStatus(): Promise<{
       message
     }
   } catch (error) {
-    await logErrorToNeon('license_check_error', String(error), (error as Error).stack)
+    await logErrorToNeon('license_check_error', String(error), (error as Error)?.stack)
     return null
   }
 }
@@ -406,7 +412,7 @@ export async function startSession(): Promise<void> {
 
     console.log(`[NeonLicense] ✅ Session started for ${pcName}`)
   } catch (error) {
-    await logErrorToNeon('session_start_error', String(error), (error as Error).stack)
+    await logErrorToNeon('session_start_error', String(error), (error as Error)?.stack)
   }
 }
 
@@ -435,6 +441,8 @@ export async function sendHeartbeat(): Promise<void> {
       SET 
         last_heartbeat = NOW(),
         total_active_minutes = total_active_minutes + ${minutesSinceLastHeartbeat},
+        -- Reset today_active_minutes if last_heartbeat was on a different day
+        -- This handles gaps in usage where the app wasn't used for multiple days
         today_active_minutes = CASE 
           WHEN DATE(last_heartbeat) < CURRENT_DATE THEN ${minutesSinceLastHeartbeat}
           ELSE today_active_minutes + ${minutesSinceLastHeartbeat}
@@ -443,7 +451,7 @@ export async function sendHeartbeat(): Promise<void> {
       WHERE device_id = ${deviceId}
     `
   } catch (error) {
-    await logErrorToNeon('heartbeat_error', String(error), (error as Error).stack)
+    await logErrorToNeon('heartbeat_error', String(error), (error as Error)?.stack)
   }
 }
 
@@ -475,7 +483,7 @@ export async function endSession(): Promise<void> {
 
     console.log(`[NeonLicense] Session ended for ${pcName} (${sessionDuration} minutes)`)
   } catch (error) {
-    await logErrorToNeon('session_end_error', String(error), (error as Error).stack)
+    await logErrorToNeon('session_end_error', String(error), (error as Error)?.stack)
   }
 
   sessionStartTime = null
@@ -526,7 +534,7 @@ export async function get24HourPerformanceReport(
 
     return result as unknown as DailyPerformanceReport[]
   } catch (error) {
-    await logErrorToNeon('performance_report_error', String(error), (error as Error).stack)
+    await logErrorToNeon('performance_report_error', String(error), (error as Error)?.stack)
     return []
   }
 }
@@ -545,7 +553,7 @@ export async function getAllSoftwareInstances(): Promise<NeonLicenseRecord[]> {
     `
     return result as unknown as NeonLicenseRecord[]
   } catch (error) {
-    await logErrorToNeon('get_instances_error', String(error), (error as Error).stack)
+    await logErrorToNeon('get_instances_error', String(error), (error as Error)?.stack)
     return []
   }
 }
@@ -576,7 +584,7 @@ export async function updateBillingStatus(
     `
     return true
   } catch (error) {
-    await logErrorToNeon('update_billing_error', String(error), (error as Error).stack)
+    await logErrorToNeon('update_billing_error', String(error), (error as Error)?.stack)
     return false
   }
 }
@@ -603,7 +611,7 @@ export async function blockSoftwareInstance(
     `
     return true
   } catch (error) {
-    await logErrorToNeon('block_instance_error', String(error), (error as Error).stack)
+    await logErrorToNeon('block_instance_error', String(error), (error as Error)?.stack)
     return false
   }
 }
@@ -627,7 +635,7 @@ export async function unblockSoftwareInstance(targetDeviceId: string): Promise<b
     `
     return true
   } catch (error) {
-    await logErrorToNeon('unblock_instance_error', String(error), (error as Error).stack)
+    await logErrorToNeon('unblock_instance_error', String(error), (error as Error)?.stack)
     return false
   }
 }
@@ -656,7 +664,7 @@ export async function setExpiryDate(
     `
     return true
   } catch (error) {
-    await logErrorToNeon('set_expiry_error', String(error), (error as Error).stack)
+    await logErrorToNeon('set_expiry_error', String(error), (error as Error)?.stack)
     return false
   }
 }

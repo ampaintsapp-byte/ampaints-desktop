@@ -2747,7 +2747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Silent error handling - log to Neon if possible
       try {
         const { logErrorToNeon } = await import("./neonLicenseService")
-        await logErrorToNeon('api_status_error', String(error), (error as Error).stack)
+        await logErrorToNeon('api_status_error', String(error), (error as Error)?.stack)
       } catch (_) { /* ignore */ }
       
       res.json({
@@ -2781,7 +2781,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Silent error handling
       try {
         const { logErrorToNeon } = await import("./neonLicenseService")
-        await logErrorToNeon('api_register_error', String(error), (error as Error).stack)
+        await logErrorToNeon('api_register_error', String(error), (error as Error)?.stack)
       } catch (_) { /* ignore */ }
       
       res.json({ ok: false, error: "Registration failed" })
@@ -2841,10 +2841,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/neon-license/performance-report", async (req, res) => {
     try {
       const { masterPin, deviceId } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
       
       if (!verifyMasterPin(masterPin)) {
         return res.status(403).json({ error: "Invalid master PIN" })
       }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
 
       const { get24HourPerformanceReport, isNeonLicenseConfigured } = await import("./neonLicenseService")
       
@@ -2863,10 +2875,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/neon-license/instances", async (req, res) => {
     try {
       const { masterPin } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
       
       if (!verifyMasterPin(masterPin)) {
         return res.status(403).json({ error: "Invalid master PIN" })
       }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
 
       const { getAllSoftwareInstances, isNeonLicenseConfigured } = await import("./neonLicenseService")
       
@@ -2885,10 +2909,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/neon-license/update-billing", async (req, res) => {
     try {
       const { masterPin, deviceId, billingStatus, expiryDate } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
       
       if (!verifyMasterPin(masterPin)) {
         return res.status(403).json({ error: "Invalid master PIN" })
       }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
 
       if (!deviceId || !billingStatus) {
         return res.status(400).json({ error: "deviceId and billingStatus required" })
@@ -2911,10 +2947,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/neon-license/block", async (req, res) => {
     try {
       const { masterPin, deviceId, reason } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
       
       if (!verifyMasterPin(masterPin)) {
         return res.status(403).json({ error: "Invalid master PIN" })
       }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
 
       if (!deviceId) {
         return res.status(400).json({ error: "deviceId required" })
@@ -2937,10 +2985,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/neon-license/unblock", async (req, res) => {
     try {
       const { masterPin, deviceId } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
       
       if (!verifyMasterPin(masterPin)) {
         return res.status(403).json({ error: "Invalid master PIN" })
       }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
 
       if (!deviceId) {
         return res.status(400).json({ error: "deviceId required" })
@@ -2963,10 +3023,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/neon-license/set-expiry", async (req, res) => {
     try {
       const { masterPin, deviceId, expiryDate } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
       
       if (!verifyMasterPin(masterPin)) {
         return res.status(403).json({ error: "Invalid master PIN" })
       }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
 
       if (!deviceId) {
         return res.status(400).json({ error: "deviceId required" })
@@ -2989,10 +3061,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/neon-license/error-logs", async (req, res) => {
     try {
       const { masterPin, deviceId, limit } = req.body
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown'
+      
+      // Apply rate limiting for admin operations
+      const rateLimit = checkPinRateLimit(clientIp)
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ 
+          error: `Too many attempts. Please wait ${rateLimit.lockoutTime} minutes.` 
+        })
+      }
       
       if (!verifyMasterPin(masterPin)) {
         return res.status(403).json({ error: "Invalid master PIN" })
       }
+      
+      // Reset rate limit on successful PIN verification
+      resetPinAttempts(clientIp)
 
       const { getErrorLogs, isNeonLicenseConfigured } = await import("./neonLicenseService")
       
